@@ -1,0 +1,91 @@
+
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mudhakara | مذاكرة</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&family=Vazirmatn:wght@300;400;700&display=swap" rel="stylesheet">
+    <script>
+        // تعريف آمن لعملية النظام لضمان وصول المكتبات لمتغيرات البيئة
+        if (typeof window.process === 'undefined') {
+            window.process = { env: {} };
+        }
+        
+        window.onerror = function(message, source, lineno, colno, error) {
+            console.error("Global Error:", message, error);
+            const root = document.getElementById('root');
+            if (root && root.innerHTML.trim() === "" || root.innerHTML.includes('pulse')) {
+                root.innerHTML = `
+                    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: #fff1f2; padding: 20px; font-family: Cairo, sans-serif;">
+                        <div style="background: white; padding: 40px; border-radius: 30px; box-shadow: 0 20px 50px rgba(0,0,0,0.1); text-align: center; max-width: 400px;">
+                            <div style="font-size: 50px; margin-bottom: 20px;">⚠️</div>
+                            <h2 style="color: #be123c; font-weight: 900; margin-bottom: 10px;">عذراً، تعثر التشغيل</h2>
+                            <p style="color: #64748b; font-size: 14px; line-height: 1.6;">حدث خطأ أثناء تحميل الملفات الأساسية. قد يكون بسبب ضعف الاتصال أو فقدان مفاتيح التشغيل.</p>
+                            <button onclick="window.location.reload()" style="margin-top: 30px; background: #4f46e5; color: white; border: none; padding: 15px 30px; border-radius: 15px; font-weight: bold; cursor: pointer; width: 100%;">إعادة المحاولة</button>
+                        </div>
+                    </div>
+                `;
+            }
+        };
+    </script>
+    <style>
+        body {
+            font-family: 'Cairo', sans-serif;
+            background-color: #f8fafc;
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+        }
+        #root { min-height: 100vh; }
+        #root:empty {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            background: linear-gradient(135deg, #4f46e5 0%, #3730a3 100%);
+            color: white;
+        }
+        #root:empty::after {
+            content: "";
+            width: 50px;
+            height: 50px;
+            border: 5px solid rgba(255,255,255,0.2);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        #root:empty::before {
+            content: "جاري تشغيل مذاكرة...";
+            font-weight: 900;
+            font-size: 1.2rem;
+            letter-spacing: 0.5px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .markdown-content b { color: #ef4444; font-weight: 800; }
+        .markdown-content strong { color: #ef4444; font-weight: 800; }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "@google/genai": "https://esm.sh/@google/genai@^1.38.0",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.48.1",
+    "react-dom/client": "https://esm.sh/react-dom@^19.2.3/client",
+    "react/jsx-runtime": "https://esm.sh/react@^19.2.3/jsx-runtime",
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-router-dom": "https://esm.sh/react-router-dom@^7.12.0",
+    "lucide-react": "https://esm.sh/lucide-react@^0.475.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "react/": "https://esm.sh/react@^19.2.4/"
+  }
+}
+</script>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+</body>
+</html>

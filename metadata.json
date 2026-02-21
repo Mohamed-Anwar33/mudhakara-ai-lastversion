@@ -1,0 +1,7 @@
+{
+  "name": "Mudhakara - The Intelligent Study Vault",
+  "description": "A smart study platform for university students using Strict Context AI to generate color-coded summaries and quizzes based exclusively on uploaded course materials.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
