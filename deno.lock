@@ -1,0 +1,42 @@
+{
+  "version": "5",
+  "remote": {
+    "https://deno.land/std@0.168.0/encoding/base64.ts": "8605e018e49211efc767686f6f687827d7f5fd5217163e981d8d693105640d7a"
+  },
+  "workspace": {
+    "packageJson": {
+      "dependencies": [
+        "npm:@google/genai@^1.38.0",
+        "npm:@supabase/supabase-js@2.48.1",
+        "npm:@tailwindcss/vite@^4.2.0",
+        "npm:@types/cors@^2.8.19",
+        "npm:@types/express@^5.0.6",
+        "npm:@types/node@^22.14.0",
+        "npm:@types/react-dom@^19.2.3",
+        "npm:@types/react@^19.2.14",
+        "npm:@vercel/node@^5.6.5",
+        "npm:@vitejs/plugin-react@5",
+        "npm:autoprefixer@^10.4.24",
+        "npm:concurrently@^9.2.1",
+        "npm:cors@^2.8.6",
+        "npm:dotenv@^17.3.1",
+        "npm:express@^5.2.1",
+        "npm:lucide-react@0.475",
+        "npm:openai@^6.22.0",
+        "npm:pdf-parse@^2.4.5",
+        "npm:pdfjs-dist@^5.4.624",
+        "npm:postcss@^8.5.6",
+        "npm:react-dom@^19.2.4",
+        "npm:react-hot-toast@^2.6.0",
+        "npm:react-markdown@^10.1.0",
+        "npm:react-router-dom@^7.12.0",
+        "npm:react@^19.2.4",
+        "npm:remark-gfm@^4.0.1",
+        "npm:tailwindcss@^4.2.0",
+        "npm:tsx@^4.21.0",
+        "npm:typescript@~5.8.2",
+        "npm:vite@^6.2.0"
+      ]
+    }
+  }
+}

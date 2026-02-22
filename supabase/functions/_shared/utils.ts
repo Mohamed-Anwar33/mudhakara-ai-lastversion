@@ -14,12 +14,9 @@ export function errorResponse(message: string, status = 500) {
     return jsonResponse({ error: message }, status);
 }
 
+import { encode } from 'https://deno.land/std@0.168.0/encoding/base64.ts';
+
 /** Base64 encode for Deno (no Buffer) */
 export function toBase64(buffer: ArrayBuffer): string {
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.length; i++) {
-        binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
+    return encode(new Uint8Array(buffer));
 }
