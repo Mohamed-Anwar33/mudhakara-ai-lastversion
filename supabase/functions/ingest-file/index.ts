@@ -95,7 +95,9 @@ async function callGemini(apiKey: string, parts: any[], maxTokens = 65536): Prom
     return resParts.filter((p: any) => p.text).map((p: any) => p.text).join('').trim();
 }
 
-async function uploadToGeminiFiles(fileData: Blob, fileName: string, mimeType: string, apiKey: string): Promise<string> {
+async function uploadToGeminiFiles(storageRes: Response, fileName: string, mimeType: string, apiKey: string): Promise<string> {
+    const contentLength = storageRes.headers.get('content-length') || '0';
+
     // Step 1: Start resumable upload
     const startRes = await fetch(
         `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`,
@@ -104,7 +106,7 @@ async function uploadToGeminiFiles(fileData: Blob, fileName: string, mimeType: s
             headers: {
                 'X-Goog-Upload-Protocol': 'resumable',
                 'X-Goog-Upload-Command': 'start',
-                'X-Goog-Upload-Header-Content-Length': fileData.size.toString(),
+                'X-Goog-Upload-Header-Content-Length': contentLength,
                 'X-Goog-Upload-Header-Content-Type': mimeType,
                 'Content-Type': 'application/json'
             },
@@ -119,11 +121,11 @@ async function uploadToGeminiFiles(fileData: Blob, fileName: string, mimeType: s
     const uploadRes = await fetch(uploadUrl, {
         method: 'PUT',
         headers: {
-            'Content-Length': fileData.size.toString(),
+            'Content-Length': contentLength,
             'X-Goog-Upload-Offset': '0',
             'X-Goog-Upload-Command': 'upload, finalize'
         },
-        body: fileData
+        body: storageRes.body
     });
     if (!uploadRes.ok) throw new Error(`File API upload: ${uploadRes.status}`);
     const fileInfo = await uploadRes.json();
@@ -148,14 +150,17 @@ async function processPdf(supabase: any, lessonId: string, filePath: string, con
     const fileName = filePath.split('/').pop() || 'document.pdf';
     let pdfPart: any;
 
-    const { data: fileData, error } = await supabase.storage.from('homework-uploads').download(filePath);
-    if (error || !fileData) throw new Error(`Download: ${error?.message}`);
+    const { data: signData, error } = await supabase.storage.from('homework-uploads').createSignedUrl(filePath, 60);
+    if (error || !signData) throw new Error(`Sign URL: ${error?.message}`);
 
-    const sizeMB = (fileData.size / (1024 * 1024)).toFixed(2);
-    console.log(`[PDF] Downloaded size: ${sizeMB} MB. Using Gemini Files API...`);
+    const storageRes = await fetch(signData.signedUrl);
+    if (!storageRes.ok) throw new Error(`Fetch stream: ${storageRes.statusText}`);
 
-    // ✅ ALWAYS use Files API for PDFs to avoid arrayBuffer memory spikes
-    const fileUri = await uploadToGeminiFiles(fileData, fileName, 'application/pdf', geminiKey);
+    const sizeMB = (parseInt(storageRes.headers.get('content-length') || '0') / (1024 * 1024)).toFixed(2);
+    console.log(`[PDF] Stream size: ${sizeMB} MB. Streaming to Gemini API...`);
+
+    // ✅ ALWAYS use Files API and STREAM the body to avoid arrayBuffer/Blob memory spikes
+    const fileUri = await uploadToGeminiFiles(storageRes, fileName, 'application/pdf', geminiKey);
     pdfPart = { fileData: { fileUri, mimeType: 'application/pdf' } };
 
     const text = await callGemini(geminiKey, [
@@ -183,16 +188,19 @@ async function processAudio(supabase: any, lessonId: string, filePath: string, c
         return await saveChunks(supabase, lessonId, cached.transcription, 'audio', filePath, contentHash);
     }
 
-    const { data: fileData, error } = await supabase.storage.from('homework-uploads').download(filePath);
-    if (error || !fileData) throw new Error(`Download: ${error?.message}`);
+    const { data: signData, error } = await supabase.storage.from('homework-uploads').createSignedUrl(filePath, 60);
+    if (error || !signData) throw new Error(`Sign URL: ${error?.message}`);
+
+    const storageRes = await fetch(signData.signedUrl);
+    if (!storageRes.ok) throw new Error(`Fetch stream: ${storageRes.statusText}`);
 
     const fileName = filePath.split('/').pop() || 'audio.mp3';
     const mimeType = getMime(fileName);
-    console.log(`[Audio] File size: ${(fileData.size / (1024 * 1024)).toFixed(1)} MB`);
+    const sizeMB = (parseInt(storageRes.headers.get('content-length') || '0') / (1024 * 1024)).toFixed(1);
+    console.log(`[Audio] Stream size: ${sizeMB} MB. Streaming to Gemini API...`);
 
-    // ✅ ALWAYS use Files API for audio to avoid base64 memory doubling
-    // This sends the raw Blob directly to Gemini without loading fully into V8 RAM
-    const fileUri = await uploadToGeminiFiles(fileData, fileName, mimeType, geminiKey);
+    // ✅ ALWAYS use Files API and STREAM the body to avoid arrayBuffer/Blob memory spikes
+    const fileUri = await uploadToGeminiFiles(storageRes, fileName, mimeType, geminiKey);
 
     const audioPart = { fileData: { fileUri, mimeType } };
 
@@ -221,15 +229,19 @@ async function processAudio(supabase: any, lessonId: string, filePath: string, c
 // ─── Image Processing ───────────────────────────────────
 
 async function processImage(supabase: any, lessonId: string, filePath: string, contentHash: string, geminiKey: string) {
-    const { data: fileData, error } = await supabase.storage.from('homework-uploads').download(filePath);
-    if (error || !fileData) throw new Error(`Download: ${error?.message}`);
+    const { data: signData, error } = await supabase.storage.from('homework-uploads').createSignedUrl(filePath, 60);
+    if (error || !signData) throw new Error(`Sign URL: ${error?.message}`);
+
+    const storageRes = await fetch(signData.signedUrl);
+    if (!storageRes.ok) throw new Error(`Fetch stream: ${storageRes.statusText}`);
 
     const fileName = filePath.split('/').pop() || 'image.jpg';
     const mimeType = getMime(fileName);
-    console.log(`[Image] Downloaded size: ${(fileData.size / (1024 * 1024)).toFixed(2)} MB. Using Gemini Files API...`);
+    const sizeMB = (parseInt(storageRes.headers.get('content-length') || '0') / (1024 * 1024)).toFixed(2);
+    console.log(`[Image] Stream size: ${sizeMB} MB. Streaming to Gemini API...`);
 
-    // ✅ ALWAYS use Files API for images to avoid arrayBuffer memory spikes
-    const fileUri = await uploadToGeminiFiles(fileData, fileName, mimeType, geminiKey);
+    // ✅ ALWAYS use Files API and STREAM the body to avoid arrayBuffer/Blob memory spikes
+    const fileUri = await uploadToGeminiFiles(storageRes, fileName, mimeType, geminiKey);
     const imagePart = { fileData: { fileUri, mimeType } };
 
     const text = await callGemini(geminiKey, [
