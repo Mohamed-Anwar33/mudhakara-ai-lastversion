@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
+import { jsonrepair } from 'https://esm.sh/jsonrepair@3.4.0';
 import { corsHeaders, jsonResponse, errorResponse } from '../_shared/utils.ts';
 
 /**
@@ -69,31 +70,17 @@ function buildSystemPrompt(contentLength: number) {
 function repairTruncatedJSON(raw: string): any | null {
     try { return JSON.parse(raw); } catch { }
 
-    const m = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
-    if (m) try { return JSON.parse(m[1].trim()); } catch { }
+    let text = raw.trim();
+    const m = text.match(/```(?:json)?\s*([\s\S]*?)(?:```|$)/i);
+    if (m) text = m[1].trim();
 
-    let fixed = raw.trim();
-    fixed = fixed.replace(/,?\s*"[^"]*$/, '');
-    fixed = fixed.replace(/,?\s*"[^"]*":\s*"[^"]*$/, '');
-    fixed = fixed.replace(/,?\s*"[^"]*":\s*$/, '');
-    fixed = fixed.replace(/,\s*$/, '');
-
-    let openBraces = 0, openBrackets = 0, inString = false, escape = false;
-    for (const ch of fixed) {
-        if (escape) { escape = false; continue; }
-        if (ch === '\\') { escape = true; continue; }
-        if (ch === '"') { inString = !inString; continue; }
-        if (inString) continue;
-        if (ch === '{') openBraces++;
-        if (ch === '}') openBraces--;
-        if (ch === '[') openBrackets++;
-        if (ch === ']') openBrackets--;
+    try {
+        const repaired = jsonrepair(text);
+        return JSON.parse(repaired);
+    } catch (e: any) {
+        console.warn(`[JSONRepair] Failed: ${e.message}`);
+        return null;
     }
-    if (inString) fixed += '"';
-    for (let i = 0; i < openBrackets; i++) fixed += ']';
-    for (let i = 0; i < openBraces; i++) fixed += '}';
-
-    try { return JSON.parse(fixed); } catch { return null; }
 }
 
 // ─── Normalize Response ─────────────────────────────────
