@@ -24,6 +24,9 @@ const Auth: React.FC = () => {
                 await signIn(email, password);
                 toast.success('أهلاً بك! 👋 تم تسجيل الدخول');
             } else {
+                if (password.length < 6) {
+                    throw new Error("Password should be at least 6 characters.");
+                }
                 const { session } = await signUp(email, password);
                 // --- Email Confirmation Disabled by User Request ---
                 // if (session) {

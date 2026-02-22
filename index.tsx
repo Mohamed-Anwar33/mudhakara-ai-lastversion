@@ -2,6 +2,7 @@
 import React, { Component, ReactNode, ErrorInfo } from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App.tsx';
+import './index.css';
 
 /**
  * تهيئة بيئة التشغيل لمتغيرات Netlify/Vite
@@ -54,17 +55,17 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
     // Fix: Accessing state and props via 'this' as members inherited from React.Component.
     if (this.state.hasError) {
       return (
-        <div style={{ 
-          display: 'flex', flexDirection: 'column', alignItems: 'center', 
-          justifyContent: 'center', height: '100vh', padding: '20px', 
+        <div style={{
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          justifyContent: 'center', height: '100vh', padding: '20px',
           textAlign: 'center', fontFamily: 'Cairo, sans-serif', direction: 'rtl',
           background: '#fff1f2'
         }}>
           <div style={{ fontSize: '64px', marginBottom: '20px' }}>⚠️</div>
           <h1 style={{ color: '#be123c', fontWeight: '900', fontSize: '24px' }}>حدث خطأ غير متوقع</h1>
           <p style={{ color: '#4b5563', maxWidth: '400px', margin: '15px 0' }}>{this.state.error?.message || "فشل النظام في التحميل"}</p>
-          <button 
-            onClick={() => window.location.reload()} 
+          <button
+            onClick={() => window.location.reload()}
             style={{ padding: '14px 28px', background: '#4f46e5', color: 'white', borderRadius: '15px', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px', boxShadow: '0 10px 20px rgba(79,70,229,0.2)' }}
           >
             إعادة تحميل التطبيق
