@@ -1,6 +1,7 @@
 export const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
 export function jsonResponse(data: any, status = 200) {
@@ -14,9 +15,13 @@ export function errorResponse(message: string, status = 500) {
     return jsonResponse({ error: message }, status);
 }
 
-import { encode } from 'https://deno.land/std@0.168.0/encoding/base64.ts';
-
-/** Base64 encode for Deno (no Buffer) */
+/** Base64 encode for Deno — uses built-in btoa instead of std lib */
 export function toBase64(buffer: ArrayBuffer): string {
-    return encode(new Uint8Array(buffer));
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
 }
+

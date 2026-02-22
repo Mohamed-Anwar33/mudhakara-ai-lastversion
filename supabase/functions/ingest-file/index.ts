@@ -319,10 +319,21 @@ async function generateEmbeddings(supabase: any, lessonId: string, openaiKey: st
 // ─── Main Handler ───────────────────────────────────────
 
 serve(async (req) => {
-    if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
-    if (req.method !== 'POST') return errorResponse('Method Not Allowed', 405);
+    // ✅ ALWAYS handle OPTIONS first for CORS preflight
+    if (req.method === 'OPTIONS') {
+        return new Response('ok', {
+            headers: {
+                ...corsHeaders,
+                'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                'Access-Control-Max-Age': '86400',
+            }
+        });
+    }
 
+    // ✅ Wrap EVERYTHING in try-catch to ensure CORS headers are always returned
     try {
+        if (req.method !== 'POST') return errorResponse('Method Not Allowed', 405);
+
         const body = await req.json();
         const { lessonId, files } = body;
 
@@ -334,6 +345,8 @@ serve(async (req) => {
         const supabaseKey = Deno.env.get('APP_SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
         const geminiKey = Deno.env.get('GEMINI_API_KEY') || '';
         const openaiKey = Deno.env.get('OPENAI_API_KEY') || '';
+
+        console.log(`[Ingest] Config check - URL: ${supabaseUrl ? '✅' : '❌'}, Key: ${supabaseKey ? '✅' : '❌'}, Gemini: ${geminiKey ? '✅' : '❌'}`);
 
         if (!supabaseUrl || !supabaseKey) return errorResponse('Missing Supabase config', 500);
         if (!geminiKey) return errorResponse('Missing GEMINI_API_KEY', 500);
@@ -375,7 +388,14 @@ serve(async (req) => {
         return jsonResponse({ success: true, results });
 
     } catch (error: any) {
-        console.error('Ingest Error:', error);
-        return errorResponse(error.message || 'Ingestion failed');
+        console.error('Ingest Fatal Error:', error);
+        // ✅ Always return CORS headers even on crash
+        return new Response(
+            JSON.stringify({ error: error.message || 'Ingestion failed', stack: error.stack }),
+            {
+                status: 500,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            }
+        );
     }
 });
