@@ -84,6 +84,7 @@ router.post('/ingest', async (req, res) => {
 // ------------------------------------------------------------------
 // POST /api/analyze
 // Body: { lessonId: string }
+// Query: ?stream=1 (optional — enables Server-Sent Events progress)
 // ------------------------------------------------------------------
 router.post('/analyze', async (req, res) => {
     try {
@@ -93,15 +94,43 @@ router.post('/analyze', async (req, res) => {
             return res.status(400).json({ error: 'Missing lessonId' });
         }
 
-        console.log(`🧠 Analyzing lesson ${lessonId}...`);
+        const useSSE = req.query.stream === '1';
+        console.log(`🧠 Analyzing lesson ${lessonId}${useSSE ? ' (SSE stream)' : ''}...`);
 
-        // Run the full analysis (Focus -> Summary -> Quiz)
-        const analysisResult = await generateLessonAnalysis(getSupabase(), lessonId);
+        if (useSSE) {
+            // ─── SSE Mode: stream progress events ───────────────
+            res.writeHead(200, {
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+                'X-Accel-Buffering': 'no'  // Disable nginx buffering
+            });
 
-        // Save result to lesson table (if not done inside generateLessonAnalysis)
-        // Note: generateLessonAnalysis ALREADY updates the DB.
+            const sendEvent = (data: any) => {
+                res.write(`data: ${JSON.stringify(data)}\n\n`);
+            };
 
-        res.json({ success: true, data: analysisResult });
+            try {
+                const analysisResult = await generateLessonAnalysis(
+                    getSupabase(),
+                    lessonId,
+                    (step, message, percent) => {
+                        sendEvent({ type: 'progress', step, message, percent });
+                    }
+                );
+
+                sendEvent({ type: 'done', data: analysisResult });
+            } catch (error: any) {
+                sendEvent({ type: 'error', error: error.message });
+            }
+
+            res.end();
+
+        } else {
+            // ─── Classic Mode (no streaming) ────────────────────
+            const analysisResult = await generateLessonAnalysis(getSupabase(), lessonId);
+            res.json({ success: true, data: analysisResult });
+        }
 
     } catch (error: any) {
         console.error('❌ Analysis Error:', error);
@@ -127,7 +156,10 @@ router.post('/segment-book', async (req, res) => {
         console.log(`📚 Segmenting book for subject ${subjectId}...`);
         console.log(`   File: ${filePath}`);
 
-        const result = await segmentBook(getSupabase(), subjectId, userId, filePath);
+        const result = await segmentBook(getSupabase(), subjectId, userId, filePath, {
+            autoAnalyze: false, // Don't analyze yet; wait for user to add audio!
+            autoEmbed: true     // Keep embeddings for Focus Extraction (Similarity Score)
+        });
 
         const succeeded = result.lessons.filter(l => l.status !== 'failed').length;
         const failed = result.lessons.filter(l => l.status === 'failed').length;

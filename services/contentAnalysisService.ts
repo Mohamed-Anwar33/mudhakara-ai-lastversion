@@ -75,7 +75,7 @@ export async function uploadFileToStorage(
     const filePath = `${lessonId}/${timestamp}_${safeName}`;
 
     const { error } = await supabase.storage
-        .from('raw-files')
+        .from('homework-uploads')
         .upload(filePath, file, {
             cacheControl: '3600',
             upsert: false
@@ -107,7 +107,7 @@ function detectFileType(file: File): FileType {
     throw new Error(`نوع الملف غير مدعوم: ${mime}`);
 }
 
-const MAX_AUDIO_SIZE_BYTES = 24 * 1024 * 1024; // 24MB — Whisper API limit
+const MAX_AUDIO_SIZE_BYTES = 200 * 1024 * 1024; // 200MB — Gemini File API يدعم ملفات كبيرة
 
 /**
  * يتحقق من حجم الملف قبل الرفع.
@@ -148,25 +148,22 @@ export async function ingestFile(
 
     // Step 4: Send to ingest function
     onProgress?.('جاري تسجيل الملف للمعالجة...', 70);
-    const response = await fetch('/api/ingest-file', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+    const { data: response, error } = await supabase.functions.invoke('ingest-file', {
+        body: {
             lessonId,
             fileName: file.name,
             filePath,
             fileType,
             contentHash
-        })
+        }
     });
 
-    if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || 'فشل استقبال الملف');
+    if (error) {
+        throw new Error(error.message || 'فشل استقبال الملف');
     }
 
     onProgress?.('تم بنجاح!', 100);
-    return await response.json();
+    return response as IngestResponse;
 }
 
 // ============================================================================

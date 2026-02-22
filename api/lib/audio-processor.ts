@@ -120,23 +120,66 @@ async function transcribeWithGemini(audioBuffer: ArrayBuffer, fileName: string):
         audioPart = { inlineData: { data: base64Audio, mimeType } };
     }
 
-    const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            contents: [{ parts: [{ text: TRANSCRIPTION_PROMPT }, audioPart] }],
-            generationConfig: { temperature: 0.1, maxOutputTokens: 65536 }
-        })
-    });
+    // Try up to 2 attempts with different prompts
+    const prompts = [
+        TRANSCRIPTION_PROMPT,
+        'استمع للتسجيل الصوتي التالي بعناية وحوّله إلى نص عربي مكتوب. اكتب كل ما يقوله المتحدث بالضبط. اكتب النص فقط.'
+    ];
 
-    const data = await response.json();
-    if (!response.ok) throw new Error(`Gemini: ${data.error?.message || response.status}`);
+    for (let attempt = 0; attempt < prompts.length; attempt++) {
+        console.log(`[Audio] Gemini attempt ${attempt + 1}/${prompts.length}...`);
 
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    if (text.length < 50) throw new Error(`Gemini returned too short (${text.length} chars)`);
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: prompts[attempt] }, audioPart] }],
+                generationConfig: { temperature: 0.1, maxOutputTokens: 65536 }
+            })
+        });
 
-    console.log(`[Audio] ✅ Gemini transcription: ${text.length} chars`);
-    return text;
+        const data = await response.json();
+
+        if (!response.ok) {
+            console.warn(`[Audio] Gemini API error: ${data.error?.message || response.status}`);
+            if (attempt < prompts.length - 1) continue;
+            throw new Error(`Gemini: ${data.error?.message || response.status}`);
+        }
+
+        // Check finishReason for issues
+        const finishReason = data.candidates?.[0]?.finishReason;
+        if (finishReason === 'SAFETY' || finishReason === 'RECITATION') {
+            console.warn(`[Audio] Gemini blocked (${finishReason})`);
+            if (attempt < prompts.length - 1) continue;
+            throw new Error(`Gemini blocked: ${finishReason}`);
+        }
+
+        // Extract text from ALL parts (Gemini 2.5 may split text + thinking)
+        const parts = data.candidates?.[0]?.content?.parts || [];
+        const text = parts
+            .filter((p: any) => p.text)
+            .map((p: any) => p.text)
+            .join('')
+            .trim();
+
+        if (text.length >= 50) {
+            console.log(`[Audio] ✅ Gemini transcription: ${text.length} chars (attempt ${attempt + 1})`);
+            return text;
+        }
+
+        // Log debug info on empty response
+        console.warn(`[Audio] Gemini attempt ${attempt + 1}: ${text.length} chars, finishReason: ${finishReason}, parts: ${parts.length}`);
+        if (parts.length > 0) {
+            console.warn(`[Audio] Parts types: ${parts.map((p: any) => Object.keys(p).join('+')).join(', ')}`);
+        }
+
+        // Wait before retry
+        if (attempt < prompts.length - 1) {
+            await new Promise(r => setTimeout(r, 3000));
+        }
+    }
+
+    throw new Error(`Gemini returned too short after ${prompts.length} attempts`);
 }
 
 // ─── Whisper Transcription (FALLBACK) ───────────────────

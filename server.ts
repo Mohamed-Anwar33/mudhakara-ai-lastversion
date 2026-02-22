@@ -207,35 +207,7 @@ app.post('/api/ingest-file', async (req, res) => {
     }
 });
 
-// 3. Segment Book Endpoint — Auto-split a full textbook into lessons
-app.post('/api/segment-book', async (req, res) => {
-    try {
-        const { subjectId, filePath, userId } = req.body;
 
-        if (!subjectId || !filePath || !userId) {
-            return res.status(400).json({
-                error: 'Missing required fields: subjectId, filePath, userId'
-            });
-        }
-
-        console.log(`📚 Segmenting book for subject ${subjectId}...`);
-
-        const { segmentBook } = await import('./api/lib/book-segmenter');
-        const result = await segmentBook(supabase, subjectId, userId, filePath);
-
-        const succeeded = result.lessons.filter(l => l.status !== 'failed').length;
-
-        res.json({
-            success: true,
-            message: `تم تقسيم الكتاب إلى ${result.lessonsDetected} درس (${succeeded} نجح)`,
-            data: result
-        });
-
-    } catch (error: any) {
-        console.error('❌ Segment Book Error:', error);
-        res.status(500).json({ error: error.message || 'Book segmentation failed' });
-    }
-});
 
 // 4. Gemini Proxy
 app.post('/api/gemini', async (req, res) => {

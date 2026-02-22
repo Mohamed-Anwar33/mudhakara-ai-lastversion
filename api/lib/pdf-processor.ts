@@ -15,34 +15,53 @@ async function extractWithGemini(buffer: Buffer, pageCount: number, attempt: num
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error('GEMINI_API_KEY not set');
 
-    const base64 = buffer.toString('base64');
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    const INLINE_MAX = 10 * 1024 * 1024; // 10MB inline limit
 
-    console.log(`[PDF] 🔄 Gemini Vision extraction (${pageCount} pages, attempt ${attempt})...`);
+    console.log(`[PDF] 🔄 Gemini Vision extraction (${pageCount} pages, ${(buffer.byteLength / (1024 * 1024)).toFixed(1)}MB, attempt ${attempt})...`);
+
+    const prompt = attempt === 1
+        ? `استخرج كل النص الموجود في هذا الملف PDF بدقة عالية وبالكامل.
+
+هذا ملف ضخم (${pageCount} صفحة). يجب أن تستخرج كل النص من كل صفحة بدون استثناء.
+
+⚠️ تنبيه: هذا الملف قد يحتوي على صور ممسوحة (Scanned).
+
+القواعد:
+- اقرأ كل صفحة بما فيها الصور — استخرج النص من داخل الصور
+- اكتب النص العربي كما هو بالضبط بدون تعديل
+- حافظ على ترتيب الفقرات والعناوين والأقسام
+- استخرج محتوى الجداول والرسوم البيانية
+- استخرج من كل الصفحات (الصفحة 1 إلى ${pageCount})
+- لا تضف أي تعليقات أو شروحات من عندك
+- لا تختصر — اكتب كل كلمة موجودة في الملف
+- أخرج النص المستخرج فقط`
+        : `أعد استخراج النص من هذا الـ PDF بالكامل. المحاولة السابقة كانت ناقصة.
+
+⚠️ هذا الملف ${pageCount} صفحة وأغلبه صور ممسوحة. يجب قراءة كل صفحة بدون استثناء.
+
+اقرأ كل صفحة من 1 إلى ${pageCount} واستخرج:
+- كل النصوص (حتى اللي داخل الصور)
+- محتوى الجداول والأشكال
+- العناوين والأرقام
+- لا تختصر أبداً — اكتب كل كلمة`;
+
+    // Always use File API for large files, but do it in ONE call
+    let pdfPart: any;
+    if (buffer.byteLength > INLINE_MAX) {
+        console.log(`[PDF] 📤 Large PDF (${(buffer.byteLength / (1024 * 1024)).toFixed(1)}MB), using File API...`);
+        const fileUri = await uploadPdfToGemini(buffer, apiKey);
+        pdfPart = { fileData: { fileUri, mimeType: 'application/pdf' } };
+    } else {
+        const base64 = buffer.toString('base64');
+        pdfPart = { inlineData: { data: base64, mimeType: 'application/pdf' } };
+    }
 
     const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            contents: [{
-                parts: [
-                    {
-                        text: `استخرج كل النص الموجود في هذا الملف PDF بدقة عالية وبالكامل.
-
-هذا ملف ضخم (${pageCount} صفحة). يجب أن تستخرج كل النص من كل صفحة بدون استثناء.
-
-القواعد:
-- اكتب النص العربي كما هو بالضبط بدون تعديل
-- حافظ على ترتيب الفقرات والعناوين والأقسام
-- حافظ على الترقيم والتنسيق والأرقام
-- استخرج من كل الصفحات (الصفحة 1 إلى ${pageCount})
-- لا تضف أي تعليقات أو شروحات من عندك
-- لا تختصر — اكتب كل كلمة موجودة في الملف
-- أخرج النص المستخرج فقط`
-                    },
-                    { inlineData: { data: base64, mimeType: 'application/pdf' } }
-                ]
-            }],
+            contents: [{ parts: [{ text: prompt }, pdfPart] }],
             generationConfig: { temperature: 0.1, maxOutputTokens: 65536 }
         })
     });
@@ -50,18 +69,68 @@ async function extractWithGemini(buffer: Buffer, pageCount: number, attempt: num
     const data = await response.json();
     if (!response.ok) throw new Error(`Gemini: ${data.error?.message || response.status}`);
 
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const parts = data.candidates?.[0]?.content?.parts || [];
+    const text = parts.filter((p: any) => p.text).map((p: any) => p.text).join('').trim();
     console.log(`[PDF] Gemini Vision attempt ${attempt}: ${text.length} chars`);
 
-    // If output is suspiciously short for a big PDF, retry once
-    const expectedMinChars = pageCount * 100; // ~100 chars per page minimum
+    const expectedMinChars = pageCount * 200;
     if (text.length < expectedMinChars && attempt === 1) {
-        console.log(`[PDF] ⚠️ Output too short (${text.length} < expected ${expectedMinChars}). Retrying...`);
-        await new Promise(r => setTimeout(r, 2000)); // Wait 2s
+        console.log(`[PDF] ⚠️ Output too short (${text.length} < expected ${expectedMinChars}). Retrying with stronger prompt...`);
+        await new Promise(r => setTimeout(r, 2000));
         return extractWithGemini(buffer, pageCount, 2);
     }
 
     return text;
+}
+
+/** Upload large PDF to Gemini File API (same approach as audio) */
+async function uploadPdfToGemini(buffer: Buffer, apiKey: string): Promise<string> {
+    // Step 1: Start resumable upload
+    const startRes = await fetch(
+        `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`,
+        {
+            method: 'POST',
+            headers: {
+                'X-Goog-Upload-Protocol': 'resumable',
+                'X-Goog-Upload-Command': 'start',
+                'X-Goog-Upload-Header-Content-Length': buffer.byteLength.toString(),
+                'X-Goog-Upload-Header-Content-Type': 'application/pdf',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ file: { displayName: 'document.pdf' } })
+        }
+    );
+    if (!startRes.ok) throw new Error(`File API start: ${startRes.status} ${await startRes.text()}`);
+    const uploadUrl = startRes.headers.get('X-Goog-Upload-URL');
+    if (!uploadUrl) throw new Error('No upload URL');
+
+    // Step 2: Upload file
+    const uploadRes = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: {
+            'Content-Length': buffer.byteLength.toString(),
+            'X-Goog-Upload-Offset': '0',
+            'X-Goog-Upload-Command': 'upload, finalize'
+        },
+        body: new Uint8Array(buffer)
+    });
+    if (!uploadRes.ok) throw new Error(`File API upload: ${uploadRes.status}`);
+    const fileInfo = await uploadRes.json();
+    const fileUri = fileInfo.file?.uri;
+    if (!fileUri) throw new Error('No file URI');
+    console.log(`[PDF] ✅ Uploaded to File API: ${fileUri}`);
+
+    // Step 3: Wait for ACTIVE
+    const fileName = fileInfo.file?.name;
+    for (let i = 0; i < 30; i++) {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${apiKey}`);
+        const status = await res.json();
+        if (status.state === 'ACTIVE') return fileUri;
+        if (status.state === 'FAILED') throw new Error('PDF processing failed');
+        console.log(`[PDF] ⏳ File state: ${status.state}...`);
+        await new Promise(r => setTimeout(r, 2000));
+    }
+    throw new Error('PDF processing timeout');
 }
 
 // ─── pdf-parse (FALLBACK — all pages but garbled Arabic) ─
@@ -92,12 +161,26 @@ export async function processPdfJob(
     contentHash: string
 ): Promise<{ chunksCreated: number; totalChars: number; method: string }> {
 
-    const { data: fileData, error: downloadError } = await supabase.storage
-        .from('homework-uploads').download(filePath);
-    if (downloadError || !fileData) throw new Error(`Download failed: ${downloadError?.message}`);
+    let fileData: Blob | null = null;
+    let downloadError: any = null;
+
+    // Retry download up to 3 times for large files
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        console.log(`[PDF] 📥 Downloading from Supabase (attempt ${attempt}/3)...`);
+        const { data, error } = await supabase.storage.from('homework-uploads').download(filePath);
+        if (!error && data) {
+            fileData = data;
+            break;
+        }
+        downloadError = error;
+        console.warn(`[PDF] ⚠️ Download attempt ${attempt} failed: ${error?.message || 'Network error'}`);
+        if (attempt < 3) await new Promise(r => setTimeout(r, 2000));
+    }
+
+    if (!fileData) throw new Error(`Download failed after 3 attempts: ${downloadError?.message || 'Unknown error'}`);
 
     const buffer = Buffer.from(await fileData.arrayBuffer());
-    console.log(`[PDF] Downloaded: ${(buffer.byteLength / 1024).toFixed(1)} KB`);
+    console.log(`[PDF] ✅ Downloaded: ${(buffer.byteLength / 1024).toFixed(1)} KB`);
 
     // Get page count from pdf-parse (fast, always works)
     let pdfParseText = '';

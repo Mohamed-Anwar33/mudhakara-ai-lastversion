@@ -11,7 +11,7 @@ import {
 import { Lesson, Source, AIResult } from '../types';
 import { saveFile, deleteFile, getFile } from '../services/storage';
 import { extractPdfText, safeTruncate } from '../utils/pdfUtils';
-import { uploadHomeworkFile, deleteHomeworkFile } from '../services/supabaseService';
+import { uploadHomeworkFile, deleteHomeworkFile, supabase } from '../services/supabaseService';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -119,12 +119,12 @@ const LessonDetail: React.FC = () => {
   const handleExtractMemory = async () => {
     if (!lesson) return;
     setIsProcessing(true);
-    setProgressMsg('🚀 تشغيل المحرك الذكي... جاري تجهيز عقلك الرقمي');
+    setProgressMsg('🚀 تشغيل المحرك الذكي... جاري التجهيز');
     setError(null);
 
     try {
-      // 1. Prepare files for ingestion
-      const filesToIngest: { path: string, type: string }[] = [];
+      // 📝 Normal Extraction Flow
+      const filesToIngest: { path: string, type: string, name: string }[] = [];
 
       // Helper to process a single source
       const processSourceForIngest = async (source: Source) => {
@@ -165,7 +165,7 @@ const LessonDetail: React.FC = () => {
         }
 
         if (storagePath) {
-          filesToIngest.push({ path: storagePath, type: source.type });
+          filesToIngest.push({ path: storagePath, type: source.type, name: source.name });
         }
       };
 
@@ -179,37 +179,93 @@ const LessonDetail: React.FC = () => {
         console.warn("No files to ingest for deep analysis");
       }
 
-      // 2. Call Ingest
+      // 2. Call Ingest sequentially to show exact progress
       if (filesToIngest.length > 0) {
-        setProgressMsg('المعالجة العميقة...');
-        console.log("Calling /api/ingest with", filesToIngest);
-        const ingestRes = await fetch('/api/ingest', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ lessonId: lesson.id, files: filesToIngest })
-        });
+        for (const fileItem of filesToIngest) {
 
-        if (!ingestRes.ok) {
-          const err = await ingestRes.json();
-          throw new Error(err.error || 'فشل معالجة الملفات');
+          let actionMsg = `المعالجة العميقة لملف "${fileItem.name}"...`;
+          if (fileItem.type === 'pdf' || fileItem.type === 'document' || fileItem.name.endsWith('.pdf')) {
+            actionMsg = `🤖 قراءة نصوص الكتاب/الملزمة "${fileItem.name}"...`;
+          } else if (fileItem.type === 'audio' || fileItem.name.match(/\.(mp3|wav|m4a|mp4|ogg)$/i)) {
+            actionMsg = `🎙️ استماع وتفريغ التسجيل الصوتي "${fileItem.name}"...`;
+          } else if (fileItem.type === 'image' || fileItem.name.match(/\.(jpg|jpeg|png|webp)$/i)) {
+            actionMsg = `👁️ تحليل صورة السبورة/الملاحظة "${fileItem.name}"...`;
+          }
+
+          setProgressMsg(actionMsg);
+
+          // Smart routing: Express (local dev) → Edge Functions (production/Vercel)
+          const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+          let ingestOk = false;
+
+          // Try Express first in local dev, Edge Function first in production
+          if (isLocalDev) {
+            try {
+              console.log("Calling Express /api/ingest for", fileItem);
+              const ingestRes = await fetch('/api/ingest', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ lessonId: lesson.id, files: [{ path: fileItem.path, type: fileItem.type, name: fileItem.name }] })
+              });
+              if (!ingestRes.ok) {
+                const err = await ingestRes.json();
+                throw new Error(err.error || 'Express ingest failed');
+              }
+              ingestOk = true;
+            } catch (expressErr: any) {
+              console.warn("Express ingest failed, trying Edge Function:", expressErr.message);
+            }
+          }
+
+          if (!ingestOk && supabase) {
+            console.log("Calling Edge Function ingest-file for", fileItem);
+            const { data, error } = await supabase.functions.invoke('ingest-file', {
+              body: { lessonId: lesson.id, files: [{ path: fileItem.path, type: fileItem.type, name: fileItem.name }] }
+            });
+            if (error) throw new Error(error.message || `فشل معالجة الملف: ${fileItem.name}`);
+            ingestOk = true;
+          }
+
+          if (!ingestOk) throw new Error(`فشل معالجة الملف: ${fileItem.name}`);
         }
       }
 
       // 3. Call Analyze
       setProgressMsg('🧠 التحليل العبقري... يُحدد النقاط المهمة ويولّد الأسئلة والملخصات');
-      console.log("Calling /api/analyze...");
-      const analyzeRes = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lessonId: lesson.id })
-      });
 
-      const analyzeData = await analyzeRes.json();
-      if (!analyzeRes.ok || !analyzeData.success) {
-        throw new Error(analyzeData.error || 'فشل التحليل');
+      let result: AIResult | null = null;
+      const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+      // Try Express first in local dev
+      if (isLocalDev) {
+        try {
+          console.log("Calling Express /api/analyze...");
+          const analyzeRes = await fetch('/api/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lessonId: lesson.id })
+          });
+          const analyzeData = await analyzeRes.json();
+          if (analyzeRes.ok && analyzeData.success) {
+            result = analyzeData.data;
+          }
+        } catch (expressErr: any) {
+          console.warn("Express analyze failed, trying Edge Function:", expressErr.message);
+        }
       }
 
-      const result: AIResult = analyzeData.data;
+      // Fallback or production: Edge Function
+      if (!result && supabase) {
+        console.log("Calling Edge Function analyze-lesson...");
+        const { data, error } = await supabase.functions.invoke('analyze-lesson', {
+          body: { lessonId: lesson.id }
+        });
+        if (error) throw new Error(error.message || 'فشل التحليل');
+        result = data?.data || data;
+      }
+
+      if (!result) throw new Error('لم يتم استلام نتائج التحليل');
 
       // 4. Update Lesson
       const updatedLesson = { ...lesson, aiResult: result };
@@ -314,18 +370,22 @@ const LessonDetail: React.FC = () => {
 
           <div className="flex flex-col items-center gap-4 py-12 bg-indigo-50/40 rounded-[4rem] text-center">
             <br />
-            <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl border border-indigo-100 shadow-sm mb-4">
-              <Cpu size={18} className="text-indigo-500" />
-              <span className="text-sm font-bold text-slate-700">تحليل عميق شامل — PDF + صوت + صور</span>
+            <div className="flex flex-col items-center gap-2 mb-8 w-full px-4">
+              <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl border border-indigo-100 shadow-sm">
+                <Cpu size={18} className="text-indigo-500" />
+                <span className="text-sm font-bold text-slate-700">تحليل عميق شامل — PDF + صوت + صور</span>
+              </div>
             </div>
+
             <button
               disabled={isProcessing}
               onClick={handleExtractMemory}
-              className={`px-16 py-7 rounded-full shadow-2xl font-black flex items-center gap-5 transition-all active:scale-95 group bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50`}
+              className={`px-16 py-7 rounded-full shadow-2xl font-black flex items-center gap-5 transition-all active:scale-95 group bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50`}
             >
               {isProcessing ? <Loader2 className="animate-spin" size={32} /> : <Sparkles size={36} />}
               <span className="text-2xl">استخراج من الذاكرة</span>
             </button>
+
 
             {isProcessing && <p className="text-sm font-black text-indigo-600 animate-pulse">{progressMsg || 'جاري التجهيز...'}</p>}
 
@@ -426,22 +486,25 @@ const LessonDetail: React.FC = () => {
             </div>
           )}
         </div>
-      )}
+      )
+      }
 
       {/* YouTube Modal */}
-      {showYtModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[150] p-4">
-          <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in text-right">
-            <div className="flex justify-between items-center mb-6">
-              <button onClick={() => setShowYtModal(false)} className="p-2 text-slate-300 hover:bg-slate-50 rounded-full transition-colors"><X size={20} /></button>
-              <h2 className="text-xl font-black text-slate-800">إضافة فيديو</h2>
+      {
+        showYtModal && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[150] p-4">
+            <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in text-right">
+              <div className="flex justify-between items-center mb-6">
+                <button onClick={() => setShowYtModal(false)} className="p-2 text-slate-300 hover:bg-slate-50 rounded-full transition-colors"><X size={20} /></button>
+                <h2 className="text-xl font-black text-slate-800">إضافة فيديو</h2>
+              </div>
+              <input type="text" value={ytUrl} onChange={(e) => setYtUrl(e.target.value)} placeholder="رابط يوتيوب..." className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl mb-8 outline-none font-bold text-left" />
+              <button onClick={handleAddYoutube} className="w-full bg-slate-900 text-white font-black py-4 rounded-2xl shadow-xl hover:bg-indigo-600 transition-all">إضافة للمكتبة</button>
             </div>
-            <input type="text" value={ytUrl} onChange={(e) => setYtUrl(e.target.value)} placeholder="رابط يوتيوب..." className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl mb-8 outline-none font-bold text-left" />
-            <button onClick={handleAddYoutube} className="w-full bg-slate-900 text-white font-black py-4 rounded-2xl shadow-xl hover:bg-indigo-600 transition-all">إضافة للمكتبة</button>
           </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+    </div >
   );
 };
 
