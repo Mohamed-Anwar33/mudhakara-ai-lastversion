@@ -11,7 +11,8 @@ import {
 import { Lesson, Source, AIResult } from '../types';
 import { saveFile, deleteFile, getFile } from '../services/storage';
 import { extractPdfText, safeTruncate } from '../utils/pdfUtils';
-import { uploadHomeworkFile, deleteHomeworkFile, supabase } from '../services/supabaseService';
+import { uploadHomeworkFile, supabase } from '../services/supabaseService';
+import { PDFDocument } from 'pdf-lib';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -124,7 +125,7 @@ const LessonDetail: React.FC = () => {
 
     try {
       // 📝 Normal Extraction Flow
-      const filesToIngest: { path: string, type: string, name: string }[] = [];
+      const filesToIngest: { path: string, type: string, name: string, sourceId?: string }[] = [];
 
       // Helper to process a single source
       const processSourceForIngest = async (source: Source) => {
@@ -165,7 +166,12 @@ const LessonDetail: React.FC = () => {
         }
 
         if (storagePath) {
-          filesToIngest.push({ path: storagePath, type: source.type, name: source.name });
+          filesToIngest.push({
+            path: storagePath,
+            type: source.type,
+            name: source.name,
+            sourceId: source.id
+          });
         }
       };
 
@@ -194,37 +200,115 @@ const LessonDetail: React.FC = () => {
 
           setProgressMsg(actionMsg);
 
+          // --- PDF CHUNKING FOR GEMINI (ACCURACY + SPEED) ---
+          let pdfChunks: string[] = []; // Array of base64 PDFs (Max 15 pages each)
+          if (fileItem.type === 'pdf' || fileItem.type === 'document' || fileItem.name.endsWith('.pdf')) {
+            try {
+              setProgressMsg(`📑 تقسيم الـ PDF لأجزاء صغيرة لمعالجة دقيقة...`);
+              const content = await getFile(fileItem.sourceId);
+              let arrayBuffer: ArrayBuffer | null = null;
+
+              if (content && content.startsWith('data:')) {
+                const base64Data = content.split(',')[1];
+                const binaryString = atob(base64Data);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                  bytes[i] = binaryString.charCodeAt(i);
+                }
+                arrayBuffer = bytes.buffer;
+              } else if (lesson.sources.find(s => s.id === fileItem.sourceId)?.content?.startsWith('data:')) {
+                const sourceContent = lesson.sources.find(s => s.id === fileItem.sourceId)!.content;
+                const base64Data = sourceContent.split(',')[1];
+                const binaryString = atob(base64Data);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                  bytes[i] = binaryString.charCodeAt(i);
+                }
+                arrayBuffer = bytes.buffer;
+              }
+
+              if (arrayBuffer) {
+                const pdfDoc = await PDFDocument.load(arrayBuffer);
+                const totalPages = pdfDoc.getPageCount();
+                const PAGES_PER_CHUNK = 15;
+
+                if (totalPages > PAGES_PER_CHUNK) {
+                  console.log(`[PDF Chunking] Large PDF detected (${totalPages} pages). Splitting into ${PAGES_PER_CHUNK}-page chunks.`);
+                  for (let startPage = 0; startPage < totalPages; startPage += PAGES_PER_CHUNK) {
+                    const endPage = Math.min(startPage + PAGES_PER_CHUNK, totalPages) - 1;
+                    const subDocument = await PDFDocument.create();
+                    const copiedPages = await subDocument.copyPages(pdfDoc, Array.from({ length: endPage - startPage + 1 }, (_, i) => startPage + i));
+                    copiedPages.forEach((page) => subDocument.addPage(page));
+                    const pdfBytes = await subDocument.saveAsBase64();
+                    pdfChunks.push(pdfBytes);
+                  }
+                }
+              }
+            } catch (err: any) {
+              console.warn("[PDF Chunking] Failed, falling back to full upload:", err.message);
+            }
+          }
+
           // Smart routing: Express (local dev) → Edge Functions (production/Vercel)
           const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
           let ingestOk = false;
 
-          // Try Express first in local dev, Edge Function first in production
-          if (isLocalDev) {
-            try {
-              console.log("Calling Express /api/ingest for", fileItem);
-              const ingestRes = await fetch('/api/ingest', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ lessonId: lesson.id, files: [{ path: fileItem.path, type: fileItem.type, name: fileItem.name }] })
-              });
-              if (!ingestRes.ok) {
-                const err = await ingestRes.json();
-                throw new Error(err.error || 'Express ingest failed');
-              }
-              ingestOk = true;
-            } catch (expressErr: any) {
-              console.warn("Express ingest failed, trying Edge Function:", expressErr.message);
-            }
-          }
+          // If we chunked the PDF, send each chunk as a separate request to avoid 150s timeout
+          if (pdfChunks.length > 0) {
+            console.log(`[Ingest] Sending ${pdfChunks.length} PDF chunks sequentially to Gemini.`);
+            for (let i = 0; i < pdfChunks.length; i++) {
+              setProgressMsg(`🤖 قراءة واستخراج نص الجزء (${i + 1}/${pdfChunks.length}) من "${fileItem.name}"... طوّل بالك!`);
 
-          if (!ingestOk && supabase) {
-            console.log("Calling Edge Function ingest-file for", fileItem);
-            const { data, error } = await supabase.functions.invoke('ingest-file', {
-              body: { lessonId: lesson.id, files: [{ path: fileItem.path, type: fileItem.type, name: fileItem.name }] }
-            });
-            if (error) throw new Error(error.message || `فشل معالجة الملف: ${fileItem.name}`);
+              const payload = {
+                lessonId: lesson.id,
+                files: [{
+                  path: `${fileItem.path}_chunk_${i}.pdf`, // Virtual path
+                  type: 'pdf',
+                  name: `${fileItem.name} (Part ${i + 1})`,
+                  base64Chunk: pdfChunks[i] // New field for the Edge function
+                }]
+              };
+
+              try {
+                if (isLocalDev) {
+                  const ingestRes = await fetch('/api/ingest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                  if (!ingestRes.ok) throw new Error('Express ingest failed');
+                } else {
+                  const { error } = await supabase.functions.invoke('ingest-file', { body: payload });
+                  if (error) throw new Error(error.message);
+                }
+              } catch (e: any) {
+                console.error(`[Ingest] Chunk ${i + 1} failed:`, e);
+                throw new Error(`فصل الخادم عند معالجة الجزء ${i + 1} من الملف.`);
+              }
+            }
             ingestOk = true;
+          } else {
+            // Standard single-file payload
+            const payload = {
+              lessonId: lesson.id,
+              files: [{
+                path: fileItem.path,
+                type: fileItem.type,
+                name: fileItem.name
+              }]
+            };
+
+            if (isLocalDev) {
+              try {
+                const ingestRes = await fetch('/api/ingest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                if (ingestRes.ok) ingestOk = true;
+              } catch (e) {
+                console.warn("Express failed, trying Edge");
+              }
+            }
+
+            if (!ingestOk && supabase) {
+              const { error } = await supabase.functions.invoke('ingest-file', { body: payload });
+              if (error) throw new Error(error.message || `فشل معالجة الملف: ${fileItem.name}`);
+              ingestOk = true;
+            }
           }
 
           if (!ingestOk) throw new Error(`فشل معالجة الملف: ${fileItem.name}`);

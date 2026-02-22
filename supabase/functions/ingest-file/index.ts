@@ -56,9 +56,10 @@ function getMime(fileName: string): string {
     return map[ext] || 'application/octet-stream';
 }
 
-function getFileType(fileName: string, declaredType: string): 'pdf' | 'audio' | 'image' {
+function getFileType(fileName: string, declaredType: string): 'pdf' | 'audio' | 'image' | 'text' {
     const ext = fileName.split('.').pop()?.toLowerCase() || '';
-    if (declaredType === 'pdf' || declaredType === 'document' || ext === 'pdf') return 'pdf';
+    if (declaredType === 'text' || ext === 'txt') return 'text';
+    if (ext === 'pdf' || declaredType === 'application/pdf') return 'pdf';
     if (declaredType === 'audio' || ['mp3', 'wav', 'mp4', 'm4a', 'ogg', 'webm'].includes(ext)) return 'audio';
     if (declaredType === 'image' || ['jpg', 'jpeg', 'png', 'webp'].includes(ext)) return 'image';
     return 'pdf'; // default
@@ -136,13 +137,20 @@ async function uploadToGeminiFiles(buffer: ArrayBuffer, fileName: string, mimeTy
 
 // ─── PDF Processing ─────────────────────────────────────
 
-async function processPdf(supabase: any, lessonId: string, filePath: string, contentHash: string, geminiKey: string) {
-    const { data: fileData, error } = await supabase.storage.from('homework-uploads').download(filePath);
-    if (error || !fileData) throw new Error(`Download: ${error?.message}`);
+async function processPdf(supabase: any, lessonId: string, filePath: string, contentHash: string, geminiKey: string, file: any = {}) {
+    let buffer;
+    if (file.base64Chunk) {
+        console.log(`[PDF] Received base64 chunk from client.`);
+        const base64Data = file.base64Chunk.split(',')[1] || file.base64Chunk;
+        buffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0)).buffer;
+    } else {
+        const { data: fileData, error } = await supabase.storage.from('homework-uploads').download(filePath);
+        if (error || !fileData) throw new Error(`Download: ${error?.message}`);
+        buffer = await fileData.arrayBuffer();
+        console.log(`[PDF] Downloaded: ${(buffer.byteLength / (1024 * 1024)).toFixed(2)} MB`);
+    }
 
-    let buffer = await fileData.arrayBuffer();
     const fileName = filePath.split('/').pop() || 'document.pdf';
-    console.log(`[PDF] Downloaded: ${(buffer.byteLength / (1024 * 1024)).toFixed(2)} MB`);
 
     let pdfPart: any;
     // Use Files API for PDFs larger than 10MB to save memory
@@ -165,7 +173,9 @@ async function processPdf(supabase: any, lessonId: string, filePath: string, con
     if (!text || text.length < 50) throw new Error(`PDF: Gemini returned ${text.length} chars`);
     console.log(`[PDF] Extracted: ${text.length} chars`);
 
-    return await saveChunks(supabase, lessonId, text, 'pdf', filePath, contentHash);
+    // If this is a chunk (has base64Chunk), append to existing sections instead of deleting them.
+    // Differentiate by adjusting the sourceType or just the saveChunks logic.
+    return await saveChunks(supabase, lessonId, text, 'pdf', file.path || filePath, contentHash, !!file.base64Chunk);
 }
 
 // ─── Audio Processing ───────────────────────────────────
@@ -258,12 +268,14 @@ async function processImage(supabase: any, lessonId: string, filePath: string, c
 
 // ─── Save Chunks ────────────────────────────────────────
 
-async function saveChunks(supabase: any, lessonId: string, text: string, sourceType: string, filePath: string, contentHash: string) {
+async function saveChunks(supabase: any, lessonId: string, text: string, sourceType: string, filePath: string, contentHash: string, isAppend: boolean = false) {
     const chunks = chunkText(text);
 
-    // Delete old sections of this type
-    await supabase.from('document_sections').delete()
-        .eq('lesson_id', lessonId).eq('source_type', sourceType);
+    // Only delete old sections if we are NOT appending a chunk
+    if (!isAppend) {
+        await supabase.from('document_sections').delete()
+            .eq('lesson_id', lessonId).eq('source_type', sourceType);
+    }
 
     const sectionsToInsert = chunks.map(chunk => ({
         lesson_id: lessonId,
@@ -388,8 +400,12 @@ serve(async (req) => {
 
             try {
                 let result;
-                if (fileType === 'pdf') {
-                    result = await processPdf(supabase, lessonId, file.path, contentHash, geminiKey);
+                if (file.extractedText) {
+                    console.log(`[Ingest] Received raw text for ${file.path} (${file.extractedText.length} chars). Skipping Gemini.`);
+                    result = await saveChunks(supabase, lessonId, file.extractedText, fileType, file.path, contentHash);
+                } else if (fileType === 'pdf') {
+                    // Update processPdf signature to accept the `file` object to pass base64Chunk
+                    result = await processPdf(supabase, lessonId, file.path, contentHash, geminiKey, file);
                 } else if (fileType === 'audio') {
                     result = await processAudio(supabase, lessonId, file.path, contentHash, geminiKey);
                 } else {
