@@ -124,6 +124,27 @@ const LessonDetail: React.FC = () => {
     setError(null);
 
     try {
+      // ─── Helper: call Edge Function via direct fetch (bypasses JWT issue) ───
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+      const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+      const callEdgeFunction = async (fnName: string, body: any) => {
+        const res = await fetch(`${SUPABASE_URL}/functions/v1/${fnName}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+          },
+          body: JSON.stringify(body)
+        });
+        if (!res.ok) {
+          const text = await res.text().catch(() => '');
+          throw new Error(`Edge Function ${fnName}: ${res.status} ${text.substring(0, 200)}`);
+        }
+        return res.json();
+      };
+
       // 📝 Normal Extraction Flow
       const filesToIngest: { path: string, type: string, name: string, sourceId?: string }[] = [];
 
@@ -275,8 +296,7 @@ const LessonDetail: React.FC = () => {
                   const ingestRes = await fetch('/api/ingest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
                   if (!ingestRes.ok) throw new Error('Express ingest failed');
                 } else {
-                  const { error } = await supabase.functions.invoke('ingest-file', { body: payload });
-                  if (error) throw new Error(error.message);
+                  await callEdgeFunction('ingest-file', payload);
                 }
               } catch (e: any) {
                 console.error(`[Ingest] Chunk ${i + 1} failed:`, e);
@@ -304,9 +324,8 @@ const LessonDetail: React.FC = () => {
               }
             }
 
-            if (!ingestOk && supabase) {
-              const { error } = await supabase.functions.invoke('ingest-file', { body: payload });
-              if (error) throw new Error(error.message || `فشل معالجة الملف: ${fileItem.name}`);
+            if (!ingestOk) {
+              await callEdgeFunction('ingest-file', payload);
               ingestOk = true;
             }
           }
@@ -340,12 +359,9 @@ const LessonDetail: React.FC = () => {
       }
 
       // Fallback or production: Edge Function
-      if (!result && supabase) {
+      if (!result) {
         console.log("Calling Edge Function analyze-lesson...");
-        const { data, error } = await supabase.functions.invoke('analyze-lesson', {
-          body: { lessonId: lesson.id }
-        });
-        if (error) throw new Error(error.message || 'فشل التحليل');
+        const data = await callEdgeFunction('analyze-lesson', { lessonId: lesson.id });
         result = data?.data || data;
       }
 
