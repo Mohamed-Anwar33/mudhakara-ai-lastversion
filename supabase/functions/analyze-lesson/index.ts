@@ -20,22 +20,25 @@ function buildSystemPrompt(contentLength: number) {
     const numFocus = contentLength > 50000 ? 12 : contentLength > 20000 ? 8 : 5;
     const numQuiz = contentLength > 50000 ? 15 : contentLength > 20000 ? 10 : 5;
     const numEssay = contentLength > 50000 ? 5 : 3;
+    const isLargeBook = contentLength > 100000;
 
-    return `أنت محلل تعليمي ذكي ومتخصص. حلل المحتوى التالي وأخرج JSON بالصيغة:
+    return `أنت أستاذ ومحلل تعليمي ذكي ومتخصص. حلل المحتوى التالي وأخرج JSON بالصيغة:
 {
-  "summary": "ملخص شامل ومفصل للدرس (1000-3000 كلمة). استخدم Markdown مع عناوين وقوائم.",
+  "summary": "ملخص شامل ومفصل للدرس. استخدم Markdown مع عناوين وقوائم.",
   "focusPoints": [{"title": "عنوان النقطة", "details": "شرح تفصيلي مع أمثلة"}],
   "quizzes": [{"question": "السؤال", "type": "mcq أو tf", "options": ["أ", "ب", "ج", "د"], "correctAnswer": 0, "explanation": "التفسير"}],
   "essayQuestions": [{"question": "سؤال مقالي", "idealAnswer": "إجابة نموذجية مفصلة"}]
 }
 
 📌 المطلوب:
-- summary: ملخص شامل يغطي كل المواضيع. ركّز أكثر على الأجزاء المميزة بـ ⭐
-- focusPoints: ${numFocus} نقاط على الأقل — النقاط التي ركز عليها المعلم
+- summary: ${isLargeBook ? 'استخرج كل الدروس واشرحها من الكتاب من الأول للآخر بالكامل. **ابحث أولاً عن الفهرس (Table of Contents)** واستخدمه كدليل وهيكل رئيسي لتقسيم محتوى الكتاب إلى **محاضرات أو فصول** بدقة عالية جداً. إذا لم تجد فهرساً، قم بفحص العناوين الرئيسية وتقسيم الكتاب بذكاء. اشرح كل محاضرة أو فصل بالتفصيل الشديد من نص الكتاب نفسه (يمنع الاختصار تماماً، أريد ملخصاً طويلاً جداً والمحتوى كاملاً بلا استثناء).' : 'ملخص شامل ومفصل يغطي كل المواضيع. ركّز أكثر على الأجزاء المميزة بـ ⭐'}
+- focusPoints: ${numFocus} نقاط على الأقل — النقاط المهمة والمحورية التي يجب التركيز عليها
 - quizzes: ${numQuiz} سؤال متنوع (صح/خطأ + اختياري)
 - essayQuestions: ${numEssay} أسئلة مقالية مع إجابات نموذجية
 
-⚠️ أخرج JSON فقط. لا تكتب أي شيء خارج JSON.`;
+⚠️ قواعد حاسمة:
+- إذا كان النص يحتوي على فصول أو دروس متعددة، **يجب التوقف وتقسيمها** بناءً على الفهرس أو العناوين بحيث يتم شرح كل درس على حدة في الـ summary ولا تتخطى أي جزء من الكتاب أبداً.
+- أخرج JSON فقط. لا تكتب أي شيء خارج JSON.`;
 }
 
 // ─── JSON Repair ────────────────────────────────────────
@@ -119,7 +122,9 @@ async function callGeminiAnalysis(systemPrompt: string, userPrompt: string, apiK
 }
 
 async function callGPT4oAnalysis(systemPrompt: string, userPrompt: string, apiKey: string): Promise<{ parsed: any; tokens: number }> {
-    const MAX_CHARS = 60000;
+    // GPT-4o 128k context allows ~400k - 500k Arabic chars. 
+    // We already truncated it in the fallback logic before calling this, but keep a safety net.
+    const MAX_CHARS = 400000;
     const truncated = userPrompt.length > MAX_CHARS ? userPrompt.substring(0, MAX_CHARS) + '\n...(اقتطاع)' : userPrompt;
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -280,23 +285,28 @@ serve(async (req) => {
         } catch (e: any) {
             console.warn(`[Analysis] Gemini failed: ${e.message}`);
 
-            // Retry Gemini with focused content if too large
-            if (userPrompt.length > 100000) {
+            // Retry Gemini with focused content if too large, but preserve MUCH more text
+            if (userPrompt.length > 50000) {
                 try {
-                    const focused = userPrompt.split('\n\n').filter(p =>
-                        p.includes('⭐') || p.includes('شرح المعلم') || p.includes('ملاحظات')
-                    ).join('\n\n') || userPrompt.substring(0, 200000);
-                    const result = await callGeminiAnalysis(systemPrompt, focused, geminiKey);
+                    // Try to preserve up to 800,000 chars (Gemini 2.5 Flash has a 1M token context window, which is ~4M chars)
+                    // The failure is likely a timeout or parsing issue, so we send a slightly stripped version
+                    const stripped = userPrompt.substring(0, 800000);
+                    console.log(`[Analysis] Gemini retry with ${stripped.length} chars...`);
+                    const result = await callGeminiAnalysis(systemPrompt, stripped, geminiKey);
                     parsed = normalizeResponse(result.parsed);
                     tokensUsed = result.tokens;
-                    model = 'gemini-2.5-flash-focused';
+                    model = 'gemini-2.5-flash-retry';
                 } catch (e2: any) {
                     console.warn(`[Analysis] Gemini retry failed: ${e2.message}`);
                 }
             }
 
+            // GPT-4o limit is strictly 128k tokens (~500k chars), but 60000 chars is too little. Let's send 300,000.
             if (!parsed && openaiKey) {
-                const result = await callGPT4oAnalysis(systemPrompt, userPrompt, openaiKey);
+                const MAX_GPT_CHARS = 300000;
+                const truncatedGPTPrompt = userPrompt.length > MAX_GPT_CHARS ? userPrompt.substring(0, MAX_GPT_CHARS) + '\n...(اقتطاع)' : userPrompt;
+                console.log(`[Analysis] Falling back to GPT-4o with ${truncatedGPTPrompt.length} chars...`);
+                const result = await callGPT4oAnalysis(systemPrompt, truncatedGPTPrompt, openaiKey);
                 parsed = normalizeResponse(result.parsed);
                 tokensUsed = result.tokens;
                 model = 'gpt-4o';

@@ -271,10 +271,24 @@ async function processImage(supabase: any, lessonId: string, filePath: string, c
 async function saveChunks(supabase: any, lessonId: string, text: string, sourceType: string, filePath: string, contentHash: string, isAppend: boolean = false) {
     const chunks = chunkText(text);
 
+    let startIndex = 0;
+
     // Only delete old sections if we are NOT appending a chunk
     if (!isAppend) {
         await supabase.from('document_sections').delete()
             .eq('lesson_id', lessonId).eq('source_type', sourceType);
+    } else {
+        // Find the highest chunk_index to append sequentially
+        const { data: existing } = await supabase.from('document_sections')
+            .select('chunk_index')
+            .eq('lesson_id', lessonId)
+            .eq('source_type', sourceType)
+            .order('chunk_index', { ascending: false })
+            .limit(1);
+
+        if (existing && existing.length > 0) {
+            startIndex = existing[0].chunk_index + 1;
+        }
     }
 
     const sectionsToInsert = chunks.map(chunk => ({
@@ -282,7 +296,7 @@ async function saveChunks(supabase: any, lessonId: string, text: string, sourceT
         content: chunk.content,
         source_type: sourceType,
         source_file_id: filePath,
-        chunk_index: chunk.chunkIndex,
+        chunk_index: chunk.chunkIndex + startIndex,
         metadata: { content_hash: contentHash, start_char: chunk.metadata.startChar, end_char: chunk.metadata.endChar, token_estimate: chunk.metadata.tokenEstimate }
     }));
 
