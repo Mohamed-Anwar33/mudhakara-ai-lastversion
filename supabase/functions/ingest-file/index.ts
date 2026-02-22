@@ -145,31 +145,31 @@ async function uploadToGeminiFiles(buffer: ArrayBuffer, fileName: string, mimeTy
 // ─── PDF Processing ─────────────────────────────────────
 
 async function processPdf(supabase: any, lessonId: string, filePath: string, contentHash: string, geminiKey: string, file: any = {}) {
-    let buffer;
+    const fileName = filePath.split('/').pop() || 'document.pdf';
+    let pdfPart: any;
+
     if (file.base64Chunk) {
-        console.log(`[PDF] Received base64 chunk from client.`);
+        console.log(`[PDF] Received base64 chunk from client, passing directly to Gemini.`);
         const base64Data = file.base64Chunk.split(',')[1] || file.base64Chunk;
-        buffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0)).buffer;
+        // The chunking mechanism in frontend already ensures chunks are < 10MB (usually ~1MB for 15 pages)
+        pdfPart = { inlineData: { data: base64Data, mimeType: 'application/pdf' } };
     } else {
         const { data: fileData, error } = await supabase.storage.from('homework-uploads').download(filePath);
         if (error || !fileData) throw new Error(`Download: ${error?.message}`);
-        buffer = await fileData.arrayBuffer();
+        let buffer = await fileData.arrayBuffer();
         console.log(`[PDF] Downloaded: ${(buffer.byteLength / (1024 * 1024)).toFixed(2)} MB`);
-    }
 
-    const fileName = filePath.split('/').pop() || 'document.pdf';
-
-    let pdfPart: any;
-    // Use Files API for PDFs larger than 10MB to save memory
-    if (buffer.byteLength > 10 * 1024 * 1024) {
-        console.log(`[PDF] Large file detected, using Gemini Files API...`);
-        const fileUri = await uploadToGeminiFiles(buffer, fileName, 'application/pdf', geminiKey);
-        buffer = null as any; // Free memory early
-        pdfPart = { fileData: { fileUri, mimeType: 'application/pdf' } };
-    } else {
-        const base64 = toBase64(buffer);
-        buffer = null as any; // Free memory early
-        pdfPart = { inlineData: { data: base64, mimeType: 'application/pdf' } };
+        // Use Files API for PDFs larger than 10MB to save memory
+        if (buffer.byteLength > 10 * 1024 * 1024) {
+            console.log(`[PDF] Large file detected, using Gemini Files API...`);
+            const fileUri = await uploadToGeminiFiles(buffer, fileName, 'application/pdf', geminiKey);
+            buffer = null as any; // Free memory early
+            pdfPart = { fileData: { fileUri, mimeType: 'application/pdf' } };
+        } else {
+            const base64 = toBase64(buffer);
+            buffer = null as any; // Free memory early
+            pdfPart = { inlineData: { data: base64, mimeType: 'application/pdf' } };
+        }
     }
 
     const text = await callGemini(geminiKey, [
