@@ -152,18 +152,11 @@ async function processPdf(supabase: any, lessonId: string, filePath: string, con
     if (error || !fileData) throw new Error(`Download: ${error?.message}`);
 
     const sizeMB = (fileData.size / (1024 * 1024)).toFixed(2);
-    console.log(`[PDF] Downloaded size: ${sizeMB} MB`);
+    console.log(`[PDF] Downloaded size: ${sizeMB} MB. Using Gemini Files API...`);
 
-    // Use Files API for PDFs larger than 10MB to save memory
-    if (fileData.size > 10 * 1024 * 1024) {
-        console.log(`[PDF] Large file detected, using Gemini Files API...`);
-        const fileUri = await uploadToGeminiFiles(fileData, fileName, 'application/pdf', geminiKey);
-        pdfPart = { fileData: { fileUri, mimeType: 'application/pdf' } };
-    } else {
-        const buffer = await fileData.arrayBuffer();
-        const base64 = toBase64(buffer);
-        pdfPart = { inlineData: { data: base64, mimeType: 'application/pdf' } };
-    }
+    // ✅ ALWAYS use Files API for PDFs to avoid arrayBuffer memory spikes
+    const fileUri = await uploadToGeminiFiles(fileData, fileName, 'application/pdf', geminiKey);
+    pdfPart = { fileData: { fileUri, mimeType: 'application/pdf' } };
 
     const text = await callGemini(geminiKey, [
         { text: PDF_PROMPT },
@@ -233,19 +226,11 @@ async function processImage(supabase: any, lessonId: string, filePath: string, c
 
     const fileName = filePath.split('/').pop() || 'image.jpg';
     const mimeType = getMime(fileName);
-    console.log(`[Image] Downloaded size: ${(fileData.size / (1024 * 1024)).toFixed(2)} MB`);
+    console.log(`[Image] Downloaded size: ${(fileData.size / (1024 * 1024)).toFixed(2)} MB. Using Gemini Files API...`);
 
-    let imagePart: any;
-    // Use Files API for images larger than 10MB to save memory
-    if (fileData.size > 10 * 1024 * 1024) {
-        console.log(`[Image] Large file detected, using Gemini Files API...`);
-        const fileUri = await uploadToGeminiFiles(fileData, fileName, mimeType, geminiKey);
-        imagePart = { fileData: { fileUri, mimeType } };
-    } else {
-        const buffer = await fileData.arrayBuffer();
-        const base64 = toBase64(buffer);
-        imagePart = { inlineData: { data: base64, mimeType } };
-    }
+    // ✅ ALWAYS use Files API for images to avoid arrayBuffer memory spikes
+    const fileUri = await uploadToGeminiFiles(fileData, fileName, mimeType, geminiKey);
+    const imagePart = { fileData: { fileUri, mimeType } };
 
     const text = await callGemini(geminiKey, [
         { text: IMAGE_PROMPT },
