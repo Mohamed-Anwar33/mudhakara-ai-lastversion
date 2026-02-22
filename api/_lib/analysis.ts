@@ -457,7 +457,7 @@ ${batches[i]}`;
 
         // ─── Phase 4: Merge and Deduplicate Chunks via Markdown Parsing ───
         console.log(`[Analysis] 🔄 Merging and deduplicating ${summaryParts.length} Text chunks...`);
-        const mergedLectures = new Map<string, { title: string, rules: Set<string> }>();
+        const mergedLectures = new Map<string, { title: string; content: string[] }>();
 
         for (const chunkText of summaryParts) {
             if (typeof chunkText !== 'string') continue;
@@ -466,106 +466,105 @@ ${batches[i]}`;
             let currentTitle = '';
 
             for (let line of lines) {
-                line = line.trim();
-                if (!line) continue;
+                line = line.trimEnd();
+                if (!line.trim()) continue;
 
-                if (line.startsWith('## ')) {
-                    const rawTitle = line.substring(3).trim();
+                if (line.trim().startsWith('## ')) {
+                    const rawTitle = line.trim().substring(3).trim();
                     if (rawTitle.length < 2) continue;
 
                     // Normalize title
-                    currentTitle = rawTitle.replace(/^[\d\.\-\s]+/, '');
+                    currentTitle = rawTitle.replace(/^[\d\.\-\s]+/, '').trim();
 
                     if (!mergedLectures.has(currentTitle)) {
-                        mergedLectures.set(currentTitle, { title: currentTitle, rules: new Set() });
+                        mergedLectures.set(currentTitle, { title: currentTitle, content: [] });
                     }
-                } else if (line.startsWith('- ') || line.startsWith('* ')) {
-                    if (currentTitle) {
-                        const ruleText = line.substring(2).trim();
-                        if (ruleText.length > 10) {
-                            mergedLectures.get(currentTitle)!.rules.add(ruleText);
-                        }
+                } else if (currentTitle && line.trim().length > 5) {
+                    // Keep ALL content lines: bullets, paragraphs, sub-headers, etc.
+                    const contentArr = mergedLectures.get(currentTitle)!.content;
+                    const trimmed = line.trim();
+                    // Dedup: skip exact duplicates
+                    if (!contentArr.some(existing => existing.trim() === trimmed)) {
+                        contentArr.push(line);
                     }
-                } else if (currentTitle && line.length > 10 && !line.startsWith('#')) {
-                    // Sometimes Gemini forgets the bullet point
-                    mergedLectures.get(currentTitle)!.rules.add(line);
                 }
             }
         }
 
         // Format final summary as Markdown
         const finalSummaryParts: string[] = [];
-        let totalRulesExtracted = 0;
+        let totalContentLines = 0;
         let emptyLecturesFound = 0;
 
         for (const [_, lecture] of mergedLectures) {
-            if (lecture.rules.size === 0) {
-                console.warn(`[Analysis] ⚠️ Sanity Check: Lecture "${lecture.title}" has no rules!`);
+            if (lecture.content.length === 0) {
+                console.warn(`[Analysis] ⚠️ Sanity Check: Lecture "${lecture.title}" has no content!`);
                 emptyLecturesFound++;
                 continue;
             }
 
             let md = `## ${lecture.title}\n\n`;
-            for (const rule of lecture.rules) {
-                md += `- ${rule}\n`;
-                totalRulesExtracted++;
-            }
+            md += lecture.content.join('\n');
+            totalContentLines += lecture.content.length;
             finalSummaryParts.push(md);
         }
 
         summary = finalSummaryParts.join('\n\n---\n\n');
-        console.log(`[Analysis] Final summary length: ${summary.length} chars from ${mergedLectures.size} unique lectures.`);
+        console.log(`[Analysis] Final summary length: ${summary.length} chars from ${mergedLectures.size} unique lectures, ${totalContentLines} content lines.`);
 
         // ─── Phase 4.5: Final Sanity Check ───
         if (mergedLectures.size < (totalChars / 50000)) {
             console.warn(`[Analysis] ⚠️ Sanity Check: Extremely low lecture count (${mergedLectures.size}) relative to content size (${totalChars} chars).`);
         }
-        if (totalRulesExtracted < mergedLectures.size * 2) {
-            console.warn(`[Analysis] ⚠️ Sanity Check: Very few rules extracted (${totalRulesExtracted}) for ${mergedLectures.size} lectures. Output may be sparse.`);
+        if (totalContentLines < mergedLectures.size * 2) {
+            console.warn(`[Analysis] ⚠️ Sanity Check: Very few content lines (${totalContentLines}) for ${mergedLectures.size} lectures. Output may be sparse.`);
         }
         if (emptyLecturesFound > 0) {
-            console.warn(`[Analysis] ⚠️ Sanity Check: Dropped ${emptyLecturesFound} lectures because they had empty rules arrays.`);
+            console.warn(`[Analysis] ⚠️ Sanity Check: Dropped ${emptyLecturesFound} lectures because they had empty content.`);
         }
 
         // ═══ Step 4B: Generate QUIZZES + FOCUS + ESSAYS (as JSON) ════
         progress('analyzing', 'يولّد الأسئلة ونقاط التركيز...', 65);
 
-        const isLarge = totalChars > 50000;
-        const focusCount = isLarge ? '15' : '6';
-        const quizCount = isLarge ? '20' : '10';
-        const essayCount = isLarge ? '5' : '3';
+        // Dynamic counts based on detected lectures
+        const lectureCount = mergedLectures.size;
+        const focusCount = Math.max(10, Math.min(20, lectureCount * 2));
+        const quizCount = Math.max(15, Math.min(30, lectureCount * 3));
+        const essayCount = Math.max(3, Math.min(8, lectureCount));
+        console.log(`[Analysis] ${lectureCount} lectures → ${focusCount} focus, ${quizCount} quiz, ${essayCount} essay`);
 
-        // Build focused content for quizzes (smaller = reliable JSON)
-        let quizContent = '';
-        if (focusedIds.size > 0) {
-            quizContent += '=== أجزاء الكتاب التي ركّز عليها المعلم ===\n\n';
-            for (const sec of sections.pdf) {
-                if (focusedIds.has(sec.id)) quizContent += `⭐ ${sec.content}\n\n`;
-            }
-        } else {
-            // No focus — use first 80K chars of PDF
-            quizContent += sections.pdf.map((s: any) => s.content).join('\n\n').substring(0, 80000);
-        }
+        // Build quiz content from FULL merged summary (covers entire book)
+        // + audio content for focus extraction
+        let quizContent = `=== ملخص الكتاب الشامل (يغطي كل المحاضرات) ===\n\n${summary}`;
+
         if (sections.audio.length > 0) {
-            quizContent += '\n=== شرح المعلم ===\n\n';
-            // Cap audio to 30K chars for quiz generation
+            quizContent += '\n\n=== شرح المعلم ===\n\n';
             const audioText = sections.audio.map((s: any) => s.content).join('\n\n');
-            quizContent += audioText.substring(0, 30000);
+            quizContent += audioText.substring(0, 50000);
         }
 
-        const quizPrompt = `بناءً على المحتوى التالي، أخرج JSON يحتوي على:
+        // Cap total to stay within context
+        if (quizContent.length > 200000) {
+            quizContent = quizContent.substring(0, 200000) + '\n...(اقتطاع)';
+        }
 
-1. **focusPoints** (${focusCount} نقطة) — ما ركّز عليه المعلم في شرحه:
+        const quizPrompt = `بناءً على المحتوى التالي (ملخص كتاب كامل + شرح صوتي)، أخرج JSON يحتوي على:
+
+1. **focusPoints** (${focusCount} نقطة) — النقاط المحورية الأهم في الكتاب:
    - title: عنوان النقطة
-   - details: شرح تفصيلي (150-300 كلمة) يدمج بين كلام المعلم ومحتوى الكتاب
+   - details: شرح تفصيلي (150-300 كلمة)
 
-2. **quizzes** (${quizCount} سؤال متنوع):
-   - question, type ("mcq"/"tf"), options (4 دائماً), correctAnswer (رقم 0-3), explanation
+2. **quizzes** (${quizCount} سؤال متنوع يغطي كل محاضرات الكتاب):
+   - question: سؤال محدد من المحتوى
+   - type: "mcq" أو "tf"
+   - options: 4 خيارات دائماً (حتى صح/خطأ: ["صح", "خطأ", "-", "-"])
+   - correctAnswer: رقم (0,1,2,3)
+   - explanation: شرح الإجابة
 
 3. **essayQuestions** (${essayCount} سؤال مقالي):
    - question, idealAnswer (150-300 كلمة)
 
-⚠️ JSON نقي بدون \`\`\`json. correctAnswer = رقم فقط.
+⚠️ وزّع الأسئلة على كل المحاضرات بالتساوي. correctAnswer = رقم فقط. JSON نقي.
 
 --- المحتوى ---
 

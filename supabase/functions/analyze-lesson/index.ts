@@ -4,66 +4,20 @@ import { jsonrepair } from 'https://esm.sh/jsonrepair@3.4.0';
 import { corsHeaders, jsonResponse, errorResponse } from '../_shared/utils.ts';
 
 /**
- * Edge Function: analyze-lesson
+ * Edge Function: analyze-lesson (v9 — Optimized for 150s timeout)
  * 
- * Performs full AI analysis on a lesson:
- * 1. Fetches all document_sections for the lesson
- * 2. Builds focus map (audio vs PDF similarity)
- * 3. Calls Gemini/GPT-4o for analysis
- * 4. Returns summary + focus points + quizzes
+ * ⏱️ Time budget (150s total):
+ *   - DB + Focus: ~5-10s
+ *   - Summary batches (PARALLEL): ~15-25s
+ *   - Quiz generation: ~15-20s
+ *   - Save: ~2s
+ *   - Safety margin: ~90s
  * 
- * Timeout: 150s (Supabase free tier)
+ * Strategy:
+ *   1. Small content (<120K chars): Single Gemini call → full summary
+ *   2. Large content (>120K chars): Split into ~100K-char batches, run in PARALLEL
+ *   3. Quiz/focus generated from merged summary (covers entire book)
  */
-
-// ─── System Prompt Builder ──────────────────────────────
-
-function buildSystemPrompt(contentLength: number) {
-    const numFocus = contentLength > 50000 ? 12 : contentLength > 20000 ? 8 : 5;
-    const numQuiz = contentLength > 50000 ? 15 : contentLength > 20000 ? 10 : 5;
-    const numEssay = contentLength > 50000 ? 5 : 3;
-    const isLargeBook = contentLength > 100000;
-
-    if (isLargeBook) {
-        return `أنت أستاذ ومحلل تعليمي ذكي ومتخصص. حلل المحتوى التالي (كتاب ضخم/ملزمة) وأخرج JSON بالصيغة التالية بدقة:
-{
-  "chapters": [
-    {
-      "title": "عنوان المحاضرة أو الفصل",
-      "summary": "شرح تفصيلي شامل من نص الكتاب لهذه المحاضرة/الفصل فقط (يمنع الاختصار تماماً، اكتب كل التفاصيل)."
-    }
-  ],
-  "focusPoints": [{"title": "عنوان النقطة", "details": "شرح تفصيلي مع أمثلة"}],
-  "quizzes": [{"question": "السؤال", "type": "mcq أو tf", "options": ["أ", "ب", "ج", "د"], "correctAnswer": 0, "explanation": "التفسير"}],
-  "essayQuestions": [{"question": "سؤال مقالي", "idealAnswer": "إجابة نموذجية مفصلة"}]
-}
-
-📌 المطلوب:
-- chapters: **ابحث أولاً عن الفهرس (Table of Contents)** إن وُجد لاستخدامه كخريطة. استخرج **كل الدروس والفصول** من الكتاب من البداية للنهاية دون تخطي أي صفحة. يجب وضع كل فصل في عنصر مستقل داخل مصفوفة \`chapters\`.
-- focusPoints: ${numFocus} نقاط على الأقل — النقاط المحورية في الكتاب كاملاً.
-- quizzes: ${numQuiz} سؤال متنوع.
-- essayQuestions: ${numEssay} أسئلة مقالية.
-
-⚠️ قواعد حاسمة جداً:
-- إياك أن تختصر الكتاب في فصل واحد. استخرج جميع الفصول/المحاضرات (الفصل الأول، الثاني، الثالث، إلخ) حتى نهاية النص.
-- أخرج JSON فقط. لا تكتب أي شيء خارج JSON.`;
-    }
-
-    return `أنت أستاذ ومحلل تعليمي ذكي ومتخصص. حلل المحتوى التالي وأخرج JSON بالصيغة:
-{
-  "summary": "ملخص شامل ومفصل يغطي كل المواضيع. استخدم Markdown مع عناوين وقوائم.",
-  "focusPoints": [{"title": "عنوان النقطة", "details": "شرح تفصيلي مع أمثلة"}],
-  "quizzes": [{"question": "السؤال", "type": "mcq أو tf", "options": ["أ", "ب", "ج", "د"], "correctAnswer": 0, "explanation": "التفسير"}],
-  "essayQuestions": [{"question": "سؤال مقالي", "idealAnswer": "إجابة نموذجية مفصلة"}]
-}
-
-📌 المطلوب:
-- summary: ملخص شامل ومفصل يغطي كل المواضيع. ركّز أكثر على الأجزاء المميزة بـ ⭐
-- focusPoints: ${numFocus} نقاط على الأقل — النقاط المهمة والمحورية التي يجب التركيز عليها
-- quizzes: ${numQuiz} سؤال متنوع (صح/خطأ + اختياري)
-- essayQuestions: ${numEssay} أسئلة مقالية مع إجابات نموذجية
-
-⚠️ أخرج JSON فقط. لا تكتب أي شيء خارج JSON.`;
-}
 
 // ─── JSON Repair ────────────────────────────────────────
 
@@ -79,85 +33,88 @@ function repairTruncatedJSON(raw: string): any | null {
         return JSON.parse(repaired);
     } catch (e: any) {
         console.warn(`[JSONRepair] Failed: ${e.message}`);
-        return null;
-    }
-}
-
-// ─── Normalize Response ─────────────────────────────────
-
-function normalizeResponse(parsed: any): any {
-    if (parsed.focus_points && !parsed.focusPoints) parsed.focusPoints = parsed.focus_points;
-    if (parsed.essay_questions && !parsed.essayQuestions) parsed.essayQuestions = parsed.essay_questions;
-    if (!parsed.focusPoints) parsed.focusPoints = [];
-    if (!parsed.quizzes) parsed.quizzes = [];
-    if (!parsed.essayQuestions) parsed.essayQuestions = [];
-
-    // If the AI generated an array of chapters (large book format), merge them into the summary
-    if (parsed.chapters && Array.isArray(parsed.chapters) && parsed.chapters.length > 0) {
-        parsed.summary = parsed.chapters.map((c: any) => `## ${c.title || 'فصل'}\n\n${c.summary || ''}`).join('\n\n---\n\n');
     }
 
-    if (!parsed.summary) parsed.summary = '';
+    // Manual repair for deeply truncated JSON
+    let fixed = text;
+    fixed = fixed.replace(/,?\s*"[^"]*$/, '');
+    fixed = fixed.replace(/,?\s*"[^"]+":\s*"[^]*$/, '');
+    fixed = fixed.replace(/,?\s*"[^"]*":\s*$/, '');
+    fixed = fixed.replace(/,\s*$/, '');
 
-    // Normalize quiz answers
-    for (const q of parsed.quizzes) {
-        if (typeof q.correctAnswer === 'string') {
-            const idx = (q.options || []).indexOf(q.correctAnswer);
-            q.correctAnswer = idx >= 0 ? idx : 0;
-        }
+    let openBraces = 0, openBrackets = 0, inString = false, escape = false;
+    for (const ch of fixed) {
+        if (escape) { escape = false; continue; }
+        if (ch === '\\') { escape = true; continue; }
+        if (ch === '"') { inString = !inString; continue; }
+        if (inString) continue;
+        if (ch === '{') openBraces++;
+        if (ch === '}') openBraces--;
+        if (ch === '[') openBrackets++;
+        if (ch === ']') openBrackets--;
     }
-    return parsed;
+    if (inString) fixed += '"';
+    for (let i = 0; i < openBrackets; i++) fixed += ']';
+    for (let i = 0; i < openBraces; i++) fixed += '}';
+
+    try { return JSON.parse(fixed); } catch { return null; }
 }
 
 // ─── AI Calls ───────────────────────────────────────────
 
-async function callGeminiAnalysis(systemPrompt: string, userPrompt: string, apiKey: string): Promise<{ parsed: any; tokens: number }> {
+/** Call Gemini for TEXT output (summaries) — no JSON constraint */
+async function callGeminiText(prompt: string, apiKey: string): Promise<{ text: string; tokens: number }> {
+    console.log(`[Gemini-TEXT] Sending ${prompt.length} chars...`);
     const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
         {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                contents: [{ parts: [{ text: systemPrompt + '\n\n--- المحتوى ---\n\n' + userPrompt }] }],
-                generationConfig: { temperature: 0.2, maxOutputTokens: 65536, responseMimeType: 'application/json' }
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: { temperature: 0.2, maxOutputTokens: 65536 }
             })
         }
     );
 
     const data = await response.json();
-    if (!response.ok) throw new Error(`Gemini: ${data.error?.message || response.status}`);
+    if (!response.ok) throw new Error(`Gemini TEXT: ${data.error?.message || response.status}`);
+
+    const parts = data.candidates?.[0]?.content?.parts || [];
+    const text = parts.filter((p: any) => p.text).map((p: any) => p.text).join('').trim();
+    const tokens = data.usageMetadata?.totalTokenCount || 0;
+    console.log(`[Gemini-TEXT] ✅ Got ${text.length} chars, ${tokens} tokens`);
+    return { text, tokens };
+}
+
+/** Call Gemini for JSON output (quizzes, focus points) */
+async function callGeminiJSON(prompt: string, apiKey: string): Promise<{ parsed: any; tokens: number }> {
+    console.log(`[Gemini-JSON] Sending ${prompt.length} chars...`);
+    const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: { temperature: 0.2, maxOutputTokens: 16384, responseMimeType: 'application/json' }
+            })
+        }
+    );
+
+    const data = await response.json();
+    if (!response.ok) throw new Error(`Gemini JSON: ${data.error?.message || response.status}`);
 
     const parts = data.candidates?.[0]?.content?.parts || [];
     const content = parts.filter((p: any) => p.text).map((p: any) => p.text).join('').trim();
-    if (!content) throw new Error('Gemini empty response');
+    if (!content) throw new Error('Gemini JSON empty response');
 
     const parsed = repairTruncatedJSON(content);
     if (!parsed) throw new Error(`Bad JSON from Gemini: ${content.substring(0, 200)}`);
 
-    return { parsed, tokens: data.usageMetadata?.totalTokenCount || 0 };
-}
-
-async function callGPT4oAnalysis(systemPrompt: string, userPrompt: string, apiKey: string): Promise<{ parsed: any; tokens: number }> {
-    // GPT-4o 128k context allows ~400k - 500k Arabic chars. 
-    // We already truncated it in the fallback logic before calling this, but keep a safety net.
-    const MAX_CHARS = 400000;
-    const truncated = userPrompt.length > MAX_CHARS ? userPrompt.substring(0, MAX_CHARS) + '\n...(اقتطاع)' : userPrompt;
-
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            model: 'gpt-4o',
-            messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: truncated }],
-            temperature: 0.2, max_tokens: 16384, response_format: { type: 'json_object' }
-        })
-    });
-
-    if (!response.ok) throw new Error(`GPT-4o: ${response.status}`);
-    const result = await response.json();
-    const content = result.choices?.[0]?.message?.content;
-    if (!content) throw new Error('GPT-4o empty');
-    return { parsed: JSON.parse(content), tokens: result.usage?.total_tokens || 0 };
+    const tokens = data.usageMetadata?.totalTokenCount || 0;
+    console.log(`[Gemini-JSON] ✅ Parsed OK, ${tokens} tokens`);
+    return { parsed, tokens };
 }
 
 // ─── Focus Extraction ───────────────────────────────────
@@ -172,14 +129,14 @@ async function buildFocusMap(supabase: any, lessonId: string): Promise<Set<strin
     const audio = sections.filter((s: any) => s.source_type === 'audio' && s.embedding);
     const pdf = sections.filter((s: any) => s.source_type === 'pdf');
 
-    if (audio.length === 0) return new Set(pdf.map((s: any) => s.id)); // No audio = all focused
+    if (audio.length === 0) return new Set(pdf.map((s: any) => s.id));
 
     const focusedIds = new Set<string>();
     const CONCURRENCY = 5;
 
     for (let i = 0; i < audio.length; i += CONCURRENCY) {
         const batch = audio.slice(i, i + CONCURRENCY);
-        const results = await Promise.allSettled(batch.map(async (audioSec: any) => {
+        await Promise.allSettled(batch.map(async (audioSec: any) => {
             const embedding = typeof audioSec.embedding === 'string'
                 ? audioSec.embedding : JSON.stringify(audioSec.embedding);
 
@@ -201,21 +158,135 @@ async function buildFocusMap(supabase: any, lessonId: string): Promise<Set<strin
     return focusedIds;
 }
 
+// ─── Batch Splitting ────────────────────────────────────
+
+function splitIntoBatches(paragraphs: string[], batchSize: number, overlapCount: number): string[] {
+    const batches: string[] = [];
+    let currentBatch: string[] = [];
+    let currentLen = 0;
+
+    for (let i = 0; i < paragraphs.length; i++) {
+        const p = paragraphs[i];
+        if (currentLen + p.length > batchSize && currentLen > 5000) {
+            batches.push(currentBatch.join('\n\n'));
+            const startIdx = Math.max(0, i - overlapCount);
+            currentBatch = paragraphs.slice(startIdx, i + 1);
+            currentLen = currentBatch.reduce((sum, part) => sum + part.length + 2, 0);
+        } else {
+            currentBatch.push(p);
+            currentLen += p.length + 2;
+        }
+    }
+
+    if (currentBatch.length > 0) {
+        batches.push(currentBatch.join('\n\n'));
+    }
+
+    return batches;
+}
+
+// ─── Summary Merge & Dedup ──────────────────────────────
+
+function mergeAndDedup(summaryParts: string[]): string {
+    const mergedLectures = new Map<string, { title: string; content: string[] }>();
+
+    for (const chunkText of summaryParts) {
+        if (typeof chunkText !== 'string') continue;
+
+        const lines = chunkText.split('\n');
+        let currentTitle = '';
+
+        for (let line of lines) {
+            line = line.trimEnd();
+            if (!line.trim()) continue;
+
+            if (line.trim().startsWith('## ')) {
+                const rawTitle = line.trim().substring(3).trim();
+                if (rawTitle.length < 2) continue;
+
+                currentTitle = rawTitle.replace(/^[\d\.\-\s]+/, '').trim();
+
+                if (!mergedLectures.has(currentTitle)) {
+                    mergedLectures.set(currentTitle, { title: currentTitle, content: [] });
+                }
+            } else if (currentTitle && line.trim().length > 5) {
+                const contentArr = mergedLectures.get(currentTitle)!.content;
+                const trimmed = line.trim();
+                if (!contentArr.some(existing => existing.trim() === trimmed)) {
+                    contentArr.push(line);
+                }
+            }
+        }
+    }
+
+    const finalParts: string[] = [];
+    for (const [_, lecture] of mergedLectures) {
+        if (lecture.content.length === 0) continue;
+        let md = `## ${lecture.title}\n\n`;
+        md += lecture.content.join('\n');
+        finalParts.push(md);
+    }
+
+    console.log(`[Merge] ${mergedLectures.size} unique lectures, ${finalParts.length} with content`);
+    return finalParts.join('\n\n---\n\n');
+}
+
+// ─── Normalize Quiz Response ────────────────────────────
+
+function normalizeQuizResponse(parsed: any): any {
+    if (parsed.focus_points && !parsed.focusPoints) parsed.focusPoints = parsed.focus_points;
+    if (parsed.essay_questions && !parsed.essayQuestions) parsed.essayQuestions = parsed.essay_questions;
+    if (!parsed.focusPoints) parsed.focusPoints = [];
+    if (!parsed.quizzes) parsed.quizzes = [];
+    if (!parsed.essayQuestions) parsed.essayQuestions = [];
+
+    for (const q of parsed.quizzes) {
+        if (!q.options || !Array.isArray(q.options)) q.options = ['أ', 'ب', 'ج', 'د'];
+        while (q.options.length < 4) q.options.push('-');
+        if (typeof q.correctAnswer === 'string') {
+            const idx = (q.options || []).indexOf(q.correctAnswer);
+            q.correctAnswer = idx >= 0 ? idx : 0;
+        }
+        if (!q.type) q.type = 'mcq';
+        if (!q.explanation) q.explanation = '';
+    }
+    return parsed;
+}
+
+// ─── Build Summary Prompt ───────────────────────────────
+
+function buildSummaryPrompt(content: string, batchNum: number, totalBatches: number, hasAudio: boolean): string {
+    const batchInfo = totalBatches > 1 ? ` (الجزء ${batchNum} من ${totalBatches})` : '';
+    const audioNote = hasAudio ? '\n6. **الأجزاء المميزة بـ ⭐ ركّز عليها المعلم في شرحه الصوتي** — أعطها اهتماماً إضافياً.' : '';
+
+    return `أنت خبير أكاديمي متخصص. مطلوب منك استخراج وتلخيص كل الدروس والمحاضرات الموجودة في هذا النص${batchInfo} من الكتاب/الملزمة.
+
+⚠️⚠️⚠️ قواعد حاسمة:
+1. **استخرج كل درس/محاضرة/فصل** موجود في هذا النص. لا تتجاهل أي محاضرة أبداً.
+2. **اكتب تحت كل محاضرة** شرحاً تفصيلياً شاملاً: كل المفاهيم، التعريفات، القواعد، الأمثلة، الملاحظات. الاختصار ممنوع.
+3. **حافظ على الترتيب** الموجود في الكتاب الأصلي.
+4. إذا انقطعت محاضرة في آخر النص، لخّص الموجود فقط ولا تختلق باقيه.
+5. **لا تكتب مقدمات أو خاتمات**. ادخل مباشرة في المحتوى.${audioNote}
+
+المخرجات (نص Markdown — ليس JSON):
+- عنوان كل محاضرة/درس بـ \`## عنوان المحاضرة\`
+- تحت كل عنوان: شرح تفصيلي بنقاط (\`- \`) وفقرات
+- كل التعريفات والقواعد والأمثلة والشروط
+
+--- المحتوى${batchInfo} ---
+
+${content}`;
+}
+
 // ─── Main Handler ───────────────────────────────────────
 
 serve(async (req) => {
-    // ✅ ALWAYS handle OPTIONS first for CORS preflight
     if (req.method === 'OPTIONS') {
         return new Response('ok', {
-            headers: {
-                ...corsHeaders,
-                'Access-Control-Allow-Methods': 'POST, OPTIONS',
-                'Access-Control-Max-Age': '86400',
-            }
+            headers: { ...corsHeaders, 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Max-Age': '86400' }
         });
     }
 
-    // ✅ Wrap EVERYTHING in try-catch to ensure CORS headers are always returned
     try {
         if (req.method !== 'POST') return errorResponse('Method Not Allowed', 405);
 
@@ -226,19 +297,18 @@ serve(async (req) => {
         const supabaseUrl = Deno.env.get('APP_SUPABASE_URL') || Deno.env.get('SUPABASE_URL') || '';
         const supabaseKey = Deno.env.get('APP_SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
         const geminiKey = Deno.env.get('GEMINI_API_KEY') || '';
-        const openaiKey = Deno.env.get('OPENAI_API_KEY') || '';
-
-        console.log(`[Analysis] Config check - URL: ${supabaseUrl ? '✅' : '❌'}, Key: ${supabaseKey ? '✅' : '❌'}, Gemini: ${geminiKey ? '✅' : '❌'}`);
 
         if (!supabaseUrl || !supabaseKey) return errorResponse('Missing Supabase config', 500);
         if (!geminiKey) return errorResponse('Missing GEMINI_API_KEY', 500);
 
         const supabase = createClient(supabaseUrl, supabaseKey);
+        const startTime = Date.now();
+        const elapsed = () => ((Date.now() - startTime) / 1000);
 
         // 1. Update status
         await supabase.from('lessons').update({ analysis_status: 'processing' }).eq('id', lessonId);
 
-        // 2. Fetch all content
+        // 2. Fetch ALL content
         const { data: allSections } = await supabase.from('document_sections')
             .select('id, content, source_type, embedding, chunk_index')
             .eq('lesson_id', lessonId).order('chunk_index');
@@ -251,11 +321,15 @@ serve(async (req) => {
         const audio = allSections.filter((s: any) => s.source_type === 'audio');
         const image = allSections.filter((s: any) => s.source_type === 'image');
 
-        console.log(`[Analysis] Content: ${pdf.length} PDF, ${audio.length} audio, ${image.length} image sections`);
+        const pdfChars = pdf.reduce((s: number, x: any) => s + (x.content?.length || 0), 0);
+        const audioChars = audio.reduce((s: number, x: any) => s + (x.content?.length || 0), 0);
+        const imageChars = image.reduce((s: number, x: any) => s + (x.content?.length || 0), 0);
+        const totalChars = pdfChars + audioChars + imageChars;
 
-        // 3. Build focus map
+        console.log(`[Analysis] ⏱️ ${elapsed().toFixed(1)}s | Content: ${pdf.length} PDF (${pdfChars}), ${audio.length} audio (${audioChars}), ${image.length} image (${imageChars}). Total: ${totalChars}`);
+
+        // 3. Build focus map (only if audio exists & has embeddings)
         let focusedIds = new Set<string>();
-        const audioChars = audio.reduce((sum: number, s: any) => sum + (s.content?.length || 0), 0);
         if (audioChars > 3000) {
             try {
                 focusedIds = await buildFocusMap(supabase, lessonId);
@@ -263,115 +337,240 @@ serve(async (req) => {
                 console.warn(`[Analysis] Focus failed: ${e.message}`);
             }
         }
+        console.log(`[Analysis] ⏱️ ${elapsed().toFixed(1)}s | Focus done: ${focusedIds.size} matches`);
 
-        // 4. Build prompt with focus markers
-        let userPrompt = '';
-
-        if (pdf.length > 0) {
-            userPrompt += '📖 محتوى الكتاب/الملزمة:\n\n';
-            for (const s of pdf) {
-                const marker = focusedIds.has(s.id) ? '⭐ [ركز المعلم] ' : '';
-                userPrompt += marker + s.content + '\n\n';
-            }
+        // 4. Build full content text with focus markers
+        let fullContent = '';
+        for (const s of pdf) {
+            const marker = focusedIds.has(s.id) ? '⭐ [ركّز عليه المعلم] ' : '';
+            fullContent += marker + s.content + '\n\n';
         }
-
-        if (audio.length > 0) {
-            userPrompt += '\n🎙️ شرح المعلم (تفريغ صوتي):\n\n';
-            for (const s of audio) userPrompt += s.content + '\n\n';
-        }
-
         if (image.length > 0) {
-            userPrompt += '\n📝 ملاحظات السبورة:\n\n';
-            for (const s of image) userPrompt += s.content + '\n\n';
+            fullContent += '\n=== ملاحظات / صور ===\n\n';
+            for (const s of image) fullContent += s.content + '\n\n';
         }
 
-        const totalChars = userPrompt.length;
-        const systemPrompt = buildSystemPrompt(totalChars);
+        // Add audio transcription to the content for comprehensive analysis
+        let audioText = '';
+        if (audio.length > 0) {
+            audioText = audio.map((s: any) => s.content).join('\n\n');
+            fullContent += '\n=== شرح المعلم (تفريغ صوتي) ===\n\n' + audioText + '\n\n';
+        }
 
-        // 5. Call AI
-        let parsed: any = null;
-        let tokensUsed = 0;
-        let model = 'unknown';
+        // 5. Noise filter: remove repetitive paragraphs
+        const paragraphs = fullContent.split('\n\n').filter((p: string) => p.trim().length > 30);
+        const seen = new Map<string, number>();
+        const cleanParagraphs: string[] = [];
 
-        try {
-            const result = await callGeminiAnalysis(systemPrompt, userPrompt, geminiKey);
-            parsed = normalizeResponse(result.parsed);
-            tokensUsed = result.tokens;
-            model = 'gemini-2.5-flash';
-        } catch (e: any) {
-            console.warn(`[Analysis] Gemini failed: ${e.message}`);
+        for (const p of paragraphs) {
+            const fingerprint = p.trim().substring(0, 80).replace(/\s+/g, ' ');
+            const count = (seen.get(fingerprint) || 0) + 1;
+            seen.set(fingerprint, count);
+            if (count > 2) continue;
+            cleanParagraphs.push(p);
+        }
 
-            // Retry Gemini with focused content if too large, but preserve MUCH more text
-            if (userPrompt.length > 50000) {
+        const cleanContent = cleanParagraphs.join('\n\n');
+        console.log(`[Analysis] ⏱️ ${elapsed().toFixed(1)}s | Clean content: ${cleanContent.length} chars (removed ${fullContent.length - cleanContent.length} noise)`);
+
+        // ═══════════════════════════════════════════════════════════
+        // PHASE A: Generate SUMMARY
+        //   - Small (<120K): Single call → ~15-20s
+        //   - Large (>120K): Split into ~100K batches → PARALLEL → ~15-25s
+        // ═══════════════════════════════════════════════════════════
+
+        let totalTokens = 0;
+        let summary = '';
+        const hasAudio = audio.length > 0;
+
+        if (cleanContent.length <= 120000) {
+            // ──── SMALL/MEDIUM: Single Gemini call ────
+            console.log(`[Analysis] 📝 Single-call mode (${cleanContent.length} chars)`);
+
+            const prompt = buildSummaryPrompt(cleanContent, 1, 1, hasAudio);
+
+            for (let attempt = 1; attempt <= 2; attempt++) {
                 try {
-                    // Try to preserve up to 800,000 chars (Gemini 2.5 Flash has a 1M token context window, which is ~4M chars)
-                    // The failure is likely a timeout or parsing issue, so we send a slightly stripped version
-                    const stripped = userPrompt.substring(0, 800000);
-                    console.log(`[Analysis] Gemini retry with ${stripped.length} chars...`);
-                    const result = await callGeminiAnalysis(systemPrompt, stripped, geminiKey);
-                    parsed = normalizeResponse(result.parsed);
-                    tokensUsed = result.tokens;
-                    model = 'gemini-2.5-flash-retry';
-                } catch (e2: any) {
-                    console.warn(`[Analysis] Gemini retry failed: ${e2.message}`);
+                    const result = await callGeminiText(prompt, geminiKey);
+                    summary = result.text;
+                    totalTokens += result.tokens;
+                    break;
+                } catch (e: any) {
+                    console.warn(`[Analysis] Single-call attempt ${attempt} failed: ${e.message}`);
+                    if (attempt === 2) throw new Error(`Summary generation failed: ${e.message}`);
+                    await new Promise(r => setTimeout(r, 2000));
                 }
             }
 
-            // GPT-4o limit is strictly 128k tokens (~500k chars), but 60000 chars is too little. Let's send 300,000.
-            if (!parsed && openaiKey) {
-                const MAX_GPT_CHARS = 300000;
-                const truncatedGPTPrompt = userPrompt.length > MAX_GPT_CHARS ? userPrompt.substring(0, MAX_GPT_CHARS) + '\n...(اقتطاع)' : userPrompt;
-                console.log(`[Analysis] Falling back to GPT-4o with ${truncatedGPTPrompt.length} chars...`);
-                const result = await callGPT4oAnalysis(systemPrompt, truncatedGPTPrompt, openaiKey);
-                parsed = normalizeResponse(result.parsed);
-                tokensUsed = result.tokens;
-                model = 'gpt-4o';
+        } else {
+            // ──── LARGE: Batch + Parallel ────
+            // Gemini 2.5 Flash: 1M token context ≈ 3-4M chars input
+            // Each batch ~100K chars → Gemini handles it easily
+            // Run up to 3 batches in PARALLEL to save time
+            const BATCH_SIZE = 100000;
+            const OVERLAP = 3;
+            const batches = splitIntoBatches(cleanParagraphs, BATCH_SIZE, OVERLAP);
+            console.log(`[Analysis] 📝 Batch mode: ${batches.length} batches (${batches.map(b => b.length).join(', ')} chars)`);
+
+            // Run batches in parallel groups of 3
+            const PARALLEL_LIMIT = 3;
+            const summaryParts: string[] = new Array(batches.length).fill('');
+
+            for (let groupStart = 0; groupStart < batches.length; groupStart += PARALLEL_LIMIT) {
+                // Check time: need at least 30s for quiz generation
+                if (elapsed() > 110 && summaryParts.some(p => p.length > 0)) {
+                    console.warn(`[Analysis] ⏱️ Time pressure (${elapsed().toFixed(0)}s), stopping batches at group ${groupStart}`);
+                    break;
+                }
+
+                const groupEnd = Math.min(groupStart + PARALLEL_LIMIT, batches.length);
+                const groupIndices = Array.from({ length: groupEnd - groupStart }, (_, i) => groupStart + i);
+
+                console.log(`[Analysis] ⏱️ ${elapsed().toFixed(1)}s | Sending batch group [${groupIndices.map(i => i + 1).join(',')}] in PARALLEL...`);
+
+                const promises = groupIndices.map(i => {
+                    const prompt = buildSummaryPrompt(batches[i], i + 1, batches.length, hasAudio);
+                    return callGeminiText(prompt, geminiKey)
+                        .then(result => {
+                            summaryParts[i] = result.text;
+                            totalTokens += result.tokens;
+                            console.log(`[Analysis] Batch ${i + 1}: ${result.text.length} chars ✅`);
+                        })
+                        .catch(e => {
+                            console.warn(`[Analysis] Batch ${i + 1} failed: ${e.message}`);
+                            summaryParts[i] = '';
+                        });
+                });
+
+                await Promise.allSettled(promises);
             }
+
+            // Merge and deduplicate
+            const validParts = summaryParts.filter(p => p.length > 50);
+            summary = mergeAndDedup(validParts);
         }
 
-        if (!parsed) {
-            await supabase.from('lessons').update({ analysis_status: 'failed' }).eq('id', lessonId);
-            return errorResponse('Analysis failed: no valid response from AI models');
+        console.log(`[Analysis] ⏱️ ${elapsed().toFixed(1)}s | Summary: ${summary.length} chars`);
+
+        // ═══════════════════════════════════════════════════════════
+        // PHASE B: Generate QUIZZES + FOCUS + ESSAYS (JSON)
+        // Uses the FULL merged summary so questions cover the ENTIRE book
+        // ═══════════════════════════════════════════════════════════
+
+        const lectureCount = (summary.match(/^## /gm) || []).length;
+        const focusCount = Math.max(8, Math.min(20, lectureCount * 2));
+        const quizCount = Math.max(12, Math.min(30, lectureCount * 3));
+        const essayCount = Math.max(3, Math.min(8, lectureCount));
+
+        console.log(`[Analysis] ${lectureCount} lectures → ${focusCount} focus, ${quizCount} quiz, ${essayCount} essay`);
+
+        // For quiz generation: send the summary (already covers entire book)
+        // + audio for teacher emphasis
+        let quizSourceContent = summary;
+
+        if (audioText && audioText.length > 100) {
+            // Add condensed audio: important for focus points and teacher emphasis
+            const audioForQuiz = audioText.length > 40000 ? audioText.substring(0, 40000) + '\n...(اقتطاع)' : audioText;
+            quizSourceContent += '\n\n=== شرح المعلم الصوتي ===\n\n' + audioForQuiz;
         }
 
-        // 6. Build final result
+        // Cap to stay safe within Gemini context
+        if (quizSourceContent.length > 180000) {
+            quizSourceContent = quizSourceContent.substring(0, 180000) + '\n...(اقتطاع)';
+        }
+
+        const quizPrompt = `بناءً على المحتوى التالي (ملخص كتاب كامل + شرح صوتي إن وُجد)، أخرج JSON يحتوي على:
+
+1. **focusPoints** (${focusCount} نقطة) — النقاط المحورية الأهم في الكتاب:
+   - title: عنوان النقطة
+   - details: شرح تفصيلي (150-300 كلمة) يجمع بين محتوى الكتاب وشرح المعلم
+
+2. **quizzes** (${quizCount} سؤال متنوع يغطي كل محاضرات الكتاب):
+   - question: سؤال من المحتوى (محدد وليس عام)
+   - type: "mcq" أو "tf"
+   - options: 4 خيارات دائماً (حتى صح/خطأ: ["صح", "خطأ", "-", "-"])
+   - correctAnswer: رقم (0,1,2,3)
+   - explanation: شرح الإجابة
+
+3. **essayQuestions** (${essayCount} سؤال مقالي):
+   - question: سؤال يتطلب شرح
+   - idealAnswer: الإجابة النموذجية (150-300 كلمة)
+
+⚠️ قواعد:
+- وزّع الأسئلة على كل محاضرات الكتاب بالتساوي، لا تركّز على محاضرة واحدة فقط
+- correctAnswer = رقم فقط (0,1,2,3)
+- options = مصفوفة من 4 دائماً
+- JSON نقي بدون \`\`\`json
+
+--- المحتوى ---
+
+${quizSourceContent}`;
+
+        let quizParsed: any = { focusPoints: [], quizzes: [], essayQuestions: [] };
+
+        // Check time: only generate quizzes if we have time
+        if (elapsed() < 130) {
+            try {
+                const quizResult = await callGeminiJSON(quizPrompt, geminiKey);
+                quizParsed = normalizeQuizResponse(quizResult.parsed);
+                totalTokens += quizResult.tokens;
+            } catch (e: any) {
+                console.warn(`[Analysis] ⚠️ Quiz generation failed: ${e.message}`);
+                // Retry with smaller content if time allows
+                if (elapsed() < 135) {
+                    try {
+                        const smallerPrompt = quizPrompt.substring(0, 80000);
+                        const retry = await callGeminiJSON(smallerPrompt, geminiKey);
+                        quizParsed = normalizeQuizResponse(retry.parsed);
+                        totalTokens += retry.tokens;
+                    } catch (e2: any) {
+                        console.warn(`[Analysis] ⚠️ Quiz retry failed: ${e2.message}`);
+                    }
+                }
+            }
+        } else {
+            console.warn(`[Analysis] ⏱️ Skipping quiz generation (${elapsed().toFixed(0)}s elapsed, too close to timeout)`);
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // PHASE C: Save Results
+        // ═══════════════════════════════════════════════════════════
+
         const analysisResult = {
-            summary: parsed.summary,
-            focusPoints: parsed.focusPoints,
-            quizzes: parsed.quizzes,
-            essayQuestions: parsed.essayQuestions,
+            summary,
+            focusPoints: quizParsed.focusPoints || [],
+            quizzes: quizParsed.quizzes || [],
+            essayQuestions: quizParsed.essayQuestions || [],
             metadata: {
-                model,
+                model: 'gemini-2.5-flash-v9',
                 contentStats: {
-                    pdfChars: pdf.reduce((s: number, x: any) => s + (x.content?.length || 0), 0),
+                    pdfChars,
                     audioChars,
-                    imageChars: image.reduce((s: number, x: any) => s + (x.content?.length || 0), 0),
-                    focusMatches: focusedIds.size
+                    imageChars,
+                    totalSections: allSections.length,
+                    lecturesDetected: lectureCount,
+                    focusMatches: focusedIds.size,
+                    processingTime: elapsed().toFixed(1) + 's'
                 },
                 generatedAt: new Date().toISOString(),
-                schemaVersion: 6
+                schemaVersion: 9
             }
         };
 
-        // 7. Save to DB
         await supabase.from('lessons').update({
             analysis_result: analysisResult,
             analysis_status: 'completed'
         }).eq('id', lessonId);
 
-        console.log(`[Analysis] ✅ Done: ${model}, ${tokensUsed} tokens, ${parsed.focusPoints?.length || 0} focus, ${parsed.quizzes?.length || 0} quiz`);
+        console.log(`[Analysis] ✅ Done in ${elapsed().toFixed(1)}s: ${totalTokens} tokens, ${summary.length} chars summary, ${lectureCount} lectures, ${quizParsed.focusPoints?.length || 0} focus, ${quizParsed.quizzes?.length || 0} quiz, ${quizParsed.essayQuestions?.length || 0} essay`);
 
         return jsonResponse({ success: true, data: analysisResult });
 
     } catch (error: any) {
         console.error('Analysis Fatal Error:', error);
-        // ✅ Always return CORS headers even on crash
         return new Response(
             JSON.stringify({ error: error.message || 'Analysis failed', stack: error.stack }),
-            {
-                status: 500,
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-            }
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
     }
 });
