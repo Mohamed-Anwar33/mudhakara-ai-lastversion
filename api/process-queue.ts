@@ -1,11 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-import { processPdfJob } from './lib/pdf-processor';
-import { processAudioJob } from './lib/audio-processor.ts';
-import { embedLessonSections } from './lib/embeddings';
-import { generateLessonAnalysis } from './lib/analysis';
-import { processImageJob } from './lib/image-processor.ts';
-import { segmentBook } from './lib/book-segmenter';
+import { processPdfJob } from './_lib/pdf-processor';
+import { processAudioJob } from './_lib/audio-processor.ts';
+import { embedLessonSections } from './_lib/embeddings';
+import { generateLessonAnalysis } from './_lib/analysis';
+import { processImageJob } from './_lib/image-processor.ts';
+import { segmentBook } from './_lib/book-segmenter';
 
 /**
  * Queue Worker — Process one job per invocation.

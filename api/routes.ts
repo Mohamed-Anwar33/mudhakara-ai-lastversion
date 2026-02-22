@@ -1,12 +1,12 @@
 
 import express from 'express';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { processPdfJob } from './lib/pdf-processor';
-import { processAudioJob } from './lib/audio-processor';
-import { processImageJob } from './lib/image-processor';
-import { generateLessonAnalysis } from './lib/analysis';
-import { embedLessonSections } from './lib/embeddings';
-import { segmentBook } from './lib/book-segmenter';
+import { processPdfJob } from './_lib/pdf-processor';
+import { processAudioJob } from './_lib/audio-processor';
+import { processImageJob } from './_lib/image-processor';
+import { generateLessonAnalysis } from './_lib/analysis';
+import { embedLessonSections } from './_lib/embeddings';
+import { segmentBook } from './_lib/book-segmenter';
 
 const router = express.Router();
 
