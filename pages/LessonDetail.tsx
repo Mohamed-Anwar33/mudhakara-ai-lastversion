@@ -11,7 +11,7 @@ import {
 import { Lesson, Source, AIResult } from '../types';
 import { saveFile, deleteFile, getFile } from '../services/storage';
 import { extractPdfText, safeTruncate } from '../utils/pdfUtils';
-import { uploadHomeworkFile, supabase } from '../services/supabaseService';
+import { uploadHomeworkFile, supabase, upsertLesson } from '../services/supabaseService';
 import { PDFDocument } from 'pdf-lib';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -74,9 +74,12 @@ const LessonDetail: React.FC = () => {
     loadData();
   }, [lessonId, subjectId]);
 
-  const updateLesson = (newLesson: Lesson) => {
+  const updateLesson = async (newLesson: Lesson) => {
     setLesson(newLesson);
     try {
+      if (supabase) {
+        await upsertLesson(newLesson);
+      }
       const key = `mudhakara_lessons_${subjectId}`;
       const saved = localStorage.getItem(key);
       let lessons: Lesson[] = saved ? JSON.parse(saved) : [];
@@ -147,9 +150,11 @@ const LessonDetail: React.FC = () => {
 
       // 📝 Normal Extraction Flow
       const filesToIngest: { path: string, type: string, name: string, sourceId?: string }[] = [];
+      let updatedSources = [...lesson.sources];
+      let hasUpdates = false;
 
       // Helper to process a single source
-      const processSourceForIngest = async (source: Source) => {
+      const processSourceForIngest = async (source: Source, index: number) => {
         // Skip YouTube for server-side ingestion (kept client-side for now or future enhancement)
         if (source.type === 'youtube') return;
 
@@ -181,8 +186,8 @@ const LessonDetail: React.FC = () => {
             if (parts.length > 1) storagePath = parts[1];
 
             // Update local source with URL to avoid re-uploading
-            const updatedSource = { ...source, uploadedUrl: publicUrl };
-            // We'll update state later to avoid race conditions, or implicitly handled
+            updatedSources[index] = { ...source, uploadedUrl: publicUrl };
+            hasUpdates = true;
           }
         }
 
@@ -198,8 +203,13 @@ const LessonDetail: React.FC = () => {
 
       // Process all sources in parallel? Or sequential to update progress?
       // Sequential is safer for uploads to avoid hitting limits
-      for (const source of lesson.sources) {
-        await processSourceForIngest(source);
+      for (let i = 0; i < lesson.sources.length; i++) {
+        await processSourceForIngest(lesson.sources[i], i);
+      }
+
+      if (hasUpdates) {
+        console.log("Saving uploaded URLs to database before ingestion...");
+        await updateLesson({ ...lesson, sources: updatedSources });
       }
 
       if (filesToIngest.length === 0) {
