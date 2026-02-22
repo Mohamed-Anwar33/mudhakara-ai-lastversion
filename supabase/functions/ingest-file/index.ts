@@ -140,13 +140,26 @@ async function processPdf(supabase: any, lessonId: string, filePath: string, con
     const { data: fileData, error } = await supabase.storage.from('homework-uploads').download(filePath);
     if (error || !fileData) throw new Error(`Download: ${error?.message}`);
 
-    const buffer = await fileData.arrayBuffer();
-    const base64 = toBase64(buffer);
-    console.log(`[PDF] Downloaded: ${(buffer.byteLength / 1024).toFixed(1)} KB`);
+    let buffer = await fileData.arrayBuffer();
+    const fileName = filePath.split('/').pop() || 'document.pdf';
+    console.log(`[PDF] Downloaded: ${(buffer.byteLength / (1024 * 1024)).toFixed(2)} MB`);
+
+    let pdfPart: any;
+    // Use Files API for PDFs larger than 10MB to save memory
+    if (buffer.byteLength > 10 * 1024 * 1024) {
+        console.log(`[PDF] Large file detected, using Gemini Files API...`);
+        const fileUri = await uploadToGeminiFiles(buffer, fileName, 'application/pdf', geminiKey);
+        buffer = null as any; // Free memory early
+        pdfPart = { fileData: { fileUri, mimeType: 'application/pdf' } };
+    } else {
+        const base64 = toBase64(buffer);
+        buffer = null as any; // Free memory early
+        pdfPart = { inlineData: { data: base64, mimeType: 'application/pdf' } };
+    }
 
     const text = await callGemini(geminiKey, [
         { text: PDF_PROMPT },
-        { inlineData: { data: base64, mimeType: 'application/pdf' } }
+        pdfPart
     ]);
 
     if (!text || text.length < 50) throw new Error(`PDF: Gemini returned ${text.length} chars`);
@@ -170,18 +183,18 @@ async function processAudio(supabase: any, lessonId: string, filePath: string, c
     const { data: fileData, error } = await supabase.storage.from('homework-uploads').download(filePath);
     if (error || !fileData) throw new Error(`Download: ${error?.message}`);
 
-    const buffer = await fileData.arrayBuffer();
+    let buffer = await fileData.arrayBuffer();
     const fileName = filePath.split('/').pop() || 'audio.mp3';
     const mimeType = getMime(fileName);
     console.log(`[Audio] File: ${(buffer.byteLength / (1024 * 1024)).toFixed(1)} MB`);
 
-    let audioPart: any;
-    if (buffer.byteLength > GEMINI_INLINE_MAX) {
-        const fileUri = await uploadToGeminiFiles(buffer, fileName, mimeType, geminiKey);
-        audioPart = { fileData: { fileUri, mimeType } };
-    } else {
-        audioPart = { inlineData: { data: toBase64(buffer), mimeType } };
-    }
+    // ✅ ALWAYS use Files API for audio to avoid base64 memory doubling
+    // This sends the raw buffer directly to Gemini without base64 encoding
+    const fileUri = await uploadToGeminiFiles(buffer, fileName, mimeType, geminiKey);
+    // Free the buffer immediately after upload to reduce memory pressure
+    buffer = null as any;
+
+    const audioPart = { fileData: { fileUri, mimeType } };
 
     // Try Gemini with retry
     let text = '';
@@ -211,13 +224,27 @@ async function processImage(supabase: any, lessonId: string, filePath: string, c
     const { data: fileData, error } = await supabase.storage.from('homework-uploads').download(filePath);
     if (error || !fileData) throw new Error(`Download: ${error?.message}`);
 
-    const buffer = await fileData.arrayBuffer();
-    const mimeType = getMime(filePath.split('/').pop() || 'image.jpg');
-    const base64 = toBase64(buffer);
+    let buffer = await fileData.arrayBuffer();
+    const fileName = filePath.split('/').pop() || 'image.jpg';
+    const mimeType = getMime(fileName);
+    console.log(`[Image] Downloaded: ${(buffer.byteLength / (1024 * 1024)).toFixed(2)} MB`);
+
+    let imagePart: any;
+    // Use Files API for images larger than 10MB to save memory
+    if (buffer.byteLength > 10 * 1024 * 1024) {
+        console.log(`[Image] Large file detected, using Gemini Files API...`);
+        const fileUri = await uploadToGeminiFiles(buffer, fileName, mimeType, geminiKey);
+        buffer = null as any; // Free memory early
+        imagePart = { fileData: { fileUri, mimeType } };
+    } else {
+        const base64 = toBase64(buffer);
+        buffer = null as any; // Free memory early
+        imagePart = { inlineData: { data: base64, mimeType } };
+    }
 
     const text = await callGemini(geminiKey, [
         { text: IMAGE_PROMPT },
-        { inlineData: { data: base64, mimeType } }
+        imagePart
     ]);
 
     if (!text || text.length < 10) {
