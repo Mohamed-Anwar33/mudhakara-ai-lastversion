@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useState } from 'react';
 import { signUp, signIn } from '../services/supabaseService';
-import { Mail, Lock, Loader2, ArrowRight, UserPlus, LogIn, AlertCircle } from 'lucide-react';
+import { Mail, Lock, Loader2, ArrowRight, UserPlus, LogIn, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 import toast from 'react-hot-toast';
@@ -10,6 +10,7 @@ const Auth: React.FC = () => {
     const [isLogin, setIsLogin] = useState(true);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const navigate = useNavigate();
@@ -38,7 +39,17 @@ const Auth: React.FC = () => {
             }
             navigate('/dashboard');
         } catch (err: any) {
-            const msg = err.message || 'حدث خطأ أثناء المصادقة';
+            let msg = err.message || 'حدث خطأ أثناء المصادقة';
+
+            // Handle specific Supabase errors with friendly Arabic messages
+            if (msg.includes('User already registered') || msg.includes('already exists')) {
+                msg = 'هذا البريد الإلكتروني مسجل لدينا بالفعل. قم بتسجيل الدخول بدلاً من ذلك.';
+            } else if (msg.includes('Invalid login credentials')) {
+                msg = 'البريد الإلكتروني أو كلمة المرور غير صحيحة.';
+            } else if (msg.includes('Password should be at least')) {
+                msg = 'كلمة المرور ضعيفة جداً. يجب أن تتكون من 6 أحرف على الأقل.';
+            }
+
             setError(msg);
             toast.error(msg);
         } finally {
@@ -76,6 +87,7 @@ const Auth: React.FC = () => {
                                 placeholder="البريد الإلكتروني"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
+                                autoComplete="username"
                                 className="w-full bg-slate-100 border-2 border-slate-100 rounded-2xl py-4 pr-12 pl-4 outline-none focus:border-indigo-500 focus:bg-white transition-all font-bold text-slate-900 placeholder:text-slate-400 text-right"
                                 required
                             />
@@ -83,13 +95,22 @@ const Auth: React.FC = () => {
                         <div className="relative">
                             <Lock className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
                             <input
-                                type="password"
+                                type={showPassword ? "text" : "password"}
                                 placeholder="كلمة المرور"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                className="w-full bg-slate-100 border-2 border-slate-100 rounded-2xl py-4 pr-12 pl-4 outline-none focus:border-indigo-500 focus:bg-white transition-all font-bold text-slate-900 placeholder:text-slate-400 text-right"
+                                autoComplete={isLogin ? "current-password" : "new-password"}
+                                className="w-full bg-slate-100 border-2 border-slate-100 rounded-2xl py-4 pr-12 pl-12 outline-none focus:border-indigo-500 focus:bg-white transition-all font-bold text-slate-900 placeholder:text-slate-400 text-right"
                                 required
                             />
+                            <button
+                                type="button"
+                                onClick={() => setShowPassword(!showPassword)}
+                                className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600 transition-colors focus:outline-none focus:text-indigo-600 p-1 rounded-lg"
+                                title={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
+                            >
+                                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                            </button>
                         </div>
                     </div>
 
