@@ -95,7 +95,7 @@ async function callGemini(apiKey: string, parts: any[], maxTokens = 65536): Prom
     return resParts.filter((p: any) => p.text).map((p: any) => p.text).join('').trim();
 }
 
-async function uploadToGeminiFiles(buffer: ArrayBuffer, fileName: string, mimeType: string, apiKey: string): Promise<string> {
+async function uploadToGeminiFiles(fileData: Blob, fileName: string, mimeType: string, apiKey: string): Promise<string> {
     // Step 1: Start resumable upload
     const startRes = await fetch(
         `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`,
@@ -104,7 +104,7 @@ async function uploadToGeminiFiles(buffer: ArrayBuffer, fileName: string, mimeTy
             headers: {
                 'X-Goog-Upload-Protocol': 'resumable',
                 'X-Goog-Upload-Command': 'start',
-                'X-Goog-Upload-Header-Content-Length': buffer.byteLength.toString(),
+                'X-Goog-Upload-Header-Content-Length': fileData.size.toString(),
                 'X-Goog-Upload-Header-Content-Type': mimeType,
                 'Content-Type': 'application/json'
             },
@@ -119,11 +119,11 @@ async function uploadToGeminiFiles(buffer: ArrayBuffer, fileName: string, mimeTy
     const uploadRes = await fetch(uploadUrl, {
         method: 'PUT',
         headers: {
-            'Content-Length': buffer.byteLength.toString(),
+            'Content-Length': fileData.size.toString(),
             'X-Goog-Upload-Offset': '0',
             'X-Goog-Upload-Command': 'upload, finalize'
         },
-        body: buffer
+        body: fileData
     });
     if (!uploadRes.ok) throw new Error(`File API upload: ${uploadRes.status}`);
     const fileInfo = await uploadRes.json();
@@ -148,28 +148,21 @@ async function processPdf(supabase: any, lessonId: string, filePath: string, con
     const fileName = filePath.split('/').pop() || 'document.pdf';
     let pdfPart: any;
 
-    if (file.base64Chunk) {
-        console.log(`[PDF] Received base64 chunk from client, passing directly to Gemini.`);
-        const base64Data = file.base64Chunk.split(',')[1] || file.base64Chunk;
-        // The chunking mechanism in frontend already ensures chunks are < 10MB (usually ~1MB for 15 pages)
-        pdfPart = { inlineData: { data: base64Data, mimeType: 'application/pdf' } };
-    } else {
-        const { data: fileData, error } = await supabase.storage.from('homework-uploads').download(filePath);
-        if (error || !fileData) throw new Error(`Download: ${error?.message}`);
-        let buffer = await fileData.arrayBuffer();
-        console.log(`[PDF] Downloaded: ${(buffer.byteLength / (1024 * 1024)).toFixed(2)} MB`);
+    const { data: fileData, error } = await supabase.storage.from('homework-uploads').download(filePath);
+    if (error || !fileData) throw new Error(`Download: ${error?.message}`);
 
-        // Use Files API for PDFs larger than 10MB to save memory
-        if (buffer.byteLength > 10 * 1024 * 1024) {
-            console.log(`[PDF] Large file detected, using Gemini Files API...`);
-            const fileUri = await uploadToGeminiFiles(buffer, fileName, 'application/pdf', geminiKey);
-            buffer = null as any; // Free memory early
-            pdfPart = { fileData: { fileUri, mimeType: 'application/pdf' } };
-        } else {
-            const base64 = toBase64(buffer);
-            buffer = null as any; // Free memory early
-            pdfPart = { inlineData: { data: base64, mimeType: 'application/pdf' } };
-        }
+    const sizeMB = (fileData.size / (1024 * 1024)).toFixed(2);
+    console.log(`[PDF] Downloaded size: ${sizeMB} MB`);
+
+    // Use Files API for PDFs larger than 10MB to save memory
+    if (fileData.size > 10 * 1024 * 1024) {
+        console.log(`[PDF] Large file detected, using Gemini Files API...`);
+        const fileUri = await uploadToGeminiFiles(fileData, fileName, 'application/pdf', geminiKey);
+        pdfPart = { fileData: { fileUri, mimeType: 'application/pdf' } };
+    } else {
+        const buffer = await fileData.arrayBuffer();
+        const base64 = toBase64(buffer);
+        pdfPart = { inlineData: { data: base64, mimeType: 'application/pdf' } };
     }
 
     const text = await callGemini(geminiKey, [
@@ -200,16 +193,13 @@ async function processAudio(supabase: any, lessonId: string, filePath: string, c
     const { data: fileData, error } = await supabase.storage.from('homework-uploads').download(filePath);
     if (error || !fileData) throw new Error(`Download: ${error?.message}`);
 
-    let buffer = await fileData.arrayBuffer();
     const fileName = filePath.split('/').pop() || 'audio.mp3';
     const mimeType = getMime(fileName);
-    console.log(`[Audio] File: ${(buffer.byteLength / (1024 * 1024)).toFixed(1)} MB`);
+    console.log(`[Audio] File size: ${(fileData.size / (1024 * 1024)).toFixed(1)} MB`);
 
     // ✅ ALWAYS use Files API for audio to avoid base64 memory doubling
-    // This sends the raw buffer directly to Gemini without base64 encoding
-    const fileUri = await uploadToGeminiFiles(buffer, fileName, mimeType, geminiKey);
-    // Free the buffer immediately after upload to reduce memory pressure
-    buffer = null as any;
+    // This sends the raw Blob directly to Gemini without loading fully into V8 RAM
+    const fileUri = await uploadToGeminiFiles(fileData, fileName, mimeType, geminiKey);
 
     const audioPart = { fileData: { fileUri, mimeType } };
 
@@ -241,21 +231,19 @@ async function processImage(supabase: any, lessonId: string, filePath: string, c
     const { data: fileData, error } = await supabase.storage.from('homework-uploads').download(filePath);
     if (error || !fileData) throw new Error(`Download: ${error?.message}`);
 
-    let buffer = await fileData.arrayBuffer();
     const fileName = filePath.split('/').pop() || 'image.jpg';
     const mimeType = getMime(fileName);
-    console.log(`[Image] Downloaded: ${(buffer.byteLength / (1024 * 1024)).toFixed(2)} MB`);
+    console.log(`[Image] Downloaded size: ${(fileData.size / (1024 * 1024)).toFixed(2)} MB`);
 
     let imagePart: any;
     // Use Files API for images larger than 10MB to save memory
-    if (buffer.byteLength > 10 * 1024 * 1024) {
+    if (fileData.size > 10 * 1024 * 1024) {
         console.log(`[Image] Large file detected, using Gemini Files API...`);
-        const fileUri = await uploadToGeminiFiles(buffer, fileName, mimeType, geminiKey);
-        buffer = null as any; // Free memory early
+        const fileUri = await uploadToGeminiFiles(fileData, fileName, mimeType, geminiKey);
         imagePart = { fileData: { fileUri, mimeType } };
     } else {
+        const buffer = await fileData.arrayBuffer();
         const base64 = toBase64(buffer);
-        buffer = null as any; // Free memory early
         imagePart = { inlineData: { data: base64, mimeType } };
     }
 
@@ -412,6 +400,26 @@ serve(async (req) => {
         if (!geminiKey) return errorResponse('Missing GEMINI_API_KEY', 500);
 
         const supabase = createClient(supabaseUrl, supabaseKey);
+
+        // Security Validation (Checklist #5): Ensure all file paths belong to this lesson
+        const { data: lessonData, error: lessonError } = await supabase
+            .from('lessons')
+            .select('sources')
+            .eq('id', lessonId)
+            .single();
+
+        if (lessonError || !lessonData) {
+            return errorResponse('Lesson not found or access denied', 404);
+        }
+
+        const sourcesText = JSON.stringify(lessonData.sources || []);
+        for (const file of files) {
+            if (file.path && !sourcesText.includes(file.path)) {
+                console.warn(`[Security] Unauthorized file processing attempt: ${file.path} not in lesson ${lessonId}`);
+                return errorResponse(`Unauthorized file path: ${file.path}`, 403);
+            }
+        }
+
         const results = [];
 
         for (const file of files) {
