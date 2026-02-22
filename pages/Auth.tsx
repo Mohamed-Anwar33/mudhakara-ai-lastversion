@@ -25,17 +25,23 @@ const Auth: React.FC = () => {
                 toast.success('أهلاً بك! 👋 تم تسجيل الدخول');
             } else {
                 const { session } = await signUp(email, password);
-                if (session) {
-                    toast.success('مرحباً بك في مذاكرة! 🌟 حسابك جاهز');
-                    navigate('/dashboard');
-                    return;
-                } else {
-                    // If session is null, it means Email Confirmation is enabled on Supabase
-                    toast.success('تم إنشاء حسابك! 📧 راجع بريدك للتفعيل');
-                    setIsLogin(true);
-                    setLoading(false);
-                    return;
-                }
+                // --- Email Confirmation Disabled by User Request ---
+                // if (session) {
+                //     toast.success('مرحباً بك في مذاكرة! 🌟 حسابك جاهز');
+                //     navigate('/dashboard');
+                //     return;
+                // } else {
+                //     // If session is null, it means Email Confirmation is enabled on Supabase
+                //     toast.success('تم إنشاء حسابك! 📧 راجع بريدك للتفعيل');
+                //     setIsLogin(true);
+                //     setLoading(false);
+                //     return;
+                // }
+
+                // Force Auto-login and bypass email checks
+                toast.success('مرحباً بك في مذاكرة! 🌟 حسابك جاهز للعمل');
+                navigate('/dashboard');
+                return;
             }
             navigate('/dashboard');
         } catch (err: any) {
