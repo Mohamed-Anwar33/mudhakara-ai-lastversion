@@ -10,9 +10,7 @@ import {
 } from 'lucide-react';
 import { Lesson, Source, AIResult } from '../types';
 import { saveFile, deleteFile, getFile } from '../services/storage';
-import { extractPdfText, safeTruncate } from '../utils/pdfUtils';
 import { uploadHomeworkFile, supabase, upsertLesson } from '../services/supabaseService';
-import { PDFDocument } from 'pdf-lib';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -92,17 +90,27 @@ const LessonDetail: React.FC = () => {
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'audio' | 'image' | 'document') => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const content = reader.result as string;
-        const fileId = `${type}_${lessonId}_${Date.now()}`;
-        await saveFile(fileId, content, file.name);
-        const newSource: Source = { id: fileId, type: type, name: file.name, content: "[Stored]" };
-        if (lesson) updateLesson({ ...lesson, sources: [...lesson.sources, newSource] });
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+
+    if (type === 'document') {
+      const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+      if (!isPdf) {
+        setError('الملفات المدعومة للمستندات حاليًا: PDF فقط.');
+        e.target.value = '';
+        return;
+      }
     }
+
+    const sourceType: Source['type'] = type === 'document' ? 'pdf' : type;
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      const content = reader.result as string;
+      const fileId = `${sourceType}_${lessonId}_${Date.now()}`;
+      await saveFile(fileId, content, file.name);
+      const newSource: Source = { id: fileId, type: sourceType, name: file.name, content: "[Stored]" };
+      if (lesson) updateLesson({ ...lesson, sources: [...lesson.sources, newSource] });
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleAddYoutube = () => {
@@ -123,56 +131,106 @@ const LessonDetail: React.FC = () => {
   const handleExtractMemory = async () => {
     if (!lesson) return;
     setIsProcessing(true);
-    setProgressMsg('🚀 تشغيل المحرك الذكي... جاري التجهيز');
+    setProgressMsg('Starting analysis pipeline...');
     setError(null);
 
-    try {
-      // ─── Helper: call Edge Function via direct fetch (bypasses JWT issue) ───
-      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-      const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-      const callEdgeFunction = async (fnName: string, body: any) => {
-        const res = await fetch(`${SUPABASE_URL}/functions/v1/${fnName}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': SUPABASE_ANON_KEY,
-            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-          },
-          body: JSON.stringify(body)
-        });
-        if (!res.ok) {
-          const text = await res.text().catch(() => '');
-          throw new Error(`Edge Function ${fnName}: ${res.status} ${text.substring(0, 200)}`);
+    const enqueueIngest = async (
+      filePayload: { fileName: string; filePath: string; fileType: 'pdf' | 'audio' | 'image'; contentHash?: string },
+      retries = 2
+    ) => {
+      let lastError: Error | null = null;
+      for (let attempt = 1; attempt <= retries + 1; attempt++) {
+        try {
+          const response = await fetch('/api/ingest-file', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              lessonId: lesson.id,
+              files: [filePayload]
+            })
+          });
+          const payload = await response.json().catch(() => ({}));
+
+          if (!response.ok) {
+            throw new Error(payload?.error || `Ingest failed (${response.status})`);
+          }
+
+          const first = payload?.results?.[0] || payload;
+          if (!first || typeof first !== 'object' || !first.status) {
+            throw new Error('Invalid ingest response');
+          }
+
+          return first as { status: string; message?: string; jobId?: string };
+        } catch (err: any) {
+          lastError = err instanceof Error ? err : new Error(String(err));
+          if (attempt <= retries) {
+            await delay(700 * attempt);
+          }
         }
-        return res.json();
-      };
+      }
 
-      // 📝 Normal Extraction Flow
-      const filesToIngest: { path: string, type: string, name: string, sourceId?: string }[] = [];
+      throw lastError || new Error('Ingest failed');
+    };
+
+    const triggerQueueWorker = async (maxJobs = 3) => {
+      const workerRes = await fetch(`/api/process-queue?maxJobs=${maxJobs}`, {
+        method: 'POST'
+      });
+      const workerPayload = await workerRes.json().catch(() => ({}));
+
+      if (!workerRes.ok) {
+        throw new Error(workerPayload?.error || `Queue worker failed (${workerRes.status})`);
+      }
+
+      return workerPayload;
+    };
+
+    const fetchJobStatus = async () => {
+      const statusRes = await fetch(`/api/job-status?lessonId=${lesson.id}`);
+      const statusPayload = await statusRes.json().catch(() => ({}));
+
+      if (!statusRes.ok) {
+        throw new Error(statusPayload?.error || `Status fetch failed (${statusRes.status})`);
+      }
+
+      return statusPayload;
+    };
+
+    try {
+      const filesToIngest: { path: string; type: 'pdf' | 'audio' | 'image'; name: string; sourceId: string; contentHash?: string }[] = [];
       let updatedSources = [...lesson.sources];
       let hasUpdates = false;
 
-      // Helper to process a single source
+      const inferType = (source: Source): 'pdf' | 'audio' | 'image' | null => {
+        if (source.type === 'pdf' || source.type === 'document') return 'pdf';
+        if (source.type === 'audio') return 'audio';
+        if (source.type === 'image') return 'image';
+        if (/\.(pdf)$/i.test(source.name)) return 'pdf';
+        if (/\.(mp3|wav|m4a|mp4|ogg|webm)$/i.test(source.name)) return 'audio';
+        if (/\.(jpg|jpeg|png|webp)$/i.test(source.name)) return 'image';
+        return null;
+      };
+
       const processSourceForIngest = async (source: Source, index: number) => {
-        // Skip YouTube for server-side ingestion (kept client-side for now or future enhancement)
         if (source.type === 'youtube') return;
 
-        let storagePath = '';
+        const normalizedType = inferType(source);
+        if (!normalizedType) return;
 
-        if (source.uploadedUrl) {
-          // Already uploaded, extract path
-          // URL: .../homework-uploads/filename
+        let storagePath = '';
+        if (source.uploadedUrl && source.uploadedUrl.includes('/homework-uploads/')) {
           const parts = source.uploadedUrl.split('/homework-uploads/');
-          if (parts.length > 1) storagePath = parts[1];
+          if (parts.length > 1) {
+            storagePath = parts[1];
+          }
         }
 
         if (!storagePath) {
-          // Need to upload
-          setProgressMsg(`📡 نقل "${source.name}" إلى السحابة الذكية...`);
+          setProgressMsg(`Uploading "${source.name}" to storage...`);
           let fileToUpload: File | null = null;
 
-          // Try to get from storage
           const content = await getFile(source.id);
           if (content && content.startsWith('data:')) {
             const base64Data = content.split(',')[1];
@@ -184,8 +242,6 @@ const LessonDetail: React.FC = () => {
             const publicUrl = await uploadHomeworkFile(fileToUpload);
             const parts = publicUrl.split('/homework-uploads/');
             if (parts.length > 1) storagePath = parts[1];
-
-            // Update local source with URL to avoid re-uploading
             updatedSources[index] = { ...source, uploadedUrl: publicUrl };
             hasUpdates = true;
           }
@@ -194,118 +250,105 @@ const LessonDetail: React.FC = () => {
         if (storagePath) {
           filesToIngest.push({
             path: storagePath,
-            type: source.type,
+            type: normalizedType,
             name: source.name,
-            sourceId: source.id
+            sourceId: source.id,
+            contentHash: source.contentHash
           });
         }
       };
 
-      // Process all sources in parallel? Or sequential to update progress?
-      // Sequential is safer for uploads to avoid hitting limits
       for (let i = 0; i < lesson.sources.length; i++) {
         await processSourceForIngest(lesson.sources[i], i);
       }
 
       if (hasUpdates) {
-        console.log("Saving uploaded URLs to database before ingestion...");
         await updateLesson({ ...lesson, sources: updatedSources });
       }
 
       if (filesToIngest.length === 0) {
-        console.warn("No files to ingest for deep analysis");
+        throw new Error('No supported files found. Add PDF/audio/image first.');
       }
 
-      // 2. Call Ingest sequentially to show exact progress
-      if (filesToIngest.length > 0) {
-        for (const fileItem of filesToIngest) {
+      const ingestFailures: string[] = [];
+      let acceptedIngestCount = 0;
+      const acceptedStatuses = new Set(['queued', 'duplicate', 'already_queued']);
 
-          let actionMsg = `المعالجة العميقة لملف "${fileItem.name}"...`;
-          if (fileItem.type === 'pdf' || fileItem.type === 'document' || fileItem.name.endsWith('.pdf')) {
-            actionMsg = `🤖 قراءة نصوص الكتاب/الملزمة "${fileItem.name}"...`;
-          } else if (fileItem.type === 'audio' || fileItem.name.match(/\.(mp3|wav|m4a|mp4|ogg)$/i)) {
-            actionMsg = `🎙️ استماع وتفريغ التسجيل الصوتي "${fileItem.name}"...`;
-          } else if (fileItem.type === 'image' || fileItem.name.match(/\.(jpg|jpeg|png|webp)$/i)) {
-            actionMsg = `👁️ تحليل صورة السبورة/الملاحظة "${fileItem.name}"...`;
-          }
+      for (let i = 0; i < filesToIngest.length; i++) {
+        const fileItem = filesToIngest[i];
+        setProgressMsg(`Queueing file ${i + 1}/${filesToIngest.length}: ${fileItem.name}`);
 
-          setProgressMsg(actionMsg);
-
-          setProgressMsg(actionMsg);
-
-          // Smart routing: Express (local dev) → Edge Functions (production/Vercel)
-          const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-
-          let ingestOk = false;
-
-          // Standard single-file payload
-          // The Edge Function will download the file from Supabase Storage using the path
-          // and use Gemini Files API which handles up to 1M tokens natively without chunking.
-          const payload = {
-            lessonId: lesson.id,
-            files: [{
-              path: fileItem.path,
-              type: fileItem.type,
-              name: fileItem.name
-            }]
-          };
-
-          if (isLocalDev) {
-            try {
-              const ingestRes = await fetch('/api/ingest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-              if (ingestRes.ok) ingestOk = true;
-            } catch (e) {
-              console.warn("Express failed, trying Edge");
-            }
-          }
-
-          if (!ingestOk) {
-            await callEdgeFunction('ingest-file', payload);
-            ingestOk = true;
-          }
-
-          if (!ingestOk) throw new Error(`فشل معالجة الملف: ${fileItem.name}`);
-        }
-      }
-
-      // 3. Call Analyze
-      setProgressMsg('🧠 التحليل العبقري... يُحدد النقاط المهمة ويولّد الأسئلة والملخصات');
-
-      let result: AIResult | null = null;
-      const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-
-      // Try Express first in local dev
-      if (isLocalDev) {
         try {
-          console.log("Calling Express /api/analyze...");
-          const analyzeRes = await fetch('/api/analyze', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ lessonId: lesson.id })
+          const ingestResult = await enqueueIngest({
+            fileName: fileItem.name,
+            filePath: fileItem.path,
+            fileType: fileItem.type,
+            contentHash: fileItem.contentHash
           });
-          const analyzeData = await analyzeRes.json();
-          if (analyzeRes.ok && analyzeData.success) {
-            result = analyzeData.data;
+
+          if (acceptedStatuses.has(ingestResult.status)) {
+            acceptedIngestCount++;
+          } else {
+            ingestFailures.push(`${fileItem.name}: ${ingestResult.message || ingestResult.status}`);
           }
-        } catch (expressErr: any) {
-          console.warn("Express analyze failed, trying Edge Function:", expressErr.message);
+        } catch (ingestErr: any) {
+          ingestFailures.push(`${fileItem.name}: ${ingestErr.message || 'enqueue failed'}`);
         }
       }
 
-      // Fallback or production: Edge Function
-      if (!result) {
-        console.log("Calling Edge Function analyze-lesson...");
-        const data = await callEdgeFunction('analyze-lesson', { lessonId: lesson.id });
-        result = data?.data || data;
+      if (acceptedIngestCount === 0) {
+        throw new Error(`All files failed to enqueue. ${ingestFailures.join(' | ')}`);
       }
 
-      if (!result) throw new Error('لم يتم استلام نتائج التحليل');
+      setProgressMsg('Triggering queue worker...');
+      await triggerQueueWorker(3).catch(() => undefined);
 
-      // 4. Update Lesson
+      setProgressMsg('Processing queue and waiting for analysis...');
+      let result: AIResult | null = null;
+      const maxPollAttempts = 240;
+
+      for (let attempt = 1; attempt <= maxPollAttempts; attempt++) {
+        if (attempt % 2 === 1) {
+          await triggerQueueWorker(3).catch(() => undefined);
+        }
+
+        const status = await fetchJobStatus();
+        const jobs = Array.isArray(status?.jobs) ? status.jobs : [];
+        const activeJobs = jobs.filter((job: any) => job.status === 'pending' || job.status === 'processing');
+        const failedJobs = jobs.filter((job: any) => job.status === 'failed' || job.status === 'dead');
+
+        if (status?.lessonStatus === 'completed' && status?.analysisResult) {
+          result = status.analysisResult as AIResult;
+          break;
+        }
+
+        if (status?.lessonStatus === 'failed') {
+          const reasons = failedJobs
+            .map((job: any) => job.error_message)
+            .filter((message: string | null) => Boolean(message))
+            .slice(0, 3);
+          throw new Error(reasons.length > 0 ? `Analysis failed: ${reasons.join(' | ')}` : 'Analysis failed');
+        }
+
+        const ingestWarning = ingestFailures.length > 0 ? ` | skipped files: ${ingestFailures.length}` : '';
+        setProgressMsg(`Queue active: ${activeJobs.length}, failed jobs: ${failedJobs.length}${ingestWarning}`);
+
+        await delay(3000);
+      }
+
+      if (!result) {
+        throw new Error('Timed out waiting for analysis result');
+      }
+
       const updatedLesson = { ...lesson, aiResult: result };
-      updateLesson(updatedLesson);
+      await updateLesson(updatedLesson);
+      setTransientAIResult(result);
 
-      setProgressMsg('🎯 انتهى! ذاكرتك الذكية جاهزة — ملخص + نقاط تركيز + اختبارات');
+      if (ingestFailures.length > 0) {
+        setError(`Completed with skipped files: ${ingestFailures.join(' | ')}`);
+      }
+
+      setProgressMsg('Done. Analysis is ready.');
       setIsProcessing(false);
 
       setTimeout(() => {
@@ -313,8 +356,8 @@ const LessonDetail: React.FC = () => {
       }, 300);
 
     } catch (err: any) {
-      console.error("Deep Scan Error:", err);
-      setError(err.message || "حدث خطأ أثناء التحليل");
+      console.error('Deep Scan Error:', err);
+      setError(err.message || 'Analysis failed');
       setIsProcessing(false);
     }
   };
@@ -365,7 +408,7 @@ const LessonDetail: React.FC = () => {
             <button onClick={() => fileInputRef.current?.click()} className="bg-white p-6 rounded-[2.2rem] border border-slate-100 shadow-sm flex flex-col items-center hover:bg-amber-50 transition-all">
               <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center mb-3"><FileSearch size={24} /></div>
               <h3 className="font-bold text-xs text-slate-900">ملف إضافي</h3>
-              <input type="file" ref={fileInputRef} accept=".pdf,.doc,.docx" className="hidden" onChange={(e) => handleFileUpload(e, 'document')} />
+              <input type="file" ref={fileInputRef} accept=".pdf,application/pdf" className="hidden" onChange={(e) => handleFileUpload(e, 'document')} />
             </button>
             <button onClick={() => setShowYtModal(true)} className="bg-white p-6 rounded-[2.2rem] border border-slate-100 shadow-sm flex flex-col items-center hover:bg-red-50 transition-all">
               <div className="w-12 h-12 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center mb-3"><Youtube size={24} /></div>

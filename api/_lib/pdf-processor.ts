@@ -231,7 +231,9 @@ export async function processPdfJob(
     if (chunks.length === 0) throw new Error('No chunks created');
 
     await supabase.from('document_sections').delete()
-        .eq('lesson_id', lessonId).eq('source_type', 'pdf');
+        .eq('lesson_id', lessonId)
+        .eq('source_type', 'pdf')
+        .eq('source_file_id', filePath);
 
     const sectionsToInsert = chunks.map(chunk => ({
         lesson_id: lessonId,

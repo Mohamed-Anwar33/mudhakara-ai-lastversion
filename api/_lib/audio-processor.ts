@@ -298,7 +298,9 @@ export async function processAudioJob(
 
     // 6. Save
     await supabase.from('document_sections').delete()
-        .eq('lesson_id', lessonId).eq('source_type', 'audio');
+        .eq('lesson_id', lessonId)
+        .eq('source_type', 'audio')
+        .eq('source_file_id', filePath);
 
     const sectionsToInsert = chunks.map(chunk => ({
         lesson_id: lessonId,

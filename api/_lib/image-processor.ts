@@ -158,7 +158,8 @@ export async function processImageJob(
     // 4. Delete old sections
     await supabase.from('document_sections').delete()
         .eq('lesson_id', lessonId)
-        .eq('source_type', 'image');
+        .eq('source_type', 'image')
+        .eq('source_file_id', filePath);
 
     // 5. Insert
     const sectionsToInsert = chunks.map(chunk => ({

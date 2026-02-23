@@ -283,9 +283,11 @@ export async function generateLessonAnalysis(
         console.log(`[Analysis] Fetching all content for lesson ${lessonId}`);
         const { data: allSections, error: fetchErr } = await supabase
             .from('document_sections')
-            .select('id, content, chunk_index, source_type')
+            .select('id, content, chunk_index, source_type, source_file_id')
             .eq('lesson_id', lessonId)
-            .order('source_type').order('chunk_index');
+            .order('source_type')
+            .order('source_file_id')
+            .order('chunk_index');
 
         if (fetchErr) throw new Error(`Fetch: ${fetchErr.message}`);
 

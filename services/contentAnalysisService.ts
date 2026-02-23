@@ -16,11 +16,19 @@ import { supabase } from './supabaseService';
 // ============================================================================
 
 export interface IngestResponse {
-    status: 'queued' | 'duplicate' | 'already_queued';
+    filePath?: string;
+    fileName?: string;
+    status: 'queued' | 'duplicate' | 'already_queued' | 'failed';
     jobId?: string;
     message: string;
     existingLessonId?: string;
     cachedTranscription?: string;
+}
+
+export interface IngestBatchResponse {
+    success: boolean;
+    lessonId: string;
+    results: IngestResponse[];
 }
 
 export interface JobStatus {
@@ -116,7 +124,7 @@ function validateFileSize(file: File, fileType: FileType): void {
     if (fileType === 'audio' && file.size > MAX_AUDIO_SIZE_BYTES) {
         throw new Error(
             `حجم الملف الصوتي (${(file.size / 1024 / 1024).toFixed(1)}MB) ` +
-            `يتجاوز الحد المسموح (24MB). يرجى ضغط الملف أو تقسيمه.`
+            `يتجاوز الحد المسموح (200MB). يرجى ضغط الملف أو تقسيمه.`
         );
     }
 }
@@ -146,24 +154,48 @@ export async function ingestFile(
     onProgress?.('جاري رفع الملف...', 30);
     const filePath = await uploadFileToStorage(file, lessonId);
 
-    // Step 4: Send to ingest function
+    // Step 4: Send to ingest API
     onProgress?.('جاري تسجيل الملف للمعالجة...', 70);
-    const { data: response, error } = await supabase.functions.invoke('ingest-file', {
-        body: {
+    const response = await fetch('/api/ingest-file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
             lessonId,
-            fileName: file.name,
-            filePath,
-            fileType,
-            contentHash
-        }
+            files: [{
+                fileName: file.name,
+                filePath,
+                fileType,
+                contentHash
+            }]
+        })
     });
 
-    if (error) {
-        throw new Error(error.message || 'فشل استقبال الملف');
+    const payload = await response.json();
+
+    if (!response.ok) {
+        throw new Error(payload?.error || 'فشل استقبال الملف');
+    }
+
+    const firstResult = payload?.results?.[0] || payload;
+    if (!firstResult || typeof firstResult !== 'object') {
+        throw new Error('فشل استقبال الملف');
     }
 
     onProgress?.('تم بنجاح!', 100);
-    return response as IngestResponse;
+    return firstResult as IngestResponse;
+}
+
+export async function triggerQueueWorker(maxJobs: number = 3): Promise<any> {
+    const response = await fetch(`/api/process-queue?maxJobs=${maxJobs}`, {
+        method: 'POST'
+    });
+
+    const payload = await response.json();
+    if (!response.ok) {
+        throw new Error(payload?.error || 'فشل تشغيل عامل المعالجة');
+    }
+
+    return payload;
 }
 
 // ============================================================================

@@ -65,6 +65,7 @@ export interface Source {
   name: string;
   content: string; // Base64 or Text or URL
   uploadedUrl?: string; // New: Cached URL for large files
+  contentHash?: string;
 }
 
 export interface FocusPoint {

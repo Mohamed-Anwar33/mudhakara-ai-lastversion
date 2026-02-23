@@ -160,6 +160,13 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
   const handleMainSourceUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      const isPdf = file.type === 'application/pdf' || /\.(pdf)$/i.test(file.name);
+      if (!isPdf) {
+        toast.error("Main source supports PDF only right now.");
+        e.target.value = '';
+        return;
+      }
+
       if (file.size > 10 * 1024 * 1024) { // 10MB limit
         toast.error("الملف كبير جداً! الحد الأقصى 10MB — حاول ضغطه أولاً");
         return;
@@ -250,7 +257,7 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
           <label className={`cursor-pointer flex items-center gap-2 px-4 py-2 rounded-2xl border transition-all text-[10px] font-black ${mainSource ? 'bg-emerald-50 border-emerald-100 text-emerald-600' : 'bg-indigo-50 border-indigo-100 text-indigo-600 shadow-lg shadow-indigo-50'}`}>
             {mainSource ? <CheckCircle2 size={16} /> : <FileUp size={16} />}
             <span>{mainSource ? 'تغيير المرجع' : 'رفع المرجع'}</span>
-            <input type="file" onChange={handleMainSourceUpload} className="hidden" accept=".pdf,.doc,.docx" />
+            <input type="file" onChange={handleMainSourceUpload} className="hidden" accept=".pdf,application/pdf" />
           </label>
         </div>
       </header>

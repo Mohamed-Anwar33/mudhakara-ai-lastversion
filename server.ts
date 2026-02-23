@@ -3,7 +3,9 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import OpenAI from 'openai';
-import { createClient } from '@supabase/supabase-js';
+import ingestFileHandler from './api/ingest-file';
+import processQueueHandler from './api/process-queue';
+import jobStatusHandler from './api/job-status';
 
 dotenv.config();
 
@@ -25,10 +27,6 @@ const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
 });
 
-const supabase = createClient(
-    process.env.VITE_SUPABASE_URL || '',
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || ''
-);
 
 console.log("🔹 API Server starting...");
 console.log("🔹 OpenAI Key present:", !!process.env.OPENAI_API_KEY);
@@ -37,6 +35,18 @@ console.log("🔹 Supabase URL:", process.env.VITE_SUPABASE_URL);
 // --- API Routes ---
 import apiRoutes from './api/routes';
 app.use('/api', apiRoutes);
+
+const adaptVercelHandler = (handler: (req: any, res: any) => Promise<any>) => {
+    return async (req: any, res: any) => {
+        await handler(req as any, res as any);
+    };
+};
+
+// Keep local dev behavior aligned with production API contracts.
+app.post('/api/ingest-file', adaptVercelHandler(ingestFileHandler));
+app.get('/api/job-status', adaptVercelHandler(jobStatusHandler));
+app.post('/api/process-queue', adaptVercelHandler(processQueueHandler));
+app.get('/api/process-queue', adaptVercelHandler(processQueueHandler));
 
 // 1. Transcribe Endpoint (Primary: OpenAI Whisper, Fallback: Gemini 2.0 Flash)
 app.post('/api/transcribe', async (req, res) => {
@@ -126,88 +136,6 @@ app.post('/api/transcribe', async (req, res) => {
         res.status(500).json({ error: error.message || 'Transcription failed' });
     }
 });
-
-// 2. Ingest File Endpoint (Mocking/Adapting logic from ingest-file.ts)
-app.post('/api/ingest-file', async (req, res) => {
-    try {
-        const body = req.body;
-        console.log('📥 Ingesting file:', body.fileName);
-
-        // 1. Idempotency Check
-        const { data: existingHash } = await supabase
-            .from('file_hashes')
-            .select('id, lesson_id, transcription')
-            .eq('content_hash', body.contentHash)
-            .maybeSingle();
-
-        if (existingHash) {
-            console.log('🔄 Duplicate file detected');
-            return res.status(200).json({
-                status: 'duplicate',
-                message: 'هذا الملف تمت معالجته من قبل',
-                existingLessonId: existingHash.lesson_id,
-                cachedTranscription: existingHash.transcription
-            });
-        }
-
-        // 2. Register File Hash
-        const { error: hashError } = await supabase
-            .from('file_hashes')
-            .insert({
-                content_hash: body.contentHash,
-                lesson_id: body.lessonId,
-                source_type: body.fileType,
-                file_path: body.filePath
-            });
-
-        if (hashError && hashError.code !== '23505') throw hashError;
-
-        // 3. Map file type to job type
-        const jobTypeMap: Record<string, string> = {
-            'pdf': 'pdf_extract',
-            'audio': 'audio_transcribe',
-            'image': 'image_ocr'
-        };
-
-        // 4. Enqueue Job
-        const { data: job, error: queueError } = await supabase
-            .from('processing_queue')
-            .insert({
-                lesson_id: body.lessonId,
-                job_type: jobTypeMap[body.fileType],
-                payload: {
-                    file_path: body.filePath,
-                    file_name: body.fileName,
-                    content_hash: body.contentHash,
-                    source_type: body.fileType
-                },
-                status: 'pending'
-            })
-            .select('id, status')
-            .single();
-
-        if (queueError && queueError.code !== '23505') throw queueError;
-
-        // 5. Update Lesson Status
-        await supabase
-            .from('lessons')
-            .update({ analysis_status: 'pending' })
-            .eq('id', body.lessonId);
-
-        console.log('✅ Job queued:', job?.id);
-        res.status(200).json({
-            status: 'queued',
-            jobId: job?.id,
-            message: 'تم إضافة الملف لقائمة المعالجة بنجاح'
-        });
-
-    } catch (error: any) {
-        console.error('❌ Ingest Error:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-
 
 // 4. Gemini Proxy
 app.post('/api/gemini', async (req, res) => {
