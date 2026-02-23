@@ -324,39 +324,45 @@ export async function generateLessonAnalysis(
             console.log(`[Analysis] ⚠️ Audio too short (${audioChars}), skipping focus`);
         }
 
-        // ═══ Step 3: Build prompts — PDF for summary, focused for quizzes ═══
+        // ═══ Step 3: Build prompts — full lesson coverage (PDF + images + audio) ═══
         let method = 'all-content';
 
-        // Build PDF-only content for summary (audio goes to quizzes only)
-        let pdfContent = '';
+        // Build summary source content from all lesson sources.
+        let summarySourceContent = '';
         if (sections.pdf.length > 0) {
             for (const sec of sections.pdf) {
                 if (focusedIds.has(sec.id)) {
-                    pdfContent += `⭐ [ركّز عليه المعلم في شرحه] ${sec.content}\n\n`;
+                    summarySourceContent += `⭐ [ركّز عليه المعلم في شرحه] ${sec.content}\n\n`;
                     method = 'all-content+focus';
                 } else {
-                    pdfContent += sec.content + '\n\n';
+                    summarySourceContent += sec.content + '\n\n';
                 }
             }
         }
 
-        // Add images to PDF content
+        // Add image OCR text.
         if (sections.image.length > 0) {
-            pdfContent += '\n=== ملاحظات / صور ===\n\n';
-            for (const sec of sections.image) pdfContent += sec.content + '\n\n';
+            summarySourceContent += '\n=== ملاحظات / صور ===\n\n';
+            for (const sec of sections.image) summarySourceContent += sec.content + '\n\n';
+        }
+
+        // Add audio transcription to guarantee lecture coverage in summary.
+        if (sections.audio.length > 0) {
+            summarySourceContent += '\n=== شرح المعلم (تفريغ صوتي) ===\n\n';
+            for (const sec of sections.audio) summarySourceContent += sec.content + '\n\n';
         }
 
         const finalMethod = focusMatches > 0 ? method + '+focus' : method;
-        console.log(`[Analysis] PDF content: ${pdfContent.length} chars, audio: ${audioChars} chars, method: ${finalMethod}`);
+        console.log(`[Analysis] Summary source content: ${summarySourceContent.length} chars, method: ${finalMethod}`);
 
-        // ═══ Step 4A: Generate SUMMARY in BATCHES (PDF only — no audio duplication) ════
-        progress('analyzing', 'الذكاء الاصطناعي يولّد ملخصاً شاملاً للكتاب...', 30);
+        // ═══ Step 4A: Generate SUMMARY in BATCHES (book + images + lectures) ════
+        progress('analyzing', 'الذكاء الاصطناعي يولّد ملخصاً شاملاً للكتاب والمحاضرات...', 30);
 
         let summary = '';
         let totalTokens = 0;
 
         // ─── Noise filter: remove repetitive/boilerplate paragraphs ───
-        const paragraphs = pdfContent.split('\n\n').filter((p: string) => p.trim().length > 30);
+        const paragraphs = summarySourceContent.split('\n\n').filter((p: string) => p.trim().length > 30);
         const seen = new Map<string, number>();
         const cleanParagraphs: string[] = [];
 
@@ -378,12 +384,12 @@ export async function generateLessonAnalysis(
         }
 
         const cleanContent = cleanParagraphs.join('\n\n');
-        const noiseRemoved = pdfContent.length - cleanContent.length;
+        const noiseRemoved = summarySourceContent.length - cleanContent.length;
         if (noiseRemoved > 1000) {
             console.log(`[Analysis] 🧹 Noise filter: removed ${noiseRemoved} chars of repetitive content`);
         }
 
-        // ─── Split clean PDF content into batches with OVERLAP ───
+        // ─── Split clean full content into batches with OVERLAP ───
         const BATCH_SIZE = 40000;
         const OVERLAP_PARAGRAPHS = 3; // Keep last 3 paragraphs in next chunk to prevent cutting rules
         const batches: string[] = [];
@@ -542,7 +548,12 @@ ${batches[i]}`;
         if (sections.audio.length > 0) {
             quizContent += '\n\n=== شرح المعلم ===\n\n';
             const audioText = sections.audio.map((s: any) => s.content).join('\n\n');
-            quizContent += audioText.substring(0, 50000);
+            if (audioText.length <= 80000) {
+                quizContent += audioText;
+            } else {
+                const halfWindow = 40000;
+                quizContent += `${audioText.slice(0, halfWindow)}\n\n...[اقتطاع]...\n\n${audioText.slice(-halfWindow)}`;
+            }
         }
 
         // Cap total to stay within context

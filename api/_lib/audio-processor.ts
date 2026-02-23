@@ -248,6 +248,7 @@ export async function processAudioJob(
     // 1. Check cache
     const { data: cached } = await supabase
         .from('file_hashes').select('transcription')
+        .eq('lesson_id', lessonId)
         .eq('content_hash', contentHash).maybeSingle();
 
     let transcription: string;
@@ -288,7 +289,7 @@ export async function processAudioJob(
         try {
             await supabase.from('file_hashes')
                 .upsert({ content_hash: contentHash, lesson_id: lessonId, source_type: 'audio', file_path: filePath, transcription },
-                    { onConflict: 'content_hash' });
+                    { onConflict: 'lesson_id,content_hash' });
         } catch (e) { console.warn('[Audio] Cache failed (non-fatal)'); }
     }
 
