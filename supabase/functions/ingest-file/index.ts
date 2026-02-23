@@ -163,10 +163,20 @@ async function processPdf(supabase: any, lessonId: string, filePath: string, con
     const fileUri = await uploadToGeminiFiles(storageRes, fileName, 'application/pdf', geminiKey);
     pdfPart = { fileData: { fileUri, mimeType: 'application/pdf' } };
 
-    const text = await callGemini(geminiKey, [
-        { text: PDF_PROMPT },
-        pdfPart
-    ]);
+    let text = '';
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+            text = await callGemini(geminiKey, [
+                { text: PDF_PROMPT },
+                pdfPart
+            ]);
+            if (text && text.length >= 50) break;
+        } catch (e: any) {
+            console.warn(`[PDF] Gemini attempt ${attempt} failed: ${e.message}`);
+            if (attempt === 3) throw e;
+            await new Promise(r => setTimeout(r, 2000));
+        }
+    }
 
     if (!text || text.length < 50) throw new Error(`PDF: Gemini returned ${text.length} chars`);
     console.log(`[PDF] Extracted: ${text.length} chars`);
@@ -264,13 +274,10 @@ async function saveChunks(supabase: any, lessonId: string, text: string, sourceT
     const chunks = chunkText(text);
 
     let startIndex = 0;
-
-    // Only delete old sections if we are NOT appending a chunk
     if (!isAppend) {
         await supabase.from('document_sections').delete()
             .eq('lesson_id', lessonId).eq('source_type', sourceType);
     } else {
-        // Find the highest chunk_index to append sequentially
         const { data: existing } = await supabase.from('document_sections')
             .select('chunk_index')
             .eq('lesson_id', lessonId)
@@ -283,40 +290,38 @@ async function saveChunks(supabase: any, lessonId: string, text: string, sourceT
         }
     }
 
-    const sectionsToInsert = chunks.map(chunk => ({
-        lesson_id: lessonId,
-        content: chunk.content,
-        source_type: sourceType,
-        source_file_id: filePath,
-        chunk_index: chunk.chunkIndex + startIndex,
-        metadata: { content_hash: contentHash, start_char: chunk.metadata.startChar, end_char: chunk.metadata.endChar, token_estimate: chunk.metadata.tokenEstimate }
-    }));
+    const BATCH_SIZE = 30;
+    let chunksCreated = 0;
+    let currentBatch = [];
 
-    const BATCH_SIZE = 100;
-    let allInserted: any[] = [];
-
-    for (let i = 0; i < sectionsToInsert.length; i += BATCH_SIZE) {
-        const batch = sectionsToInsert.slice(i, i + BATCH_SIZE);
-        const { data: inserted, error } = await supabase.from('document_sections')
-            .insert(batch).select('id');
-
-        if (error) throw new Error(`Insert Batch ${i}: ${error.message}`);
-        if (inserted) allInserted.push(...inserted);
-    }
-
-    // Link chunks
-    if (allInserted.length > 1) {
-        const links = linkChunks(allInserted.map((r: any) => r.id));
-        for (const link of links) {
-            if (link.prevId || link.nextId) {
-                await supabase.from('document_sections')
-                    .update({ prev_id: link.prevId, next_id: link.nextId })
-                    .eq('id', link.id);
+    for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        currentBatch.push({
+            lesson_id: lessonId,
+            content: chunk.content,
+            source_type: sourceType,
+            source_file_id: filePath,
+            chunk_index: chunk.chunkIndex + startIndex,
+            metadata: {
+                content_hash: contentHash,
+                start_char: chunk.metadata.startChar,
+                end_char: chunk.metadata.endChar,
+                token_estimate: chunk.metadata.tokenEstimate
             }
+        });
+
+        // Insert when batch is full or on the last chunk
+        if (currentBatch.length === BATCH_SIZE || i === chunks.length - 1) {
+            const { error } = await supabase.from('document_sections').insert(currentBatch);
+            if (error) throw new Error(`Insert Batch Error at index ${i}: ${error.message}`);
+
+            chunksCreated += currentBatch.length;
+            // Extremely aggressive memory clearing
+            currentBatch.length = 0;
+            currentBatch = [];
         }
     }
 
-    return { chunksCreated: allInserted.length, totalChars: text.length };
 }
 
 // ─── Generate Embeddings ────────────────────────────────
@@ -326,7 +331,7 @@ async function generateEmbeddings(supabase: any, lessonId: string, openaiKey: st
         .select('id, content')
         .eq('lesson_id', lessonId)
         .is('embedding', null)
-        .limit(100);
+        .limit(50); // Severely limit embeddings to prevent WORKER_LIMIT on low-ram Edge Functions
 
     if (!sections || sections.length === 0) {
         console.log('[Embeddings] All sections already embedded');
@@ -409,13 +414,22 @@ serve(async (req) => {
         // Security Validation (Checklist #5): Ensure all file paths belong to this lesson
         const { data: lessonData, error: lessonError } = await supabase
             .from('lessons')
-            .select('sources')
+            .select('sources, analysis_status')
             .eq('id', lessonId)
             .single();
 
         if (lessonError || !lessonData) {
             return errorResponse('Lesson not found or access denied', 404);
         }
+
+        // Prevent Race Condition: 
+        if (lessonData.analysis_status === 'processing') {
+            console.warn(`[Lock] Lesson ${lessonId} is already processing. Preventing overlapping ingestions.`);
+            return errorResponse('Lesson is currently locked for processing.', 409); // 409 Conflict
+        }
+
+        // Lock the lesson
+        await supabase.from('lessons').update({ analysis_status: 'processing' }).eq('id', lessonId);
 
         const sourcesText = JSON.stringify(lessonData.sources || []);
         for (const file of files) {
