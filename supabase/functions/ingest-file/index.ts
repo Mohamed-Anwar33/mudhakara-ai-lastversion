@@ -292,13 +292,21 @@ async function saveChunks(supabase: any, lessonId: string, text: string, sourceT
         metadata: { content_hash: contentHash, start_char: chunk.metadata.startChar, end_char: chunk.metadata.endChar, token_estimate: chunk.metadata.tokenEstimate }
     }));
 
-    const { data: inserted, error } = await supabase.from('document_sections')
-        .insert(sectionsToInsert).select('id');
-    if (error) throw new Error(`Insert: ${error.message}`);
+    const BATCH_SIZE = 100;
+    let allInserted: any[] = [];
+
+    for (let i = 0; i < sectionsToInsert.length; i += BATCH_SIZE) {
+        const batch = sectionsToInsert.slice(i, i + BATCH_SIZE);
+        const { data: inserted, error } = await supabase.from('document_sections')
+            .insert(batch).select('id');
+
+        if (error) throw new Error(`Insert Batch ${i}: ${error.message}`);
+        if (inserted) allInserted.push(...inserted);
+    }
 
     // Link chunks
-    if (inserted && inserted.length > 1) {
-        const links = linkChunks(inserted.map((r: any) => r.id));
+    if (allInserted.length > 1) {
+        const links = linkChunks(allInserted.map((r: any) => r.id));
         for (const link of links) {
             if (link.prevId || link.nextId) {
                 await supabase.from('document_sections')
@@ -308,7 +316,7 @@ async function saveChunks(supabase: any, lessonId: string, text: string, sourceT
         }
     }
 
-    return { chunksCreated: inserted?.length || 0, totalChars: text.length };
+    return { chunksCreated: allInserted.length, totalChars: text.length };
 }
 
 // ─── Generate Embeddings ────────────────────────────────
@@ -318,7 +326,7 @@ async function generateEmbeddings(supabase: any, lessonId: string, openaiKey: st
         .select('id, content')
         .eq('lesson_id', lessonId)
         .is('embedding', null)
-        .limit(500);
+        .limit(100);
 
     if (!sections || sections.length === 0) {
         console.log('[Embeddings] All sections already embedded');
