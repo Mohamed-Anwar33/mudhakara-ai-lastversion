@@ -422,67 +422,53 @@ serve(async (req) => {
             return errorResponse('Lesson not found or access denied', 404);
         }
 
-        // Prevent Race Condition: 
-        if (lessonData.analysis_status === 'processing') {
-            console.warn(`[Lock] Lesson ${lessonId} is already processing. Preventing overlapping ingestions.`);
-            return errorResponse('Lesson is currently locked for processing.', 409); // 409 Conflict
+        const sourcesText = JSON.stringify(lessonData.sources || []);
+        for (const file of files) {
+            if (file.path && !sourcesText.includes(file.path)) {
+                console.warn(`[Security] Unauthorized file processing attempt: ${file.path} not in lesson ${lessonId}`);
+                return errorResponse(`Unauthorized file path: ${file.path}`, 403);
+            }
         }
 
-        // Lock the lesson
-        await supabase.from('lessons').update({ analysis_status: 'processing' }).eq('id', lessonId);
+        const results = [];
 
-        try {
-            const sourcesText = JSON.stringify(lessonData.sources || []);
-            for (const file of files) {
-                if (file.path && !sourcesText.includes(file.path)) {
-                    console.warn(`[Security] Unauthorized file processing attempt: ${file.path} not in lesson ${lessonId}`);
-                    return errorResponse(`Unauthorized file path: ${file.path}`, 403);
+        for (const file of files) {
+            const contentHash = `${lessonId}-${file.path}-${Date.now()}`;
+            const fileType = getFileType(file.name || file.path, file.type);
+            console.log(`[Ingest] Processing: ${file.path} (${fileType})`);
+
+            try {
+                let result;
+                if (file.extractedText) {
+                    console.log(`[Ingest] Received raw text for ${file.path} (${file.extractedText.length} chars). Skipping Gemini.`);
+                    result = await saveChunks(supabase, lessonId, file.extractedText, fileType, file.path, contentHash);
+                } else if (fileType === 'pdf') {
+                    // Update processPdf signature to accept the `file` object to pass base64Chunk
+                    result = await processPdf(supabase, lessonId, file.path, contentHash, geminiKey, file);
+                } else if (fileType === 'audio') {
+                    result = await processAudio(supabase, lessonId, file.path, contentHash, geminiKey);
+                } else {
+                    result = await processImage(supabase, lessonId, file.path, contentHash, geminiKey);
                 }
+                results.push({ file: file.path, status: 'processed', details: result });
+            } catch (e: any) {
+                console.error(`[Ingest] Error processing ${file.path}: ${e.message}`);
+                results.push({ file: file.path, status: 'failed', error: e.message });
             }
-
-            const results = [];
-
-            for (const file of files) {
-                const contentHash = `${lessonId}-${file.path}-${Date.now()}`;
-                const fileType = getFileType(file.name || file.path, file.type);
-                console.log(`[Ingest] Processing: ${file.path} (${fileType})`);
-
-                try {
-                    let result;
-                    if (file.extractedText) {
-                        console.log(`[Ingest] Received raw text for ${file.path} (${file.extractedText.length} chars). Skipping Gemini.`);
-                        result = await saveChunks(supabase, lessonId, file.extractedText, fileType, file.path, contentHash);
-                    } else if (fileType === 'pdf') {
-                        // Update processPdf signature to accept the `file` object to pass base64Chunk
-                        result = await processPdf(supabase, lessonId, file.path, contentHash, geminiKey, file);
-                    } else if (fileType === 'audio') {
-                        result = await processAudio(supabase, lessonId, file.path, contentHash, geminiKey);
-                    } else {
-                        result = await processImage(supabase, lessonId, file.path, contentHash, geminiKey);
-                    }
-                    results.push({ file: file.path, status: 'processed', details: result });
-                } catch (e: any) {
-                    console.error(`[Ingest] Error processing ${file.path}: ${e.message}`);
-                    results.push({ file: file.path, status: 'failed', error: e.message });
-                }
-            }
-
-            // Generate embeddings
-            if (openaiKey) {
-                try {
-                    const embedResult = await generateEmbeddings(supabase, lessonId, openaiKey);
-                    console.log(`[Ingest] Embeddings: ${embedResult.embedded} new`);
-                } catch (e: any) {
-                    console.warn(`[Ingest] Embeddings failed (non-fatal): ${e.message}`);
-                }
-            }
-
-            return jsonResponse({ success: true, results });
-
-        } finally {
-            // Unlock the lesson so subsequent files or analysis can run
-            await supabase.from('lessons').update({ analysis_status: 'pending' }).eq('id', lessonId);
         }
+
+        // Generate embeddings
+        if (openaiKey) {
+            try {
+                const embedResult = await generateEmbeddings(supabase, lessonId, openaiKey);
+                console.log(`[Ingest] Embeddings: ${embedResult.embedded} new`);
+            } catch (e: any) {
+                console.warn(`[Ingest] Embeddings failed (non-fatal): ${e.message}`);
+            }
+        }
+
+        return jsonResponse({ success: true, results });
+
     } catch (error: any) {
         console.error('Ingest Fatal Error:', error);
         // ✅ Always return CORS headers even on crash
