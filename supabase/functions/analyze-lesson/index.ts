@@ -329,16 +329,74 @@ serve(async (req) => {
 
         try {
             // ==========================================
+            // ATOMIC JOB: generate_book_overview
+            // ==========================================
+            if (job.job_type === 'generate_book_overview') {
+                await supabase.from('lessons').update({ analysis_status: 'processing' }).eq('id', lessonId);
+
+                const { data: allSegments } = await supabase.from('lecture_segments')
+                    .select('id, title, page_from').eq('lesson_id', lessonId).order('page_from');
+                const segIds = allSegments?.map((s: any) => s.id) || [];
+
+                const { data: analyses } = await supabase.from('lecture_analysis')
+                    .select('lecture_id, summary').in('lecture_id', segIds);
+
+                let concatenated = '';
+                let indexMap: any = { topics: [] };
+
+                for (const seg of (allSegments || [])) {
+                    const an = analyses?.find((a: any) => a.lecture_id === seg.id);
+                    if (an) {
+                        concatenated += `\n\n## درس: ${seg.title} (ص ${seg.page_from})\n`;
+                        concatenated += an.summary ? an.summary.substring(0, 3000) : '';
+                        indexMap.topics.push({ title: seg.title, page: seg.page_from });
+                    }
+                }
+
+                let finalSummary = 'تعذر توليد الملخص';
+                if (concatenated.trim()) {
+                    const prompt = `أنت خبير أكاديمي. بناءً على هذه الملخصات للدروس (والتي تمثل كتاباً كاملاً)، اكتب "نظرة عامة" أو "خلاصة" قصيرة وشاملة للكتاب ككل (Book Overview) في فقرتين إلى 4 فقرات.
+المحتوى:
+${concatenated.substring(0, 80000)}`;
+                    const overviewResult = await callGeminiText(prompt, geminiKey);
+                    finalSummary = overviewResult.text;
+                }
+
+                await supabase.from('book_analysis').upsert({
+                    lesson_id: lessonId,
+                    overall_summary: finalSummary,
+                    index_map: indexMap,
+                    status: 'completed',
+                    updated_at: new Date().toISOString()
+                }, { onConflict: 'lesson_id' });
+
+                await supabase.from('lessons').update({ analysis_status: 'completed' }).eq('id', lessonId);
+
+                return await setComplete();
+            }
+
+            // ==========================================
             // STAGE 1: collecting_sections
             // ==========================================
             if (stage === 'collecting_sections' || stage === 'pending_upload') {
                 await supabase.from('lessons').update({ analysis_status: 'processing' }).eq('id', lessonId);
 
-                const { data: allSections } = await supabase.from('document_sections')
+                let query = supabase.from('document_sections')
                     .select('id, content, source_type, chunk_index')
                     .eq('lesson_id', lessonId).order('chunk_index');
 
+                if (job.job_type === 'analyze_lecture' && payload.lecture_id) {
+                    query = query.eq('lecture_id', payload.lecture_id);
+                }
+
+                const { data: allSections } = await query;
+
                 if (!allSections || allSections.length === 0) {
+                    if (job.job_type === 'analyze_lecture') {
+                        console.warn(`[Analyze] No content for lecture ${payload.lecture_id}, returning early.`);
+                        payload.summary = 'لا يوجد محتوى مستخرج كافٍ لهذه المحاضرة.';
+                        return await advanceStage('saving_analysis', 85, { payload });
+                    }
                     throw new Error('No content found for this lesson to analyze');
                 }
 
@@ -442,10 +500,17 @@ serve(async (req) => {
             if (stage === 'generating_quiz_focus') {
                 console.log(`[Analyze] Generating quizzes and focus points...`);
                 let summary = payload.summary || '';
-                const lectureCount = (summary.match(/^## /gm) || []).length || 1;
-                const focusCount = Math.max(8, Math.min(20, lectureCount * 2));
-                const quizCount = Math.max(12, Math.min(30, lectureCount * 3));
-                const essayCount = Math.max(3, Math.min(8, lectureCount));
+                let lectureCount = (summary.match(/^## /gm) || []).length || 1;
+                let focusCount = Math.max(8, Math.min(20, lectureCount * 2));
+                let quizCount = Math.max(12, Math.min(30, lectureCount * 3));
+                let essayCount = Math.max(3, Math.min(8, lectureCount));
+
+                if (job.job_type === 'analyze_lecture') {
+                    lectureCount = 1;
+                    focusCount = 5;
+                    quizCount = 4;
+                    essayCount = 2;
+                }
 
                 let quizSourceContent = summary;
                 const audioText = payload.audioText || '';
@@ -528,12 +593,47 @@ ${quizSourceContent}`;
                     }
                 };
 
-                const { error: saveErr } = await supabase.from('lessons').update({
-                    analysis_result: analysisResult,
-                    analysis_status: 'completed'
-                }).eq('id', lessonId);
+                if (job.job_type === 'analyze_lecture' && payload.lecture_id) {
+                    const { error: saveErr } = await supabase.from('lecture_analysis').upsert({
+                        lecture_id: payload.lecture_id,
+                        summary: summary,
+                        detailed_explanation: payload.audioText || '',
+                        key_points: quizParsed.focusPoints || [],
+                        examples: [],
+                        quiz: quizParsed.quizzes || [],
+                        status: 'completed',
+                        updated_at: new Date().toISOString()
+                    }, { onConflict: 'lecture_id' });
 
-                if (saveErr) throw new Error(`Failed to save analysis: ${saveErr.message}`);
+                    if (saveErr) throw new Error(`Failed to save lecture analysis: ${saveErr.message}`);
+
+                    // Check if all lectures are done
+                    const { count: segmentsCount } = await supabase.from('lecture_segments')
+                        .select('id', { count: 'exact', head: true }).eq('lesson_id', lessonId);
+
+                    const { data: allSegments } = await supabase.from('lecture_segments').select('id').eq('lesson_id', lessonId);
+                    const segIds = allSegments?.map((s: any) => s.id) || [];
+
+                    const { count: analysisCount } = await supabase.from('lecture_analysis')
+                        .select('id', { count: 'exact', head: true }).in('lecture_id', segIds);
+
+                    if (segmentsCount && segmentsCount === analysisCount) {
+                        console.log(`[Analyze] All ${segmentsCount} lectures analyzed! Spawning book overview...`);
+                        await supabase.from('processing_queue').insert({
+                            lesson_id: lessonId,
+                            job_type: 'generate_book_overview',
+                            payload: {},
+                            status: 'pending',
+                            dedupe_key: `lesson:${lessonId}:generate_book_overview`
+                        });
+                    }
+                } else {
+                    const { error: saveErr } = await supabase.from('lessons').update({
+                        analysis_result: analysisResult,
+                        analysis_status: 'completed'
+                    }).eq('id', lessonId);
+                    if (saveErr) throw new Error(`Failed to save legacy analysis: ${saveErr.message}`);
+                }
 
                 return await setComplete();
             }

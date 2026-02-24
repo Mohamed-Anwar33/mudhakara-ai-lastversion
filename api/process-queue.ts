@@ -143,11 +143,13 @@ async function processSingleJob(supabase: any, job: any, workerId: string, supab
     let endpoint = '';
 
     try {
-        // Map job_type to Edge Function Name
-        if (['ingest_upload', 'ingest_extract', 'ingest_chunk', 'pdf_extract', 'audio_transcribe', 'image_ocr', 'embed_sections'].includes(job.job_type)) {
+        // Map job_type to Edge Function Name or Node API
+        if (['ingest_upload', 'ingest_extract', 'ingest_chunk', 'pdf_extract', 'audio_transcribe', 'image_ocr', 'embed_sections', 'extract_toc', 'build_lecture_segments', 'ocr_range', 'chunk_lecture', 'embed_lecture'].includes(job.job_type)) {
             endpoint = 'ingest-file';
-        } else if (job.job_type === 'generate_analysis') {
+        } else if (['generate_analysis', 'analyze_lecture', 'generate_book_overview'].includes(job.job_type)) {
             endpoint = 'analyze-lesson';
+        } else if (job.job_type === 'extract_text_range') {
+            endpoint = 'extract-text-node';
         } else if (job.job_type === 'book_segment') {
             // For now book segmentation might be local or skipped
             throw new Error('Book Segmentation not implemented in Edge Functions yet');
@@ -155,8 +157,13 @@ async function processSingleJob(supabase: any, job: any, workerId: string, supab
             throw new Error(`Unknown job type: ${job.job_type}`);
         }
 
-        // Call the Edge Function Step endpoint
-        result = await executeEdgeFunctionStep(supabaseUrl, serviceKey, endpoint, job.id);
+        // Call the appropriate handler
+        if (endpoint === 'extract-text-node') {
+            const { processExtractTextRange } = require('./_lib/parse-pdf');
+            result = await processExtractTextRange(supabase, job);
+        } else {
+            result = await executeEdgeFunctionStep(supabaseUrl, serviceKey, endpoint, job.id);
+        }
 
         if (result.keep_lock) {
             console.log(`[${workerId}] Job ${job.id} is processing in background, keeping lock intact.`);

@@ -230,23 +230,26 @@ serve(async (req) => {
             return jsonResponse({ success: true, stage: 'completed', progress: 100, status: 'completed' });
         };
 
-        const spawnNextAtomicJob = async (nextJobType: string, payloadUpdates: any = {}) => {
-            const nextPayload = { ...fileInfo, ...payloadUpdates };
-            // Idempotency Check
-            const { data: existing } = await supabase.from('processing_queue')
-                .select('id')
-                .eq('lesson_id', lessonId)
-                .eq('job_type', nextJobType)
-                .contains('payload', { content_hash: contentHash })
-                .maybeSingle();
+        const spawnNextAtomicJob = async (type: string, extraPayload: any = {}, dedupeKey?: string) => {
+            const nextPayload = { ...payload, ...extraPayload };
+            delete nextPayload.batches;
+            delete nextPayload.summaryParts;
 
-            if (!existing) {
-                await supabase.from('processing_queue').insert({
-                    lesson_id: lessonId,
-                    job_type: nextJobType,
-                    payload: nextPayload,
-                    status: 'pending'
-                });
+            const dKey = dedupeKey || `lesson:${lessonId}:${type}`;
+
+            let { error: insertErr } = await supabase.from('processing_queue').insert({
+                lesson_id: lessonId,
+                job_type: type,
+                payload: nextPayload,
+                status: 'pending',
+                dedupe_key: dKey
+            });
+
+            // If the job already exists (due to dedupe_key), ignore the insert error because it's working as intended
+            if (insertErr && insertErr.code === '23505') {
+                console.log(`[Ingest] Dedupe caught duplicate spawn: ${dKey}`);
+            } else if (insertErr) {
+                console.error(`[Ingest] Failed to spawn ${type}:`, insertErr);
             }
         };
 
@@ -314,7 +317,235 @@ serve(async (req) => {
                 console.log(`[Ingest] Uploading ${filePath} to Gemini...`);
                 const fileUri = await uploadToGeminiFiles(storageRes, fileName, mimeType, geminiKey);
 
-                await spawnNextAtomicJob('ingest_extract', { gemini_file_uri: fileUri });
+                if (fileType === 'pdf') {
+                    await spawnNextAtomicJob('extract_toc', { gemini_file_uri: fileUri });
+                } else {
+                    await spawnNextAtomicJob('ingest_extract', { gemini_file_uri: fileUri });
+                }
+                return await setComplete();
+            }
+
+            // ==========================================
+            // ATOMIC JOB: extract_toc (For PDFs)
+            // ==========================================
+            if (job.job_type === 'extract_toc') {
+                await advanceStage('extracting_toc', 10);
+                const activeUri = gemini_file_uri || fileInfo.gemini_file_uri;
+                if (!activeUri) throw new Error("Missing gemini_file_uri");
+
+                const mimeType = getMime(filePath);
+                const filePart = { fileData: { fileUri: activeUri, mimeType } };
+
+                const prompt = `أنت خبير أكاديمي محترف في استخراج فهارس الكتب.
+ابحث في هذا الكتاب بأكمله (خاصة الصفحات الأولى) عن "الفهرس" (Table of Contents) أو قائمة الدروس والمحاضرات.
+ثم أعطني قائمة بالدروس مرتبة، مع **رقم الصفحة الفعلي الذي يبدأ فيه كل درس**.
+
+أخرج النتيجة بصيغة JSON حصراً بهذا الشكل:
+{
+  "lectures": [
+    { "title": "عنوان المحاضرة الأولى", "start_page": 5 },
+    { "title": "عنوان المحاضرة الثانية", "start_page": 20 }
+  ]
+}
+
+لا تضف أي نص قبل أو بعد الـ JSON.`;
+
+                console.log(`[Ingest] Extracting TOC...`);
+                const resultText = await callGemini(geminiKey, [{ text: prompt }, filePart]);
+
+                let parsed = null;
+                try {
+                    let text = resultText.trim();
+                    if (text.startsWith('\`\`\`json')) text = text.replace(/^\`\`\`json/, '').replace(/\`\`\`$/, '').trim();
+                    else if (text.startsWith('\`\`\`')) text = text.replace(/^\`\`\`/, '').replace(/\`\`\`$/, '').trim();
+                    parsed = JSON.parse(text);
+                } catch (e) {
+                    console.warn('[Ingest] TOC parsing failed', e);
+                    // Fallback empty TOC
+                    parsed = { lectures: [] };
+                }
+
+                if (!parsed || !parsed.lectures || parsed.lectures.length === 0) {
+                    parsed = { lectures: [{ title: 'محتوى الكتاب (لم يتم العثور على فهرس)', start_page: 1 }] };
+                }
+
+                await spawnNextAtomicJob('build_lecture_segments', { toc: parsed });
+                return await setComplete();
+            }
+
+            // ==========================================
+            // ATOMIC JOB: build_lecture_segments
+            // ==========================================
+            if (job.job_type === 'build_lecture_segments') {
+                await advanceStage('building_segments', 20);
+                const toc = payload.toc;
+
+                const lectures = toc.lectures.map((l: any, idx: number) => {
+                    const start_page = l.start_page || 1;
+                    const next = toc.lectures[idx + 1];
+                    const page_to = next && next.start_page ? next.start_page - 1 : start_page + 100; // Cap to 100 pages per lecture
+                    return {
+                        lesson_id: lessonId,
+                        title: l.title,
+                        page_from: start_page,
+                        page_to: page_to,
+                        confidence: 0.95
+                    };
+                });
+
+                const { data: inserted, error } = await supabase.from('lecture_segments')
+                    .insert(lectures)
+                    .select('id, page_from, page_to');
+
+                if (error) throw new Error(`Failed to save lecture segments: ${error.message}`);
+
+                if (inserted && inserted.length > 0) {
+                    const firstLecture = inserted[0];
+                    await spawnNextAtomicJob('extract_text_range', {
+                        lecture_id: firstLecture.id,
+                        page: firstLecture.page_from
+                    }, `lecture:extract_text:${firstLecture.id}:page_${firstLecture.page_from}`);
+                } else {
+                    await checkAndSpawnAnalysis();
+                }
+
+                return await setComplete();
+            }
+
+            // ==========================================
+            // ATOMIC JOB: ocr_range
+            // ==========================================
+            if (job.job_type === 'ocr_range') {
+                await advanceStage('ocr_range', 10);
+                const { cropped_file_path, content_hash, lecture_id, pages } = payload;
+                if (!cropped_file_path) throw new Error("Missing cropped_file_path");
+
+                console.log(`[Ingest] OCR starting for Lecture ${lecture_id}, Pages: ${pages.join(',')}`);
+
+                // Download the cropped PDF from Storage
+                const { data: signData, error: signErr } = await supabase.storage.from('homework-uploads').createSignedUrl(cropped_file_path, 60);
+                if (signErr || !signData) throw new Error(`Sign URL failed for OCR: ${signErr?.message}`);
+
+                const storageRes = await fetch(signData.signedUrl);
+                if (!storageRes.ok) throw new Error(`Fetch stream failed: ${storageRes.statusText}`);
+
+                const fileName = cropped_file_path.split('/').pop() || 'ocr-chunk.pdf';
+                const fileUri = await uploadToGeminiFiles(storageRes, fileName, 'application/pdf', geminiKey);
+
+                const prompt = `أنت خبير في دقة استخراج النصوص من الكتب المصورة (Scanned Books).
+استخرج كل النص الموجود في هذه الصفحات المعروضة أمامك، واكتبه بالكامل كما هو مع الحفاظ على التشكيل والفقرات.
+لا تضف أي تعليقات أو هوامش من عندك، فقط النص المستخرج.`;
+
+                const filePart = { fileData: { fileUri, mimeType: 'application/pdf' } };
+                const resultText = await callGemini(geminiKey, [{ text: prompt }, filePart]);
+
+                if (!resultText || resultText.length < 10) {
+                    console.warn(`[Ingest] OCR returned very short text for pages ${pages.join(',')}`);
+                } else {
+                    console.log(`[Ingest] OCR succeeded! Length: ${resultText.length}`);
+                }
+
+                // Save to document_sections
+                const physicalPage = pages[0]; // Attach extracted chunk to the first page of the range
+                const { error: insErr } = await supabase.from('document_sections').insert({
+                    lesson_id: lessonId,
+                    lecture_id: lecture_id,
+                    page: physicalPage,
+                    content: resultText.trim(),
+                    source_type: 'pdf',
+                    source_file_id: fileInfo.file_path,
+                    metadata: { extraction_method: 'gemini-ocr', content_hash: content_hash }
+                });
+
+                if (insErr) throw new Error(`Failed to save OCR section: ${insErr.message}`);
+
+                // Clean up the temp cropped file
+                await supabase.storage.from('homework-uploads').remove([cropped_file_path]);
+
+                return await setComplete();
+            }
+
+            // ==========================================
+            // ATOMIC JOB: chunk_lecture
+            // ==========================================
+            if (job.job_type === 'chunk_lecture') {
+                const { lecture_id } = payload;
+
+                // 1. Wait until NO extraction jobs are running for this lecture
+                const { count, error: countErr } = await supabase.from('processing_queue')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('lesson_id', lessonId)
+                    .in('job_type', ['extract_text_range', 'ocr_range'])
+                    .in('status', ['pending', 'processing'])
+                    .contains('payload', JSON.stringify({ lecture_id }));
+
+                if (count && count > 0) {
+                    console.log(`[Ingest] Waiting for ${count} extraction jobs to finish for lecture ${lecture_id}`);
+                    // Unlock the job and yield, so orchestrator picks it up later
+                    await supabase.from('processing_queue').update({
+                        status: 'pending',
+                        locked_by: null,
+                        locked_at: null,
+                        attempt_count: 0 // Reset attempt to not fail
+                    }).eq('id', jobId);
+                    return jsonResponse({ success: true, stage: 'waiting', status: 'pending' });
+                }
+
+                await advanceStage('chunking_lecture', 50);
+
+                // 2. Group text and chunk it
+                const { data: sections } = await supabase.from('document_sections')
+                    .select('id, content')
+                    .eq('lecture_id', lecture_id)
+                    .order('page', { ascending: true });
+
+                const fullText = sections?.map((s: any) => s.content).join('\n\n') || '';
+                let chunksCreatedCount = 0;
+
+                if (fullText.trim().length > 0) {
+                    // Wipe the raw page blocks so we can replace them with clean chunks
+                    await supabase.from('document_sections')
+                        .delete()
+                        .eq('lecture_id', lecture_id);
+
+                    const chunks = chunkText(fullText);
+                    const BATCH_SIZE = 30;
+                    let currentBatch = [];
+
+                    for (let i = 0; i < chunks.length; i++) {
+                        const chunk = chunks[i];
+                        currentBatch.push({
+                            lesson_id: lessonId,
+                            lecture_id: lecture_id, // keep the connection!
+                            content: chunk.content,
+                            source_type: 'pdf',
+                            source_file_id: fileInfo.file_path,
+                            chunk_index: chunk.chunkIndex,
+                            metadata: {
+                                start_char: chunk.metadata.startChar,
+                                end_char: chunk.metadata.endChar,
+                                token_estimate: chunk.metadata.tokenEstimate
+                            }
+                        });
+
+                        if (currentBatch.length === BATCH_SIZE || i === chunks.length - 1) {
+                            const { error: insertErr } = await supabase.from('document_sections').insert(currentBatch);
+                            if (insertErr) throw new Error(`Insert chunks failed: ${insertErr.message}`);
+                            chunksCreatedCount += currentBatch.length;
+                            currentBatch = [];
+                        }
+                    }
+                }
+
+                console.log(`[Ingest] Chunking complete for ${lecture_id}. Created ${chunksCreatedCount} chunks.`);
+
+                // 3. Spawn analyze_lecture for this lecture
+                await spawnNextAtomicJob('analyze_lecture', { lecture_id }, `lesson:${lessonId}:analyze_lecture:lec_${lecture_id}`);
+
+                // Check if all lectures for this book are fully chunked and analyzed? 
+                // We'll let `generate_book_overview` wait at the end. Actually, when does `generate_book_overview` spawn?
+                // The orchestrator or the last `analyze_lecture` can spawn it.
+
                 return await setComplete();
             }
 
