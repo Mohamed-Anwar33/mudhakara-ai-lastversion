@@ -308,7 +308,7 @@ serve(async (req) => {
             await supabase.from('processing_queue').update({
                 status: 'failed',
                 stage: 'failed',
-                last_error: errMsg,
+                error_message: errMsg,
                 updated_at: new Date().toISOString()
             }).eq('id', jobId);
 
