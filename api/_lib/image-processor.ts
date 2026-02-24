@@ -1,6 +1,6 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { chunkText, linkChunks, TextChunk } from './chunker';
+import { chunkText, linkChunks, TextChunk } from './chunker.js';
 
 /**
  * Image Processing Module (Board Notes / Handwriting)

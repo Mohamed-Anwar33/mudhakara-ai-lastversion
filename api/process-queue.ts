@@ -1,11 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-import { processPdfJob } from './_lib/pdf-processor';
-import { processAudioJob } from './_lib/audio-processor';
-import { embedLessonSections } from './_lib/embeddings';
-import { generateLessonAnalysis } from './_lib/analysis';
-import { processImageJob } from './_lib/image-processor';
-import { segmentBook } from './_lib/book-segmenter';
+import { processPdfJob } from './_lib/pdf-processor.js';
+import { processAudioJob } from './_lib/audio-processor.js';
+import { embedLessonSections } from './_lib/embeddings.js';
+import { generateLessonAnalysis } from './_lib/analysis.js';
+import { processImageJob } from './_lib/image-processor.js';
+import { segmentBook } from './_lib/book-segmenter.js';
 
 export const config = {
     maxDuration: 60

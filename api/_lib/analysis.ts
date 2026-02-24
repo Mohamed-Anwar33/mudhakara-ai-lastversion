@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { buildFocusMap } from './focus';
+import { buildFocusMap } from './focus.js';
 
 /**
  * Analysis Module — v6 (No Hallucination)

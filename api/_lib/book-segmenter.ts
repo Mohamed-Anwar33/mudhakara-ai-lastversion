@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { processPdfJob } from './pdf-processor';
-import { embedLessonSections } from './embeddings';
-import { generateLessonAnalysis } from './analysis';
+import { processPdfJob } from './pdf-processor.js';
+import { embedLessonSections } from './embeddings.js';
+import { generateLessonAnalysis } from './analysis.js';
 
 /**
  * Book-to-Lessons Auto Segmenter

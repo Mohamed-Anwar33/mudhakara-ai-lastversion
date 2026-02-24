@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { chunkText, linkChunks } from './chunker';
+import { chunkText, linkChunks } from './chunker.js';
 
 /**
  * Audio Transcription + Chunking + Storage
