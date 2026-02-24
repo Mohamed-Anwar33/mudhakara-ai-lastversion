@@ -13,6 +13,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(405).json({ error: 'Method Not Allowed' });
     }
 
+    // Strict Cache-Busting Headers
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('Surrogate-Control', 'no-store');
+
     try {
         const supabaseUrl = process.env.VITE_SUPABASE_URL;
         const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -28,7 +34,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (jobId && typeof jobId === 'string') {
             const { data, error } = await supabase
                 .from('processing_queue')
-                .select('id, job_type, status, attempts, error_message, created_at, completed_at')
+                .select('id, job_type, status, attempts, error_message, created_at, completed_at, stage, progress')
                 .eq('id', jobId)
                 .single();
 
@@ -40,7 +46,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (lessonId && typeof lessonId === 'string') {
             const { data, error } = await supabase
                 .from('processing_queue')
-                .select('id, job_type, status, attempts, error_message, created_at, completed_at')
+                .select('id, job_type, status, attempts, error_message, created_at, completed_at, stage, progress')
                 .eq('lesson_id', lessonId)
                 .order('created_at', { ascending: false });
 

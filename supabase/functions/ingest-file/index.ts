@@ -1,24 +1,17 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
-import { corsHeaders, jsonResponse, errorResponse, toBase64 } from '../_shared/utils.ts';
-import { chunkText, linkChunks } from '../_shared/chunker.ts';
+import { corsHeaders, jsonResponse, errorResponse } from '../_shared/utils.ts';
+import { chunkText } from '../_shared/chunker.ts';
 
 /**
- * Edge Function: ingest-file
- * 
- * Processes uploaded files (PDF, Audio, Image):
- * 1. Downloads from Supabase Storage
- * 2. Extracts text (Gemini Vision for PDF/Image, Gemini Audio for transcription)
- * 3. Chunks text and stores in document_sections
- * 4. Generates embeddings via OpenAI
- * 
- * Timeout: 150s (Supabase free tier)
+ * Edge Function: ingest-file (Step-based execution)
+ * Stages:
+ * 1. pending_upload
+ * 2. extracting_text
+ * 3. saving_chunks 
+ * 4. embedding_batch
+ * 5. completed | failed
  */
-
-// ─── Constants ──────────────────────────────────────────
-
-const GEMINI_INLINE_MAX = 15 * 1024 * 1024; // 15MB
-const WHISPER_MAX_BYTES = 20 * 1024 * 1024;
 
 const AUDIO_PROMPT = `أنت مفرّغ صوتي محترف ودقيق جداً متخصص في المحتوى الأكاديمي العربي.
 حوّل كل الكلام في هذا التسجيل الصوتي إلى نص عربي مكتوب بأعلى دقة ممكنة.
@@ -50,7 +43,14 @@ const PDF_PROMPT = `أنت خبير في استخراج النصوص العرب�
 - اكتب الأرقام والتواريخ كما هي
 - لا تضف تعليقات`;
 
-// ─── Helper Functions ───────────────────────────────────
+function getFileType(fileName: string, declaredType: string): 'pdf' | 'audio' | 'image' | 'text' {
+    const ext = fileName.split('.').pop()?.toLowerCase() || '';
+    if (declaredType === 'text' || ext === 'txt') return 'text';
+    if (ext === 'pdf' || declaredType === 'application/pdf') return 'pdf';
+    if (declaredType === 'audio' || ['mp3', 'wav', 'mp4', 'm4a', 'ogg', 'webm'].includes(ext)) return 'audio';
+    if (declaredType === 'image' || ['jpg', 'jpeg', 'png', 'webp'].includes(ext)) return 'image';
+    return 'pdf';
+}
 
 function getMime(fileName: string): string {
     const ext = fileName.split('.').pop()?.toLowerCase() || '';
@@ -61,15 +61,6 @@ function getMime(fileName: string): string {
         'pdf': 'application/pdf'
     };
     return map[ext] || 'application/octet-stream';
-}
-
-function getFileType(fileName: string, declaredType: string): 'pdf' | 'audio' | 'image' | 'text' {
-    const ext = fileName.split('.').pop()?.toLowerCase() || '';
-    if (declaredType === 'text' || ext === 'txt') return 'text';
-    if (ext === 'pdf' || declaredType === 'application/pdf') return 'pdf';
-    if (declaredType === 'audio' || ['mp3', 'wav', 'mp4', 'm4a', 'ogg', 'webm'].includes(ext)) return 'audio';
-    if (declaredType === 'image' || ['jpg', 'jpeg', 'png', 'webp'].includes(ext)) return 'image';
-    return 'pdf'; // default
 }
 
 // ─── Gemini API Calls ───────────────────────────────────
@@ -90,7 +81,6 @@ async function callGemini(apiKey: string, parts: any[], maxTokens = 65536): Prom
     const data = await response.json();
     if (!response.ok) throw new Error(`Gemini: ${data.error?.message || response.status}`);
 
-    // Read ALL text parts (Gemini 2.5 Flash may have thinking tokens in separate parts)
     const resParts = data.candidates?.[0]?.content?.parts || [];
     return resParts.filter((p: any) => p.text).map((p: any) => p.text).join('').trim();
 }
@@ -98,7 +88,6 @@ async function callGemini(apiKey: string, parts: any[], maxTokens = 65536): Prom
 async function uploadToGeminiFiles(storageRes: Response, fileName: string, mimeType: string, apiKey: string): Promise<string> {
     const contentLength = storageRes.headers.get('content-length') || '0';
 
-    // Step 1: Start resumable upload
     const startRes = await fetch(
         `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`,
         {
@@ -113,11 +102,10 @@ async function uploadToGeminiFiles(storageRes: Response, fileName: string, mimeT
             body: JSON.stringify({ file: { displayName: fileName } })
         }
     );
-    if (!startRes.ok) throw new Error(`File API start: ${startRes.status}`);
+    if (!startRes.ok) throw new Error(`File API start failed: ${startRes.status}`);
     const uploadUrl = startRes.headers.get('X-Goog-Upload-URL');
-    if (!uploadUrl) throw new Error('No upload URL');
+    if (!uploadUrl) throw new Error('No upload URL allocated');
 
-    // Step 2: Upload file
     const uploadRes = await fetch(uploadUrl, {
         method: 'PUT',
         headers: {
@@ -127,257 +115,25 @@ async function uploadToGeminiFiles(storageRes: Response, fileName: string, mimeT
         },
         body: storageRes.body
     });
-    if (!uploadRes.ok) throw new Error(`File API upload: ${uploadRes.status}`);
+    if (!uploadRes.ok) throw new Error(`File API upload failed: ${uploadRes.status}`);
     const fileInfo = await uploadRes.json();
     const fileUri = fileInfo.file?.uri;
-    if (!fileUri) throw new Error('No file URI');
+    if (!fileUri) throw new Error('No file URI returned');
 
-    // Step 3: Wait for ACTIVE
     const fileName2 = fileInfo.file?.name;
     for (let i = 0; i < 30; i++) {
         const s = await fetch(`https://generativelanguage.googleapis.com/v1beta/${fileName2}?key=${apiKey}`);
         const status = await s.json();
         if (status.state === 'ACTIVE') return fileUri;
-        if (status.state === 'FAILED') throw new Error('File processing failed');
+        if (status.state === 'FAILED') throw new Error('File processing failed on Gemini servers');
         await new Promise(r => setTimeout(r, 2000));
     }
-    throw new Error('File processing timeout');
-}
-
-// ─── PDF Processing ─────────────────────────────────────
-
-async function processPdf(supabase: any, lessonId: string, filePath: string, contentHash: string, geminiKey: string, file: any = {}) {
-    const fileName = filePath.split('/').pop() || 'document.pdf';
-    let pdfPart: any;
-
-    const { data: signData, error } = await supabase.storage.from('homework-uploads').createSignedUrl(filePath, 60);
-    if (error || !signData) throw new Error(`Sign URL: ${error?.message}`);
-
-    const storageRes = await fetch(signData.signedUrl);
-    if (!storageRes.ok) throw new Error(`Fetch stream: ${storageRes.statusText}`);
-
-    const sizeMB = (parseInt(storageRes.headers.get('content-length') || '0') / (1024 * 1024)).toFixed(2);
-    console.log(`[PDF] Stream size: ${sizeMB} MB. Streaming to Gemini API...`);
-
-    // ✅ ALWAYS use Files API and STREAM the body to avoid arrayBuffer/Blob memory spikes
-    const fileUri = await uploadToGeminiFiles(storageRes, fileName, 'application/pdf', geminiKey);
-    pdfPart = { fileData: { fileUri, mimeType: 'application/pdf' } };
-
-    let text = '';
-    for (let attempt = 1; attempt <= 3; attempt++) {
-        try {
-            text = await callGemini(geminiKey, [
-                { text: PDF_PROMPT },
-                pdfPart
-            ]);
-            if (text && text.length >= 50) break;
-        } catch (e: any) {
-            console.warn(`[PDF] Gemini attempt ${attempt} failed: ${e.message}`);
-            if (attempt === 3) throw e;
-            await new Promise(r => setTimeout(r, 2000));
-        }
-    }
-
-    if (!text || text.length < 50) throw new Error(`PDF: Gemini returned ${text.length} chars`);
-    console.log(`[PDF] Extracted: ${text.length} chars`);
-
-    // If this is a chunk (has base64Chunk), append to existing sections instead of deleting them.
-    // Differentiate by adjusting the sourceType or just the saveChunks logic.
-    return await saveChunks(supabase, lessonId, text, 'pdf', file.path || filePath, contentHash, !!file.base64Chunk);
-}
-
-// ─── Audio Processing ───────────────────────────────────
-
-async function processAudio(supabase: any, lessonId: string, filePath: string, contentHash: string, geminiKey: string) {
-    // Check cache
-    const { data: cached } = await supabase.from('file_hashes').select('transcription')
-        .eq('content_hash', contentHash).maybeSingle();
-
-    if (cached?.transcription && cached.transcription.length > 100) {
-        console.log(`[Audio] Using cached (${cached.transcription.length} chars)`);
-        return await saveChunks(supabase, lessonId, cached.transcription, 'audio', filePath, contentHash);
-    }
-
-    const { data: signData, error } = await supabase.storage.from('homework-uploads').createSignedUrl(filePath, 60);
-    if (error || !signData) throw new Error(`Sign URL: ${error?.message}`);
-
-    const storageRes = await fetch(signData.signedUrl);
-    if (!storageRes.ok) throw new Error(`Fetch stream: ${storageRes.statusText}`);
-
-    const fileName = filePath.split('/').pop() || 'audio.mp3';
-    const mimeType = getMime(fileName);
-    const sizeMB = (parseInt(storageRes.headers.get('content-length') || '0') / (1024 * 1024)).toFixed(1);
-    console.log(`[Audio] Stream size: ${sizeMB} MB. Streaming to Gemini API...`);
-
-    // ✅ ALWAYS use Files API and STREAM the body to avoid arrayBuffer/Blob memory spikes
-    const fileUri = await uploadToGeminiFiles(storageRes, fileName, mimeType, geminiKey);
-
-    const audioPart = { fileData: { fileUri, mimeType } };
-
-    // Try Gemini with retry
-    let text = '';
-    const prompts = [AUDIO_PROMPT, 'استمع للتسجيل الصوتي التالي بعناية وحوّله إلى نص عربي مكتوب. اكتب كل ما يقوله المتحدث بالضبط. اكتب النص فقط.'];
-
-    for (const prompt of prompts) {
-        try {
-            text = await callGemini(geminiKey, [{ text: prompt }, audioPart]);
-            if (text.length >= 50) break;
-        } catch (e: any) {
-            console.warn(`[Audio] Gemini attempt failed: ${e.message}`);
-        }
-    }
-
-    if (text.length < 50) throw new Error(`Audio: Gemini returned ${text.length} chars`);
-    console.log(`[Audio] Transcription: ${text.length} chars`);
-
-    // Cache
-    await supabase.from('file_hashes').update({ transcription: text }).eq('content_hash', contentHash);
-
-    return await saveChunks(supabase, lessonId, text, 'audio', filePath, contentHash);
-}
-
-// ─── Image Processing ───────────────────────────────────
-
-async function processImage(supabase: any, lessonId: string, filePath: string, contentHash: string, geminiKey: string) {
-    const { data: signData, error } = await supabase.storage.from('homework-uploads').createSignedUrl(filePath, 60);
-    if (error || !signData) throw new Error(`Sign URL: ${error?.message}`);
-
-    const storageRes = await fetch(signData.signedUrl);
-    if (!storageRes.ok) throw new Error(`Fetch stream: ${storageRes.statusText}`);
-
-    const fileName = filePath.split('/').pop() || 'image.jpg';
-    const mimeType = getMime(fileName);
-    const sizeMB = (parseInt(storageRes.headers.get('content-length') || '0') / (1024 * 1024)).toFixed(2);
-    console.log(`[Image] Stream size: ${sizeMB} MB. Streaming to Gemini API...`);
-
-    // ✅ ALWAYS use Files API and STREAM the body to avoid arrayBuffer/Blob memory spikes
-    const fileUri = await uploadToGeminiFiles(storageRes, fileName, mimeType, geminiKey);
-    const imagePart = { fileData: { fileUri, mimeType } };
-
-    const text = await callGemini(geminiKey, [
-        { text: IMAGE_PROMPT },
-        imagePart
-    ]);
-
-    if (!text || text.length < 10) {
-        console.log('[Image] No text found');
-        return { chunksCreated: 0, totalChars: 0 };
-    }
-    console.log(`[Image] Extracted: ${text.length} chars`);
-
-    return await saveChunks(supabase, lessonId, text, 'image', filePath, contentHash);
-}
-
-// ─── Save Chunks ────────────────────────────────────────
-
-async function saveChunks(supabase: any, lessonId: string, text: string, sourceType: string, filePath: string, contentHash: string, isAppend: boolean = false) {
-    const chunks = chunkText(text);
-
-    let startIndex = 0;
-    if (!isAppend) {
-        await supabase.from('document_sections').delete()
-            .eq('lesson_id', lessonId).eq('source_type', sourceType);
-    } else {
-        const { data: existing } = await supabase.from('document_sections')
-            .select('chunk_index')
-            .eq('lesson_id', lessonId)
-            .eq('source_type', sourceType)
-            .order('chunk_index', { ascending: false })
-            .limit(1);
-
-        if (existing && existing.length > 0) {
-            startIndex = existing[0].chunk_index + 1;
-        }
-    }
-
-    const BATCH_SIZE = 30;
-    let chunksCreated = 0;
-    let currentBatch = [];
-
-    for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i];
-        currentBatch.push({
-            lesson_id: lessonId,
-            content: chunk.content,
-            source_type: sourceType,
-            source_file_id: filePath,
-            chunk_index: chunk.chunkIndex + startIndex,
-            metadata: {
-                content_hash: contentHash,
-                start_char: chunk.metadata.startChar,
-                end_char: chunk.metadata.endChar,
-                token_estimate: chunk.metadata.tokenEstimate
-            }
-        });
-
-        // Insert when batch is full or on the last chunk
-        if (currentBatch.length === BATCH_SIZE || i === chunks.length - 1) {
-            const { error } = await supabase.from('document_sections').insert(currentBatch);
-            if (error) throw new Error(`Insert Batch Error at index ${i}: ${error.message}`);
-
-            chunksCreated += currentBatch.length;
-            // Extremely aggressive memory clearing
-            currentBatch.length = 0;
-            currentBatch = [];
-        }
-    }
-
-}
-
-// ─── Generate Embeddings ────────────────────────────────
-
-async function generateEmbeddings(supabase: any, lessonId: string, openaiKey: string) {
-    const { data: sections } = await supabase.from('document_sections')
-        .select('id, content')
-        .eq('lesson_id', lessonId)
-        .is('embedding', null)
-        .limit(50); // Severely limit embeddings to prevent WORKER_LIMIT on low-ram Edge Functions
-
-    if (!sections || sections.length === 0) {
-        console.log('[Embeddings] All sections already embedded');
-        return { embedded: 0 };
-    }
-
-    console.log(`[Embeddings] ${sections.length} sections to embed`);
-    const BATCH = 32;
-    let totalEmbedded = 0;
-
-    for (let i = 0; i < sections.length; i += BATCH) {
-        const batch = sections.slice(i, i + BATCH);
-        const texts = batch.map((s: any) => s.content);
-
-        try {
-            const res = await fetch('https://api.openai.com/v1/embeddings', {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ model: 'text-embedding-3-small', input: texts })
-            });
-
-            if (!res.ok) {
-                console.warn(`[Embeddings] Batch ${Math.floor(i / BATCH) + 1} failed: ${res.status}`);
-                continue;
-            }
-
-            const data = await res.json();
-            for (let j = 0; j < data.data.length; j++) {
-                await supabase.from('document_sections')
-                    .update({ embedding: JSON.stringify(data.data[j].embedding) })
-                    .eq('id', batch[j].id);
-            }
-            totalEmbedded += batch.length;
-            console.log(`[Embeddings] Batch ${Math.floor(i / BATCH) + 1}: ${batch.length} done`);
-        } catch (e: any) {
-            console.warn(`[Embeddings] Batch error: ${e.message}`);
-        }
-    }
-
-    return { embedded: totalEmbedded };
+    throw new Error('File processing timeout on Gemini');
 }
 
 // ─── Main Handler ───────────────────────────────────────
 
 serve(async (req) => {
-    // ✅ ALWAYS handle OPTIONS first for CORS preflight
     if (req.method === 'OPTIONS') {
         return new Response('ok', {
             headers: {
@@ -388,15 +144,14 @@ serve(async (req) => {
         });
     }
 
-    // ✅ Wrap EVERYTHING in try-catch to ensure CORS headers are always returned
     try {
         if (req.method !== 'POST') return errorResponse('Method Not Allowed', 405);
 
         const body = await req.json();
-        const { lessonId, files } = body;
+        const { jobId } = body;
 
-        if (!lessonId || !files || !Array.isArray(files)) {
-            return errorResponse('Missing lessonId or files array', 400);
+        if (!jobId) {
+            return errorResponse('Missing jobId', 400);
         }
 
         const supabaseUrl = Deno.env.get('APP_SUPABASE_URL') || Deno.env.get('SUPABASE_URL') || '';
@@ -404,80 +159,273 @@ serve(async (req) => {
         const geminiKey = Deno.env.get('GEMINI_API_KEY') || '';
         const openaiKey = Deno.env.get('OPENAI_API_KEY') || '';
 
-        console.log(`[Ingest] Config check - URL: ${supabaseUrl ? '✅' : '❌'}, Key: ${supabaseKey ? '✅' : '❌'}, Gemini: ${geminiKey ? '✅' : '❌'}`);
-
         if (!supabaseUrl || !supabaseKey) return errorResponse('Missing Supabase config', 500);
         if (!geminiKey) return errorResponse('Missing GEMINI_API_KEY', 500);
 
         const supabase = createClient(supabaseUrl, supabaseKey);
 
-        // Security Validation (Checklist #5): Ensure all file paths belong to this lesson
-        const { data: lessonData, error: lessonError } = await supabase
-            .from('lessons')
-            .select('sources, analysis_status')
-            .eq('id', lessonId)
+        // Fetch the job
+        const { data: job, error: jobError } = await supabase
+            .from('processing_queue')
+            .select('*')
+            .eq('id', jobId)
             .single();
 
-        if (lessonError || !lessonData) {
-            return errorResponse('Lesson not found or access denied', 404);
+        if (jobError || !job) {
+            return errorResponse('Job not found', 404);
         }
 
-        const sourcesText = JSON.stringify(lessonData.sources || []);
-        for (const file of files) {
-            if (file.path && !sourcesText.includes(file.path)) {
-                console.warn(`[Security] Unauthorized file processing attempt: ${file.path} not in lesson ${lessonId}`);
-                return errorResponse(`Unauthorized file path: ${file.path}`, 403);
-            }
-        }
+        const lessonId = job.lesson_id;
+        let { stage, progress, attempt_count, gemini_file_uri, extraction_cursor, payload } = job;
+        stage = stage || 'pending_upload';
+        progress = progress || 0;
+        extraction_cursor = extraction_cursor || 0;
+        attempt_count = attempt_count || 0;
 
-        const results = [];
+        const fileInfo = payload; // Contains filePath, contentHash, type, etc.
+        const filePath = fileInfo.file_path;
+        const contentHash = fileInfo.content_hash;
+        const fileType = getFileType(filePath, fileInfo.type || 'unknown');
 
-        for (const file of files) {
-            const contentHash = `${lessonId}-${file.path}-${Date.now()}`;
-            const fileType = getFileType(file.name || file.path, file.type);
-            console.log(`[Ingest] Processing: ${file.path} (${fileType})`);
+        console.log(`[Ingest DBG] Job ${jobId} | Stage: ${stage} | Progress: ${progress}%`);
 
-            try {
-                let result;
-                if (file.extractedText) {
-                    console.log(`[Ingest] Received raw text for ${file.path} (${file.extractedText.length} chars). Skipping Gemini.`);
-                    result = await saveChunks(supabase, lessonId, file.extractedText, fileType, file.path, contentHash);
-                } else if (fileType === 'pdf') {
-                    // Update processPdf signature to accept the `file` object to pass base64Chunk
-                    result = await processPdf(supabase, lessonId, file.path, contentHash, geminiKey, file);
-                } else if (fileType === 'audio') {
-                    result = await processAudio(supabase, lessonId, file.path, contentHash, geminiKey);
+        const advanceStage = async (newStage: string, newProgress: number, extraUpdates: any = {}) => {
+            const { error } = await supabase.from('processing_queue')
+                .update({ stage: newStage, progress: newProgress, updated_at: new Date().toISOString(), ...extraUpdates })
+                .eq('id', jobId);
+            if (error) throw new Error(`Failed to advance stage: ${error.message}`);
+            return jsonResponse({ success: true, stage: newStage, progress: newProgress, status: 'processing' });
+        };
+
+        const setFail = async (errMsg: string) => {
+            await supabase.from('processing_queue').update({
+                status: 'failed',
+                stage: 'failed',
+                last_error: errMsg,
+                updated_at: new Date().toISOString()
+            }).eq('id', jobId);
+            return jsonResponse({ success: false, stage: 'failed', status: 'failed', error: errMsg });
+        };
+
+        const setComplete = async () => {
+            await supabase.from('processing_queue').update({
+                status: 'completed',
+                stage: 'completed',
+                progress: 100,
+                completed_at: new Date().toISOString()
+            }).eq('id', jobId);
+            return jsonResponse({ success: true, stage: 'completed', progress: 100, status: 'completed' });
+        };
+
+        try {
+            // ==========================================
+            // STAGE 1: upload_to_gemini
+            // ==========================================
+            if (stage === 'pending_upload' || stage === 'uploaded_to_gemini') {
+                if (!gemini_file_uri) {
+                    // Check local cache first for audio
+                    if (fileType === 'audio') {
+                        const { data: cached } = await supabase.from('file_hashes').select('transcription')
+                            .eq('content_hash', contentHash).maybeSingle();
+                        if (cached?.transcription && cached.transcription.length > 100) {
+                            console.log(`[Audio Cache] Found matching transcription for ${contentHash}`);
+                            await supabase.from('file_hashes').update({ transcription: cached.transcription }).eq('content_hash', contentHash);
+                            // We have the text! Let's save it directly to a temp table or payload so the next stage can chunk it.
+                            // Actually, let's just create chunks immediately if it's cached, as a fast track.
+                            return await advanceStage('saving_chunks', 40, { payload: { ...fileInfo, extractedText: cached.transcription } });
+                        }
+                    }
+
+                    // Otherwise, upload to Gemini
+                    const { data: signData, error: signErr } = await supabase.storage.from('homework-uploads').createSignedUrl(filePath, 60);
+                    if (signErr || !signData) throw new Error(`Sign URL failed: ${signErr?.message}`);
+
+                    const storageRes = await fetch(signData.signedUrl);
+                    if (!storageRes.ok) throw new Error(`Fetch stream failed: ${storageRes.statusText}`);
+
+                    const fileName = filePath.split('/').pop() || 'file';
+                    const mimeType = getMime(fileName);
+
+                    console.log(`[Ingest] Uploading ${filePath} to Gemini...`);
+                    const fileUri = await uploadToGeminiFiles(storageRes, fileName, mimeType, geminiKey);
+
+                    return await advanceStage('extracting_text', 20, { gemini_file_uri: fileUri });
                 } else {
-                    result = await processImage(supabase, lessonId, file.path, contentHash, geminiKey);
+                    return await advanceStage('extracting_text', 20);
                 }
-                results.push({ file: file.path, status: 'processed', details: result });
-            } catch (e: any) {
-                console.error(`[Ingest] Error processing ${file.path}: ${e.message}`);
-                results.push({ file: file.path, status: 'failed', error: e.message });
+            }
+
+            // ==========================================
+            // STAGE 2: extracting_text
+            // ==========================================
+            if (stage === 'extracting_text') {
+                if (!gemini_file_uri) throw new Error("Missing gemini_file_uri for extraction");
+
+                let prompt = PDF_PROMPT;
+                if (fileType === 'audio') prompt = AUDIO_PROMPT;
+                if (fileType === 'image') prompt = IMAGE_PROMPT;
+
+                const mimeType = getMime(filePath);
+                const filePart = { fileData: { fileUri: gemini_file_uri, mimeType } };
+
+                console.log(`[Ingest] Extracting text using Gemini...`);
+                let text = '';
+
+                if (fileType === 'audio') {
+                    // Audio prompt array fallback logic
+                    const prompts = [AUDIO_PROMPT, 'استمع للتسجيل الصوتي التالي بعناية وحوّله إلى نص عربي مكتوب. اكتب كل ما يقوله المتحدث بالضبط. اكتب النص فقط.'];
+                    for (const p of prompts) {
+                        try {
+                            text = await callGemini(geminiKey, [{ text: p }, filePart]);
+                            if (text.length >= 50) break;
+                        } catch (e: any) { console.warn(`Audio gemini attempt failed: ${e.message}`); }
+                    }
+                } else {
+                    text = await callGemini(geminiKey, [{ text: prompt }, filePart]);
+                }
+
+                if (!text || text.length < 10) {
+                    if (fileType !== 'image') throw new Error(`Extraction failed, response too short: ${text?.length} chars`);
+                }
+
+                if (fileType === 'audio') {
+                    await supabase.from('file_hashes').upsert({ content_hash: contentHash, transcription: text });
+                }
+
+                // Append text to the payload to survive this step boundary
+                const newPayload = { ...fileInfo, extractedText: text };
+                return await advanceStage('saving_chunks', 40, { payload: newPayload });
+            }
+
+            // ==========================================
+            // STAGE 3: saving_chunks
+            // ==========================================
+            if (stage === 'saving_chunks') {
+                const text = fileInfo.extractedText || '';
+                if (!text) {
+                    console.warn(`[Ingest] No extractedText in payload at saving_chunks stage! Marking complete if empty image.`);
+                    if (fileType === 'image') return await setComplete();
+                    throw new Error("Missing extractedText in job payload");
+                }
+
+                console.log(`[Ingest] Chunking text of length ${text.length}`);
+
+                // Clear existing sections ONLY if extraction_cursor is 0
+                if (extraction_cursor === 0) {
+                    await supabase.from('document_sections')
+                        .delete()
+                        .eq('lesson_id', lessonId)
+                        .eq('source_type', fileType);
+                }
+
+                const chunks = chunkText(text);
+                const BATCH_SIZE = 30; // 30 chunks per step max
+
+                let currentBatch = [];
+                let iterCount = 0;
+
+                for (let i = extraction_cursor; i < chunks.length; i++) {
+                    const chunk = chunks[i];
+                    currentBatch.push({
+                        lesson_id: lessonId,
+                        content: chunk.content,
+                        source_type: fileType,
+                        source_file_id: filePath,
+                        chunk_index: chunk.chunkIndex,
+                        metadata: {
+                            content_hash: contentHash,
+                            start_char: chunk.metadata.startChar,
+                            end_char: chunk.metadata.endChar,
+                            token_estimate: chunk.metadata.tokenEstimate
+                        }
+                    });
+
+                    if (currentBatch.length === BATCH_SIZE || i === chunks.length - 1) {
+                        const { error: insertErr } = await supabase.from('document_sections').insert(currentBatch);
+                        if (insertErr) throw new Error(`Insert chunks failed: ${insertErr.message}`);
+
+                        iterCount += currentBatch.length;
+                        currentBatch = [];
+
+                        // We successfully saved a batch. Return and continue on next Vercel ping.
+                        const nextCursor = i + 1;
+                        if (nextCursor < chunks.length) {
+                            const prog = Math.floor(40 + ((nextCursor / chunks.length) * 30)); // 40-70%
+                            return await advanceStage('saving_chunks', prog, { extraction_cursor: nextCursor });
+                        }
+                    }
+                }
+
+                // Finished all chunks! Remove the bulky text from payload to save DB size.
+                delete fileInfo.extractedText;
+                return await advanceStage('embedding_batch', 75, { payload: fileInfo, extraction_cursor: 0 });
+            }
+
+            // ==========================================
+            // STAGE 4: embedding_batch
+            // ==========================================
+            if (stage === 'embedding_batch') {
+                if (!openaiKey) {
+                    console.warn('[Ingest] No OPENAI_API_KEY, skipping embeddings');
+                    return await setComplete();
+                }
+
+                const { data: sections } = await supabase.from('document_sections')
+                    .select('id, content')
+                    .eq('lesson_id', lessonId)
+                    .is('embedding', null)
+                    .limit(25); // smaller batches for 20s cap
+
+                if (!sections || sections.length === 0) {
+                    console.log('[Ingest] All chunks embedded. Done.');
+                    return await setComplete();
+                }
+
+                console.log(`[Ingest] Embedding batch of ${sections.length} chunks`);
+                const texts = sections.map((s: any) => s.content);
+                const res = await fetch('https://api.openai.com/v1/embeddings', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model: 'text-embedding-3-small', input: texts })
+                });
+
+                if (!res.ok) throw new Error(`OpenAI failed: ${res.statusText}`);
+                const data = await res.json();
+
+                for (let j = 0; j < data.data.length; j++) {
+                    await supabase.from('document_sections')
+                        .update({ embedding: JSON.stringify(data.data[j].embedding) })
+                        .eq('id', sections[j].id);
+                }
+
+                return await advanceStage('embedding_batch', 85); // Stay in this stage until limit returns 0
+            }
+
+            // Should not reach here if completed
+            if (stage === 'completed' || stage === 'failed') {
+                return jsonResponse({ success: true, stage, status: stage });
+            }
+
+            throw new Error(`Unknown stage: ${stage}`);
+
+        } catch (e: any) {
+            console.error(`[Ingest DBG] Error in ${stage}: ${e.message}`);
+
+            // Fast fail if too many attempts
+            if (attempt_count >= 3) {
+                return await setFail(e.message);
+            } else {
+                // Increment attempt
+                await supabase.from('processing_queue').update({ attempt_count: attempt_count + 1 }).eq('id', jobId);
+                return jsonResponse({ success: false, stage, status: 'processing', error: e.message, attempt: attempt_count + 1 });
             }
         }
-
-        // Generate embeddings
-        if (openaiKey) {
-            try {
-                const embedResult = await generateEmbeddings(supabase, lessonId, openaiKey);
-                console.log(`[Ingest] Embeddings: ${embedResult.embedded} new`);
-            } catch (e: any) {
-                console.warn(`[Ingest] Embeddings failed (non-fatal): ${e.message}`);
-            }
-        }
-
-        return jsonResponse({ success: true, results });
 
     } catch (error: any) {
-        console.error('Ingest Fatal Error:', error);
-        // ✅ Always return CORS headers even on crash
+        console.error('Ingest Edge Fatal Error:', error);
         return new Response(
-            JSON.stringify({ error: error.message || 'Ingestion failed', stack: error.stack }),
-            {
-                status: 500,
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-            }
+            JSON.stringify({ error: error.message || 'Ingestion handler crashed', stack: error.stack }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
     }
 });

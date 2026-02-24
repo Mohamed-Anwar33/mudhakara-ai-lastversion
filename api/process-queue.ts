@@ -1,20 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-import { processPdfJob } from './_lib/pdf-processor.js';
-import { processAudioJob } from './_lib/audio-processor.js';
-import { embedLessonSections } from './_lib/embeddings.js';
-import { generateLessonAnalysis } from './_lib/analysis.js';
-import { processImageJob } from './_lib/image-processor.js';
-import { segmentBook } from './_lib/book-segmenter.js';
 
+// No local processing heavy imports!
 export const config = {
-    maxDuration: 60
+    maxDuration: 60 // Return to standard hobby limit (we don't need 300s anymore)
 };
-
-const DEFAULT_MAX_JOBS = 3;
-const MAX_MAX_JOBS = 10;
-const DEFAULT_STALE_MINUTES = 10;
-const MAX_RUN_MS = 50_000;
 
 const getSupabaseAdmin = () => {
     const url = process.env.VITE_SUPABASE_URL;
@@ -23,69 +13,7 @@ const getSupabaseAdmin = () => {
     return createClient(url, serviceKey);
 };
 
-async function isExtractionComplete(supabase: any, lessonId: string, excludeJobId: string): Promise<boolean> {
-    const { count } = await supabase
-        .from('processing_queue')
-        .select('id', { count: 'exact', head: true })
-        .eq('lesson_id', lessonId)
-        .in('job_type', ['pdf_extract', 'audio_transcribe', 'image_ocr'])
-        .in('status', ['pending', 'processing'])
-        .neq('id', excludeJobId);
-    return (count || 0) === 0;
-}
-
-async function areEmbeddingsComplete(supabase: any, lessonId: string): Promise<boolean> {
-    const { count } = await supabase
-        .from('document_sections')
-        .select('id', { count: 'exact', head: true })
-        .eq('lesson_id', lessonId)
-        .is('embedding', null);
-    return (count || 0) === 0;
-}
-
-async function enqueueEmbeddingJob(supabase: any, lessonId: string): Promise<void> {
-    const { error } = await supabase.from('processing_queue').insert({
-        lesson_id: lessonId,
-        job_type: 'embed_sections',
-        payload: { triggered_by: 'extraction_complete' },
-        status: 'pending'
-    });
-    if (error && error.code !== '23505') console.warn(`Enqueue embed failed: ${error.message}`);
-}
-
-async function enqueueAnalysisJob(supabase: any, lessonId: string): Promise<void> {
-    const { error } = await supabase.from('processing_queue').insert({
-        lesson_id: lessonId,
-        job_type: 'generate_analysis',
-        payload: { triggered_by: 'embedding_complete' },
-        status: 'pending'
-    });
-    if (error && error.code !== '23505') console.warn(`Enqueue analysis failed: ${error.message}`);
-}
-
-async function enqueueOcrFallback(supabase: any, lessonId: string, filePath: string, contentHash: string): Promise<void> {
-    const { error } = await supabase.from('processing_queue').insert({
-        lesson_id: lessonId,
-        job_type: 'image_ocr',
-        payload: { file_path: filePath, content_hash: contentHash, source_type: 'pdf', fallback_from: 'pdf_extract' },
-        status: 'pending'
-    });
-    if (error && error.code !== '23505') console.warn(`Enqueue OCR fallback failed: ${error.message}`);
-}
-
-async function tryEnqueueEmbed(supabase: any, lessonId: string, currentJobId: string, workerId: string): Promise<void> {
-    if (await isExtractionComplete(supabase, lessonId, currentJobId)) {
-        await enqueueEmbeddingJob(supabase, lessonId);
-    } else {
-        console.log(`[${workerId}] Other extraction jobs are still pending`);
-    }
-}
-
-function toPositiveInt(input: unknown, fallback: number, maxValue: number): number {
-    const parsed = Number(input);
-    if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
-    return Math.min(Math.floor(parsed), maxValue);
-}
+// ─── Concurrency Locks ──────────────────────────────────
 
 function isMissingFunctionError(error: any, functionName: string): boolean {
     const message = `${error?.message || ''} ${error?.details || ''}`.toLowerCase();
@@ -111,16 +39,13 @@ async function acquireJobId(supabase: any, workerId: string): Promise<string | n
         const { data: nextPending, error: pendingError } = await supabase
             .from('processing_queue')
             .select('id, attempts')
-            .eq('status', 'pending')
+            .in('status', ['pending', 'processing']) // Notice we also allow 'processing' to be picked up for step-based
+            .is('locked_by', null)
             .order('created_at', { ascending: true })
             .limit(1)
             .maybeSingle();
 
-        if (pendingError) {
-            throw pendingError;
-        }
-
-        if (!nextPending?.id) {
+        if (pendingError || !nextPending?.id) {
             return null;
         }
 
@@ -128,18 +53,17 @@ async function acquireJobId(supabase: any, workerId: string): Promise<string | n
         const { data: claimed, error: claimError } = await supabase
             .from('processing_queue')
             .update({
-                status: 'processing',
                 locked_at: nowIso,
                 locked_by: workerId,
                 attempts: Number(nextPending.attempts || 0) + 1,
                 updated_at: nowIso
             })
             .eq('id', nextPending.id)
-            .eq('status', 'pending')
+            .is('locked_by', null)
             .select('id')
             .maybeSingle();
 
-        if (claimError) {
+        if (claimError && claimError.code !== 'PGRST116') { // Ignore zero-row updates safely
             throw claimError;
         }
 
@@ -151,167 +75,99 @@ async function acquireJobId(supabase: any, workerId: string): Promise<string | n
     return null;
 }
 
-async function completeJob(supabase: any, workerId: string, jobId: string): Promise<void> {
-    const { error: rpcError } = await supabase.rpc('complete_job', { target_job_id: jobId });
-    if (!rpcError) return;
+async function unlockJob(supabase: any, jobId: string, finalStatus?: string): Promise<void> {
+    const updates: any = {
+        locked_at: null,
+        locked_by: null,
+        updated_at: new Date().toISOString()
+    };
+    if (finalStatus) updates.status = finalStatus;
 
-    if (!isMissingFunctionError(rpcError, 'complete_job')) {
-        throw rpcError;
-    }
-
-    console.warn(`[${workerId}] complete_job RPC missing. Using SQL fallback.`);
-
-    const nowIso = new Date().toISOString();
-    const { error: updateError } = await supabase
-        .from('processing_queue')
-        .update({
-            status: 'completed',
-            completed_at: nowIso,
-            locked_at: null,
-            locked_by: null,
-            updated_at: nowIso
-        })
-        .eq('id', jobId);
-
-    if (updateError) {
-        throw updateError;
-    }
+    await supabase.from('processing_queue').update(updates).eq('id', jobId);
 }
 
-async function failJob(
-    supabase: any,
-    workerId: string,
-    job: any,
-    errorMessage: string
-): Promise<void> {
-    const { error: rpcError } = await supabase
-        .rpc('fail_job', { target_job_id: job.id, err_msg: errorMessage });
-    if (!rpcError) return;
+// ─── Edge Function Execution ────────────────────────────
 
-    if (!isMissingFunctionError(rpcError, 'fail_job')) {
-        throw rpcError;
+async function executeEdgeFunctionStep(supabaseUrl: string, serviceKey: string, functionName: string, jobId: string) {
+    const url = `${supabaseUrl}/functions/v1/${functionName}`;
+    console.log(`[Orchestrator] Calling ${url} for job ${jobId}`);
+
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${serviceKey}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ jobId })
+    });
+
+    if (!res.ok) {
+        const errorText = await res.text().catch(() => 'No response body');
+        throw new Error(`Edge Function returned ${res.status}: ${errorText}`);
     }
 
-    console.warn(`[${workerId}] fail_job RPC missing. Using SQL fallback.`);
-
-    const attempts = Number(job.attempts || 0);
-    const maxAttempts = Number(job.max_attempts || 3);
-    const toDead = attempts >= maxAttempts;
-    const nowIso = new Date().toISOString();
-
-    if (toDead) {
-        await supabase.from('dead_jobs').insert({
-            original_job_id: job.id,
-            lesson_id: job.lesson_id,
-            job_type: job.job_type,
-            payload: job.payload || {},
-            error_message: errorMessage,
-            attempts
-        }).then(({ error }: any) => {
-            if (error) {
-                console.warn(`[${workerId}] dead_jobs insert failed in fallback: ${error.message}`);
-            }
-        });
+    // Attempt to parse JSON response. Edge functions should return { success: true, stage: "...", status: "...", progress: 50 }
+    let data;
+    try {
+        data = await res.json();
+    } catch {
+        throw new Error('Edge Function returned invalid JSON');
     }
 
-    const { error: updateError } = await supabase
-        .from('processing_queue')
-        .update({
-            status: toDead ? 'dead' : 'pending',
-            error_message: errorMessage,
-            locked_at: null,
-            locked_by: null,
-            updated_at: nowIso
-        })
-        .eq('id', job.id);
-
-    if (updateError) {
-        throw updateError;
-    }
+    return data;
 }
 
-async function processSingleJob(supabase: any, job: any, workerId: string) {
+// ─── Job Processor Route logic ────────────────────────
+
+async function processSingleJob(supabase: any, job: any, workerId: string, supabaseUrl: string, serviceKey: string) {
     let result: any;
+    let endpoint = '';
 
     try {
-        switch (job.job_type) {
-            case 'pdf_extract':
-                try {
-                    result = await processPdfJob(supabase, job.lesson_id, job.payload.file_path, job.payload.content_hash);
-                } catch (pdfErr: any) {
-                    if (pdfErr.message?.includes('PDF_NEEDS_OCR')) {
-                        console.log(`[${workerId}] PDF needs OCR fallback for ${job.payload.file_path}`);
-                        await enqueueOcrFallback(supabase, job.lesson_id, job.payload.file_path, job.payload.content_hash);
-                        result = { fallback: 'image_ocr', reason: 'PDF_NEEDS_OCR' };
-                        break;
-                    }
-                    throw pdfErr;
-                }
-                await tryEnqueueEmbed(supabase, job.lesson_id, job.id, workerId);
-                break;
-
-            case 'audio_transcribe':
-                result = await processAudioJob(supabase, job.lesson_id, job.payload.file_path, job.payload.content_hash);
-                await tryEnqueueEmbed(supabase, job.lesson_id, job.id, workerId);
-                break;
-
-            case 'image_ocr':
-                result = await processImageJob(supabase, job.lesson_id, job.payload.file_path, job.payload.content_hash);
-                await tryEnqueueEmbed(supabase, job.lesson_id, job.id, workerId);
-                break;
-
-            case 'embed_sections':
-                result = await embedLessonSections(supabase, job.lesson_id);
-                if (result.failedBatches === 0 && await areEmbeddingsComplete(supabase, job.lesson_id)) {
-                    await enqueueAnalysisJob(supabase, job.lesson_id);
-                }
-                break;
-
-            case 'generate_analysis':
-                result = await generateLessonAnalysis(supabase, job.lesson_id);
-                break;
-
-            case 'book_segment':
-                result = await segmentBook(
-                    supabase,
-                    job.payload.subject_id,
-                    job.payload.user_id,
-                    job.payload.file_path
-                );
-                break;
-
-            default:
-                throw new Error(`Unknown job type: ${job.job_type}`);
+        // Map job_type to Edge Function Name
+        if (['pdf_extract', 'audio_transcribe', 'image_ocr', 'embed_sections'].includes(job.job_type)) {
+            endpoint = 'ingest-file';
+        } else if (job.job_type === 'generate_analysis') {
+            endpoint = 'analyze-lesson';
+        } else if (job.job_type === 'book_segment') {
+            // For now book segmentation might be local or skipped
+            throw new Error('Book Segmentation not implemented in Edge Functions yet');
+        } else {
+            throw new Error(`Unknown job type: ${job.job_type}`);
         }
 
-        await completeJob(supabase, workerId, job.id);
+        // Call the Edge Function Step endpoint
+        result = await executeEdgeFunctionStep(supabaseUrl, serviceKey, endpoint, job.id);
+
+        // Status update logic depending on what Edge Function returns
+        const finalStatus = (result.status === 'completed' || result.status === 'failed') ? result.status : 'pending';
+
+        // Edge functions updates the specific stage and status rows directly,
+        // but the orchestrator must unlock the job so the next Vercel ping can pick it up again.
+        await unlockJob(supabase, job.id, finalStatus);
 
         return {
             jobId: job.id,
-            lessonId: job.lesson_id,
             jobType: job.job_type,
-            status: 'completed',
-            result
+            status: finalStatus,
+            edgeResult: result
         };
+
     } catch (processingError: any) {
         console.error(`[${workerId}] Job ${job.id} failed: ${processingError.message}`);
-        await failJob(supabase, workerId, job, processingError.message);
 
-        if ((job.attempts || 0) >= (job.max_attempts || 3)) {
-            await supabase.from('lessons')
-                .update({ analysis_status: 'failed' })
-                .eq('id', job.lesson_id);
-        }
+        await unlockJob(supabase, job.id); // unlock it so it can retry or fail
 
         return {
             jobId: job.id,
-            lessonId: job.lesson_id,
             jobType: job.job_type,
-            status: 'failed',
+            status: 'error',
             error: processingError.message
         };
     }
 }
+
+// ─── Main Orchestrator ──────────────────────────────
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method !== 'POST' && req.method !== 'GET') {
@@ -322,40 +178,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     try {
         const supabase = getSupabaseAdmin();
-        const maxJobs = toPositiveInt(
-            req.query.maxJobs ?? req.body?.maxJobs,
-            DEFAULT_MAX_JOBS,
-            MAX_MAX_JOBS
-        );
-        const staleMinutes = toPositiveInt(
-            req.query.staleMinutes ?? req.body?.staleMinutes,
-            DEFAULT_STALE_MINUTES,
-            120
-        );
+        const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
+        const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
-        let requeued = 0;
-        const { data: requeueCount, error: requeueError } = await supabase
-            .rpc('requeue_stale_jobs', { max_age_minutes: staleMinutes });
+        // Enforce maxJobs = 1 so the orchestration is extremely lightweight
+        const maxJobs = 1;
 
-        if (requeueError) {
-            console.warn(`[${workerId}] requeue_stale_jobs failed: ${requeueError.message}`);
+        // 1. Try to requeue any stale jobs (e.g., stuck processing)
+        const { data: requeueCount } = await supabase.rpc('requeue_stale_jobs', { max_age_minutes: 5 });
+        if (Number(requeueCount) > 0) {
+            console.log(`[${workerId}] Requeued ${requeueCount} stale jobs`);
         } else {
-            requeued = Number(requeueCount || 0);
-            if (requeued > 0) {
-                console.log(`[${workerId}] Requeued ${requeued} stale jobs`);
-            }
+            // Fallback for missing RPC: Reset anything locked over 5 mins ago
+            const fiveMinsAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+            await supabase.from('processing_queue')
+                .update({ locked_by: null, locked_at: null })
+                .in('status', ['pending', 'processing'])
+                .not('locked_by', 'is', null)
+                .lt('locked_at', fiveMinsAgo);
         }
 
         const startedAt = Date.now();
         const processedJobs: Array<Record<string, any>> = [];
 
+        // 2. Loop and claim just 1 job (maxJobs=1 enforces fast exit)
         for (let i = 0; i < maxJobs; i++) {
-            if (Date.now() - startedAt > MAX_RUN_MS) {
+            const jobId = await acquireJobId(supabase, workerId);
+            if (!jobId) {
+                console.log(`[${workerId}] No available jobs to claim.`);
                 break;
             }
-
-            const jobId = await acquireJobId(supabase, workerId);
-            if (!jobId) break;
 
             const { data: job, error: fetchError } = await supabase
                 .from('processing_queue')
@@ -364,45 +216,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 .single();
 
             if (fetchError || !job) {
-                processedJobs.push({
-                    jobId,
-                    status: 'failed',
-                    error: `Failed to fetch acquired job: ${fetchError?.message || 'missing job'}`
-                });
+                await unlockJob(supabase, jobId);
                 continue;
             }
 
-            console.log(`[${workerId}] Processing ${job.job_type} (${job.id})`);
-            processedJobs.push(await processSingleJob(supabase, job, workerId));
+            console.log(`[${workerId}] Orchestrating ${job.job_type} (${job.id})`);
+
+            // This is the core handoff. processSingleJob awaits the quick Edge Function response (max 20s)
+            processedJobs.push(await processSingleJob(supabase, job, workerId, supabaseUrl, serviceKey));
         }
 
-        const completed = processedJobs.filter(j => j.status === 'completed').length;
-        const failed = processedJobs.filter(j => j.status === 'failed').length;
         const elapsedMs = Date.now() - startedAt;
 
         if (processedJobs.length === 0) {
-            return res.status(200).json({
-                status: 'idle',
-                requeued,
-                maxJobs,
-                elapsedMs,
-                message: 'No pending jobs'
-            });
+            return res.status(200).json({ status: 'idle', elapsedMs, message: 'No pending jobs' });
         }
 
+        const lastJob = processedJobs[0];
+
         return res.status(200).json({
-            status: failed > 0 ? 'partial' : 'completed',
-            processed: processedJobs.length,
-            completed,
-            failed,
-            requeued,
-            maxJobs,
+            status: 'ok',
+            executed: 1,
             elapsedMs,
-            jobs: processedJobs
+            jobResult: lastJob
         });
 
     } catch (error: any) {
-        console.error(`[${workerId}] Worker Error:`, error);
-        return res.status(500).json({ error: error.message || 'Worker failed' });
+        console.error(`[${workerId}] Orchestrator Error:`, error);
+        return res.status(500).json({ error: error.message || 'Orchestrator failed' });
     }
 }

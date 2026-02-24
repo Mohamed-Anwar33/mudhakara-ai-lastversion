@@ -4,22 +4,15 @@ import { jsonrepair } from 'https://esm.sh/jsonrepair@3.4.0';
 import { corsHeaders, jsonResponse, errorResponse } from '../_shared/utils.ts';
 
 /**
- * Edge Function: analyze-lesson (v9 — Optimized for 150s timeout)
- * 
- * ⏱️ Time budget (150s total):
- *   - DB + Focus: ~5-10s
- *   - Summary batches (PARALLEL): ~15-25s
- *   - Quiz generation: ~15-20s
- *   - Save: ~2s
- *   - Safety margin: ~90s
- * 
- * Strategy:
- *   1. Small content (<120K chars): Single Gemini call → full summary
- *   2. Large content (>120K chars): Split into ~100K-char batches, run in PARALLEL
- *   3. Quiz/focus generated from merged summary (covers entire book)
+ * Edge Function: analyze-lesson (Step-based execution)
+ * Stages:
+ * 1. collecting_sections (also builds focus map)
+ * 2. summarizing_batch_i (where payload contains progress cursor)
+ * 3. merging_summaries
+ * 4. generating_quiz_focus
+ * 5. saving_analysis
+ * 6. completed | failed
  */
-
-// ─── JSON Repair ────────────────────────────────────────
 
 function repairTruncatedJSON(raw: string): any | null {
     try { return JSON.parse(raw); } catch { }
@@ -35,7 +28,6 @@ function repairTruncatedJSON(raw: string): any | null {
         console.warn(`[JSONRepair] Failed: ${e.message}`);
     }
 
-    // Manual repair for deeply truncated JSON
     let fixed = text;
     fixed = fixed.replace(/,?\s*"[^"]*$/, '');
     fixed = fixed.replace(/,?\s*"[^"]+":\s*"[^]*$/, '');
@@ -60,11 +52,7 @@ function repairTruncatedJSON(raw: string): any | null {
     try { return JSON.parse(fixed); } catch { return null; }
 }
 
-// ─── AI Calls ───────────────────────────────────────────
-
-/** Call Gemini for TEXT output (summaries) — no JSON constraint */
 async function callGeminiText(prompt: string, apiKey: string): Promise<{ text: string; tokens: number }> {
-    console.log(`[Gemini-TEXT] Sending ${prompt.length} chars...`);
     const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
         {
@@ -83,13 +71,10 @@ async function callGeminiText(prompt: string, apiKey: string): Promise<{ text: s
     const parts = data.candidates?.[0]?.content?.parts || [];
     const text = parts.filter((p: any) => p.text).map((p: any) => p.text).join('').trim();
     const tokens = data.usageMetadata?.totalTokenCount || 0;
-    console.log(`[Gemini-TEXT] ✅ Got ${text.length} chars, ${tokens} tokens`);
     return { text, tokens };
 }
 
-/** Call Gemini for JSON output (quizzes, focus points) */
 async function callGeminiJSON(prompt: string, apiKey: string): Promise<{ parsed: any; tokens: number }> {
-    console.log(`[Gemini-JSON] Sending ${prompt.length} chars...`);
     const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
         {
@@ -113,15 +98,12 @@ async function callGeminiJSON(prompt: string, apiKey: string): Promise<{ parsed:
     if (!parsed) throw new Error(`Bad JSON from Gemini: ${content.substring(0, 200)}`);
 
     const tokens = data.usageMetadata?.totalTokenCount || 0;
-    console.log(`[Gemini-JSON] ✅ Parsed OK, ${tokens} tokens`);
     return { parsed, tokens };
 }
 
-// ─── Focus Extraction ───────────────────────────────────
-
 async function buildFocusMap(supabase: any, lessonId: string): Promise<Set<string>> {
     const { data: sections } = await supabase.from('document_sections')
-        .select('id, content, source_type, embedding, chunk_index')
+        .select('id, content, source_type, embedding')
         .eq('lesson_id', lessonId);
 
     if (!sections) return new Set();
@@ -153,12 +135,8 @@ async function buildFocusMap(supabase: any, lessonId: string): Promise<Set<strin
             }
         }));
     }
-
-    console.log(`[Focus] ${focusedIds.size} sections matched`);
     return focusedIds;
 }
-
-// ─── Batch Splitting ────────────────────────────────────
 
 function splitIntoBatches(paragraphs: string[], batchSize: number, overlapCount: number): string[] {
     const batches: string[] = [];
@@ -178,20 +156,15 @@ function splitIntoBatches(paragraphs: string[], batchSize: number, overlapCount:
         }
     }
 
-    if (currentBatch.length > 0) {
-        batches.push(currentBatch.join('\n\n'));
-    }
-
+    if (currentBatch.length > 0) batches.push(currentBatch.join('\n\n'));
     return batches;
 }
-
-// ─── Summary Merge & Dedup ──────────────────────────────
 
 function mergeAndDedup(summaryParts: string[]): string {
     const mergedLectures = new Map<string, { title: string; content: string[] }>();
 
     for (const chunkText of summaryParts) {
-        if (typeof chunkText !== 'string') continue;
+        if (typeof chunkText !== 'string' || !chunkText.trim()) continue;
 
         const lines = chunkText.split('\n');
         let currentTitle = '';
@@ -203,9 +176,7 @@ function mergeAndDedup(summaryParts: string[]): string {
             if (line.trim().startsWith('## ')) {
                 const rawTitle = line.trim().substring(3).trim();
                 if (rawTitle.length < 2) continue;
-
                 currentTitle = rawTitle.replace(/^[\d\.\-\s]+/, '').trim();
-
                 if (!mergedLectures.has(currentTitle)) {
                     mergedLectures.set(currentTitle, { title: currentTitle, content: [] });
                 }
@@ -222,16 +193,12 @@ function mergeAndDedup(summaryParts: string[]): string {
     const finalParts: string[] = [];
     for (const [_, lecture] of mergedLectures) {
         if (lecture.content.length === 0) continue;
-        let md = `## ${lecture.title}\n\n`;
-        md += lecture.content.join('\n');
+        let md = `## ${lecture.title}\n\n${lecture.content.join('\n')}`;
         finalParts.push(md);
     }
 
-    console.log(`[Merge] ${mergedLectures.size} unique lectures, ${finalParts.length} with content`);
     return finalParts.join('\n\n---\n\n');
 }
-
-// ─── Normalize Quiz Response ────────────────────────────
 
 function normalizeQuizResponse(parsed: any): any {
     if (parsed.focus_points && !parsed.focusPoints) parsed.focusPoints = parsed.focus_points;
@@ -252,8 +219,6 @@ function normalizeQuizResponse(parsed: any): any {
     }
     return parsed;
 }
-
-// ─── Build Summary Prompt ───────────────────────────────
 
 function buildSummaryPrompt(content: string, batchNum: number, totalBatches: number, hasAudio: boolean): string {
     const batchInfo = totalBatches > 1 ? ` (الجزء ${batchNum} من ${totalBatches})` : '';
@@ -278,8 +243,6 @@ function buildSummaryPrompt(content: string, batchNum: number, totalBatches: num
 ${content}`;
 }
 
-// ─── Main Handler ───────────────────────────────────────
-
 serve(async (req) => {
     if (req.method === 'OPTIONS') {
         return new Response('ok', {
@@ -291,195 +254,197 @@ serve(async (req) => {
         if (req.method !== 'POST') return errorResponse('Method Not Allowed', 405);
 
         const body = await req.json();
-        const { lessonId } = body;
-        if (!lessonId) return errorResponse('Missing lessonId', 400);
+        const { jobId } = body;
+
+        if (!jobId) {
+            return errorResponse('Missing jobId', 400);
+        }
 
         const supabaseUrl = Deno.env.get('APP_SUPABASE_URL') || Deno.env.get('SUPABASE_URL') || '';
         const supabaseKey = Deno.env.get('APP_SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
         const geminiKey = Deno.env.get('GEMINI_API_KEY') || '';
 
-        if (!supabaseUrl || !supabaseKey) return errorResponse('Missing Supabase config', 500);
-        if (!geminiKey) return errorResponse('Missing GEMINI_API_KEY', 500);
+        if (!supabaseUrl || !supabaseKey || !geminiKey) return errorResponse('Missing Config', 500);
 
         const supabase = createClient(supabaseUrl, supabaseKey);
-        const startTime = Date.now();
-        const elapsed = () => ((Date.now() - startTime) / 1000);
 
-        // 1. Update status
-        await supabase.from('lessons').update({ analysis_status: 'processing' }).eq('id', lessonId);
+        const { data: job, error: jobError } = await supabase
+            .from('processing_queue')
+            .select('*')
+            .eq('id', jobId)
+            .single();
 
-        // 2. Fetch ALL content
-        const { data: allSections } = await supabase.from('document_sections')
-            .select('id, content, source_type, embedding, chunk_index')
-            .eq('lesson_id', lessonId).order('chunk_index');
+        if (jobError || !job) return errorResponse('Job not found', 404);
 
-        if (!allSections || allSections.length === 0) {
-            return errorResponse('No content found for this lesson', 400);
-        }
+        const lessonId = job.lesson_id;
+        let { stage, progress, attempt_count, extraction_cursor, payload } = job;
 
-        const pdf = allSections.filter((s: any) => s.source_type === 'pdf');
-        const audio = allSections.filter((s: any) => s.source_type === 'audio');
-        const image = allSections.filter((s: any) => s.source_type === 'image');
+        stage = stage || 'collecting_sections';
+        progress = progress || 0;
+        attempt_count = attempt_count || 0;
+        extraction_cursor = extraction_cursor || 0;
+        // ensure payload is object
+        if (!payload || typeof payload !== 'object') payload = {};
 
-        const pdfChars = pdf.reduce((s: number, x: any) => s + (x.content?.length || 0), 0);
-        const audioChars = audio.reduce((s: number, x: any) => s + (x.content?.length || 0), 0);
-        const imageChars = image.reduce((s: number, x: any) => s + (x.content?.length || 0), 0);
-        const totalChars = pdfChars + audioChars + imageChars;
+        console.log(`[Analyze DBG] Job ${jobId} | Stage: ${stage} | Progress: ${progress}%`);
 
-        console.log(`[Analysis] ⏱️ ${elapsed().toFixed(1)}s | Content: ${pdf.length} PDF (${pdfChars}), ${audio.length} audio (${audioChars}), ${image.length} image (${imageChars}). Total: ${totalChars}`);
+        const advanceStage = async (newStage: string, newProgress: number, extraUpdates: any = {}) => {
+            const { error } = await supabase.from('processing_queue')
+                .update({ stage: newStage, progress: newProgress, updated_at: new Date().toISOString(), ...extraUpdates })
+                .eq('id', jobId);
+            if (error) throw new Error(`Failed to advance stage: ${error.message}`);
+            return jsonResponse({ success: true, stage: newStage, progress: newProgress, status: 'processing' });
+        };
 
-        // 3. Build focus map (only if audio exists & has embeddings)
-        let focusedIds = new Set<string>();
-        if (audioChars > 3000) {
-            try {
-                focusedIds = await buildFocusMap(supabase, lessonId);
-            } catch (e: any) {
-                console.warn(`[Analysis] Focus failed: ${e.message}`);
-            }
-        }
-        console.log(`[Analysis] ⏱️ ${elapsed().toFixed(1)}s | Focus done: ${focusedIds.size} matches`);
+        const setFail = async (errMsg: string) => {
+            await supabase.from('processing_queue').update({
+                status: 'failed', stage: 'failed', last_error: errMsg, updated_at: new Date().toISOString()
+            }).eq('id', jobId);
+            await supabase.from('lessons').update({ analysis_status: 'failed' }).eq('id', lessonId);
+            return jsonResponse({ success: false, stage: 'failed', status: 'failed', error: errMsg });
+        };
 
-        // 4. Build full content text with focus markers
-        let fullContent = '';
-        for (const s of pdf) {
-            const marker = focusedIds.has(s.id) ? '⭐ [ركّز عليه المعلم] ' : '';
-            fullContent += marker + s.content + '\n\n';
-        }
-        if (image.length > 0) {
-            fullContent += '\n=== ملاحظات / صور ===\n\n';
-            for (const s of image) fullContent += s.content + '\n\n';
-        }
+        const setComplete = async () => {
+            await supabase.from('processing_queue').update({
+                status: 'completed', stage: 'completed', progress: 100, completed_at: new Date().toISOString()
+            }).eq('id', jobId);
+            await supabase.from('lessons').update({ analysis_status: 'completed' }).eq('id', lessonId);
+            return jsonResponse({ success: true, stage: 'completed', progress: 100, status: 'completed' });
+        };
 
-        // Add audio transcription to the content for comprehensive analysis
-        let audioText = '';
-        if (audio.length > 0) {
-            audioText = audio.map((s: any) => s.content).join('\n\n');
-            fullContent += '\n=== شرح المعلم (تفريغ صوتي) ===\n\n' + audioText + '\n\n';
-        }
+        try {
+            // ==========================================
+            // STAGE 1: collecting_sections
+            // ==========================================
+            if (stage === 'collecting_sections' || stage === 'pending_upload') {
+                await supabase.from('lessons').update({ analysis_status: 'processing' }).eq('id', lessonId);
 
-        // 5. Noise filter: remove repetitive paragraphs
-        const paragraphs = fullContent.split('\n\n').filter((p: string) => p.trim().length > 30);
-        const seen = new Map<string, number>();
-        const cleanParagraphs: string[] = [];
+                const { data: allSections } = await supabase.from('document_sections')
+                    .select('id, content, source_type, chunk_index')
+                    .eq('lesson_id', lessonId).order('chunk_index');
 
-        for (const p of paragraphs) {
-            const fingerprint = p.trim().substring(0, 80).replace(/\s+/g, ' ');
-            const count = (seen.get(fingerprint) || 0) + 1;
-            seen.set(fingerprint, count);
-            if (count > 2) continue;
-            cleanParagraphs.push(p);
-        }
-
-        const cleanContent = cleanParagraphs.join('\n\n');
-        console.log(`[Analysis] ⏱️ ${elapsed().toFixed(1)}s | Clean content: ${cleanContent.length} chars (removed ${fullContent.length - cleanContent.length} noise)`);
-
-        // ═══════════════════════════════════════════════════════════
-        // PHASE A: Generate SUMMARY
-        //   - Small (<120K): Single call → ~15-20s
-        //   - Large (>120K): Split into ~100K batches → PARALLEL → ~15-25s
-        // ═══════════════════════════════════════════════════════════
-
-        let totalTokens = 0;
-        let summary = '';
-        const hasAudio = audio.length > 0;
-
-        if (cleanContent.length <= 120000) {
-            // ──── SMALL/MEDIUM: Single Gemini call ────
-            console.log(`[Analysis] 📝 Single-call mode (${cleanContent.length} chars)`);
-
-            const prompt = buildSummaryPrompt(cleanContent, 1, 1, hasAudio);
-
-            for (let attempt = 1; attempt <= 2; attempt++) {
-                try {
-                    const result = await callGeminiText(prompt, geminiKey);
-                    summary = result.text;
-                    totalTokens += result.tokens;
-                    break;
-                } catch (e: any) {
-                    console.warn(`[Analysis] Single-call attempt ${attempt} failed: ${e.message}`);
-                    if (attempt === 2) throw new Error(`Summary generation failed: ${e.message}`);
-                    await new Promise(r => setTimeout(r, 2000));
-                }
-            }
-
-        } else {
-            // ──── LARGE: Batch + Parallel ────
-            // Gemini 2.5 Flash: 1M token context ≈ 3-4M chars input
-            // Each batch ~100K chars → Gemini handles it easily
-            // Run up to 3 batches in PARALLEL to save time
-            const BATCH_SIZE = 100000;
-            const OVERLAP = 3;
-            const batches = splitIntoBatches(cleanParagraphs, BATCH_SIZE, OVERLAP);
-            console.log(`[Analysis] 📝 Batch mode: ${batches.length} batches (${batches.map(b => b.length).join(', ')} chars)`);
-
-            // Run batches in parallel groups of 3
-            const PARALLEL_LIMIT = 3;
-            const summaryParts: string[] = new Array(batches.length).fill('');
-
-            for (let groupStart = 0; groupStart < batches.length; groupStart += PARALLEL_LIMIT) {
-                // Check time: need at least 30s for quiz generation
-                if (elapsed() > 110 && summaryParts.some(p => p.length > 0)) {
-                    console.warn(`[Analysis] ⏱️ Time pressure (${elapsed().toFixed(0)}s), stopping batches at group ${groupStart}`);
-                    break;
+                if (!allSections || allSections.length === 0) {
+                    throw new Error('No content found for this lesson to analyze');
                 }
 
-                const groupEnd = Math.min(groupStart + PARALLEL_LIMIT, batches.length);
-                const groupIndices = Array.from({ length: groupEnd - groupStart }, (_, i) => groupStart + i);
+                const pdf = allSections.filter((s: any) => s.source_type === 'pdf');
+                const audio = allSections.filter((s: any) => s.source_type === 'audio');
+                const image = allSections.filter((s: any) => s.source_type === 'image');
 
-                console.log(`[Analysis] ⏱️ ${elapsed().toFixed(1)}s | Sending batch group [${groupIndices.map(i => i + 1).join(',')}] in PARALLEL...`);
+                const audioChars = audio.reduce((s: number, x: any) => s + (x.content?.length || 0), 0);
 
-                const promises = groupIndices.map(i => {
-                    const prompt = buildSummaryPrompt(batches[i], i + 1, batches.length, hasAudio);
-                    return callGeminiText(prompt, geminiKey)
-                        .then(result => {
-                            summaryParts[i] = result.text;
-                            totalTokens += result.tokens;
-                            console.log(`[Analysis] Batch ${i + 1}: ${result.text.length} chars ✅`);
-                        })
-                        .catch(e => {
-                            console.warn(`[Analysis] Batch ${i + 1} failed: ${e.message}`);
-                            summaryParts[i] = '';
-                        });
-                });
+                let focusedIds = new Set<string>();
+                if (audioChars > 3000) {
+                    try { focusedIds = await buildFocusMap(supabase, lessonId); } catch (e) { }
+                }
 
-                await Promise.allSettled(promises);
+                let fullContent = '';
+                for (const s of pdf) {
+                    const marker = focusedIds.has(s.id) ? '⭐ [ركّز عليه المعلم] ' : '';
+                    fullContent += marker + s.content + '\n\n';
+                }
+                if (image.length > 0) {
+                    fullContent += '\n=== ملاحظات / صور ===\n\n';
+                    for (const s of image) fullContent += s.content + '\n\n';
+                }
+
+                let audioText = '';
+                if (audio.length > 0) {
+                    audioText = audio.map((s: any) => s.content).join('\n\n');
+                    fullContent += '\n=== شرح المعلم (تفريغ صوتي) ===\n\n' + audioText + '\n\n';
+                }
+
+                // Filtering noise
+                const paragraphs = fullContent.split('\n\n').filter((p: string) => p.trim().length > 30);
+                const seen = new Map<string, number>();
+                const cleanParagraphs: string[] = [];
+                for (const p of paragraphs) {
+                    const fingerprint = p.trim().substring(0, 80).replace(/\s+/g, ' ');
+                    const count = (seen.get(fingerprint) || 0) + 1;
+                    seen.set(fingerprint, count);
+                    if (count > 2) continue;
+                    cleanParagraphs.push(p);
+                }
+
+                const cleanContent = cleanParagraphs.join('\n\n');
+
+                // Prepare batches
+                const batches = splitIntoBatches(cleanParagraphs, 100000, 3);
+
+                // Save to payload
+                payload.batches = batches;
+                payload.hasAudio = audio.length > 0;
+                payload.audioText = audioText;
+                payload.summaryParts = [];
+                payload.totalTokens = 0;
+
+                return await advanceStage('summarizing_batch_i', 15, { payload, extraction_cursor: 0 });
             }
 
-            // Merge and deduplicate
-            const validParts = summaryParts.filter(p => p.length > 50);
-            summary = mergeAndDedup(validParts);
-        }
+            // ==========================================
+            // STAGE 2: summarizing_batch_i
+            // ==========================================
+            if (stage === 'summarizing_batch_i') {
+                const batches = payload.batches || [];
+                const batchIndex = extraction_cursor || 0;
 
-        console.log(`[Analysis] ⏱️ ${elapsed().toFixed(1)}s | Summary: ${summary.length} chars`);
+                if (batchIndex >= batches.length) {
+                    return await advanceStage('merging_summaries', 50);
+                }
 
-        // ═══════════════════════════════════════════════════════════
-        // PHASE B: Generate QUIZZES + FOCUS + ESSAYS (JSON)
-        // Uses the FULL merged summary so questions cover the ENTIRE book
-        // ═══════════════════════════════════════════════════════════
+                const content = batches[batchIndex];
+                const prompt = buildSummaryPrompt(content, batchIndex + 1, batches.length, payload.hasAudio);
 
-        const lectureCount = (summary.match(/^## /gm) || []).length;
-        const focusCount = Math.max(8, Math.min(20, lectureCount * 2));
-        const quizCount = Math.max(12, Math.min(30, lectureCount * 3));
-        const essayCount = Math.max(3, Math.min(8, lectureCount));
+                console.log(`[Analyze] Summarizing batch ${batchIndex + 1}/${batches.length}...`);
 
-        console.log(`[Analysis] ${lectureCount} lectures → ${focusCount} focus, ${quizCount} quiz, ${essayCount} essay`);
+                const result = await callGeminiText(prompt, geminiKey);
 
-        // For quiz generation: send the summary (already covers entire book)
-        // + audio for teacher emphasis
-        let quizSourceContent = summary;
+                if (!payload.summaryParts) payload.summaryParts = [];
+                payload.summaryParts[batchIndex] = result.text;
+                payload.totalTokens = (payload.totalTokens || 0) + result.tokens;
 
-        if (audioText && audioText.length > 100) {
-            // Add condensed audio: important for focus points and teacher emphasis
-            const audioForQuiz = audioText.length > 40000 ? audioText.substring(0, 40000) + '\n...(اقتطاع)' : audioText;
-            quizSourceContent += '\n\n=== شرح المعلم الصوتي ===\n\n' + audioForQuiz;
-        }
+                const nextCursor = batchIndex + 1;
+                const nextStage = nextCursor >= batches.length ? 'merging_summaries' : 'summarizing_batch_i';
+                const prog = 15 + Math.floor((nextCursor / batches.length) * 35); // 15 to 50%
 
-        // Cap to stay safe within Gemini context
-        if (quizSourceContent.length > 180000) {
-            quizSourceContent = quizSourceContent.substring(0, 180000) + '\n...(اقتطاع)';
-        }
+                return await advanceStage(nextStage, prog, { payload, extraction_cursor: nextCursor });
+            }
 
-        const quizPrompt = `بناءً على المحتوى التالي (ملخص كتاب كامل + شرح صوتي إن وُجد)، أخرج JSON يحتوي على:
+            // ==========================================
+            // STAGE 3: merging_summaries
+            // ==========================================
+            if (stage === 'merging_summaries') {
+                console.log(`[Analyze] Merging summaries...`);
+                const validParts = (payload.summaryParts || []).filter((p: string) => p && p.length > 50);
+                payload.summary = mergeAndDedup(validParts);
+
+                return await advanceStage('generating_quiz_focus', 60, { payload });
+            }
+
+            // ==========================================
+            // STAGE 4: generating_quiz_focus
+            // ==========================================
+            if (stage === 'generating_quiz_focus') {
+                console.log(`[Analyze] Generating quizzes and focus points...`);
+                let summary = payload.summary || '';
+                const lectureCount = (summary.match(/^## /gm) || []).length || 1;
+                const focusCount = Math.max(8, Math.min(20, lectureCount * 2));
+                const quizCount = Math.max(12, Math.min(30, lectureCount * 3));
+                const essayCount = Math.max(3, Math.min(8, lectureCount));
+
+                let quizSourceContent = summary;
+                const audioText = payload.audioText || '';
+
+                if (audioText && audioText.length > 100) {
+                    const audioForQuiz = audioText.length > 40000 ? audioText.substring(0, 40000) + '\n...(اقتطاع)' : audioText;
+                    quizSourceContent += '\n\n=== شرح المعلم الصوتي ===\n\n' + audioForQuiz;
+                }
+
+                if (quizSourceContent.length > 180000) {
+                    quizSourceContent = quizSourceContent.substring(0, 180000) + '\n...(اقتطاع)';
+                }
+
+                const quizPrompt = `بناءً على المحتوى التالي (ملخص كتاب كامل + شرح صوتي إن وُجد)، أخرج JSON يحتوي على:
 
 1. **focusPoints** (${focusCount} نقطة) — النقاط المحورية الأهم في الكتاب:
    - title: عنوان النقطة
@@ -506,70 +471,78 @@ serve(async (req) => {
 
 ${quizSourceContent}`;
 
-        let quizParsed: any = { focusPoints: [], quizzes: [], essayQuestions: [] };
-
-        // Check time: only generate quizzes if we have time
-        if (elapsed() < 130) {
-            try {
-                const quizResult = await callGeminiJSON(quizPrompt, geminiKey);
-                quizParsed = normalizeQuizResponse(quizResult.parsed);
-                totalTokens += quizResult.tokens;
-            } catch (e: any) {
-                console.warn(`[Analysis] ⚠️ Quiz generation failed: ${e.message}`);
-                // Retry with smaller content if time allows
-                if (elapsed() < 135) {
-                    try {
-                        const smallerPrompt = quizPrompt.substring(0, 80000);
-                        const retry = await callGeminiJSON(smallerPrompt, geminiKey);
-                        quizParsed = normalizeQuizResponse(retry.parsed);
-                        totalTokens += retry.tokens;
-                    } catch (e2: any) {
-                        console.warn(`[Analysis] ⚠️ Quiz retry failed: ${e2.message}`);
-                    }
+                const retryText = quizSourceContent.substring(0, 60000); // For failure retry
+                let parsed: any;
+                try {
+                    const quizResult = await callGeminiJSON(quizPrompt, geminiKey);
+                    parsed = normalizeQuizResponse(quizResult.parsed);
+                    payload.totalTokens = (payload.totalTokens || 0) + quizResult.tokens;
+                } catch (e: any) {
+                    console.warn(`[Analyze] Quiz full failed: ${e.message}. Retrying truncated...`);
+                    const fall = await callGeminiJSON(quizPrompt.replace(quizSourceContent, retryText), geminiKey);
+                    parsed = normalizeQuizResponse(fall.parsed);
+                    payload.totalTokens = (payload.totalTokens || 0) + fall.tokens;
                 }
+
+                payload.quizParsed = parsed;
+                payload.lectureCount = lectureCount;
+
+                return await advanceStage('saving_analysis', 85, { payload });
             }
-        } else {
-            console.warn(`[Analysis] ⏱️ Skipping quiz generation (${elapsed().toFixed(0)}s elapsed, too close to timeout)`);
+
+            // ==========================================
+            // STAGE 5: saving_analysis
+            // ==========================================
+            if (stage === 'saving_analysis') {
+                console.log(`[Analyze] Saving result to DB...`);
+
+                const summary = payload.summary || '';
+                const quizParsed = payload.quizParsed || { focusPoints: [], quizzes: [], essayQuestions: [] };
+
+                const analysisResult = {
+                    summary,
+                    focusPoints: quizParsed.focusPoints || [],
+                    quizzes: quizParsed.quizzes || [],
+                    essayQuestions: quizParsed.essayQuestions || [],
+                    metadata: {
+                        model: 'gemini-2.5-flash-step',
+                        totalTokens: payload.totalTokens || 0,
+                        lecturesDetected: payload.lectureCount || 0,
+                        generatedAt: new Date().toISOString(),
+                        schemaVersion: 10
+                    }
+                };
+
+                const { error: saveErr } = await supabase.from('lessons').update({
+                    analysis_result: analysisResult,
+                    analysis_status: 'completed'
+                }).eq('id', lessonId);
+
+                if (saveErr) throw new Error(`Failed to save analysis: ${saveErr.message}`);
+
+                return await setComplete();
+            }
+
+            if (stage === 'completed' || stage === 'failed') {
+                return jsonResponse({ success: true, stage, status: stage });
+            }
+
+            throw new Error(`Unknown stage: ${stage}`);
+
+        } catch (e: any) {
+            console.error(`[Analyze DBG] Error in ${stage}: ${e.message}`);
+            if (attempt_count >= 3) {
+                return await setFail(e.message);
+            } else {
+                await supabase.from('processing_queue').update({ attempt_count: attempt_count + 1 }).eq('id', jobId);
+                return jsonResponse({ success: false, stage, status: 'processing', error: e.message, attempt: attempt_count + 1 });
+            }
         }
 
-        // ═══════════════════════════════════════════════════════════
-        // PHASE C: Save Results
-        // ═══════════════════════════════════════════════════════════
-
-        const analysisResult = {
-            summary,
-            focusPoints: quizParsed.focusPoints || [],
-            quizzes: quizParsed.quizzes || [],
-            essayQuestions: quizParsed.essayQuestions || [],
-            metadata: {
-                model: 'gemini-2.5-flash-v9',
-                contentStats: {
-                    pdfChars,
-                    audioChars,
-                    imageChars,
-                    totalSections: allSections.length,
-                    lecturesDetected: lectureCount,
-                    focusMatches: focusedIds.size,
-                    processingTime: elapsed().toFixed(1) + 's'
-                },
-                generatedAt: new Date().toISOString(),
-                schemaVersion: 9
-            }
-        };
-
-        await supabase.from('lessons').update({
-            analysis_result: analysisResult,
-            analysis_status: 'completed'
-        }).eq('id', lessonId);
-
-        console.log(`[Analysis] ✅ Done in ${elapsed().toFixed(1)}s: ${totalTokens} tokens, ${summary.length} chars summary, ${lectureCount} lectures, ${quizParsed.focusPoints?.length || 0} focus, ${quizParsed.quizzes?.length || 0} quiz, ${quizParsed.essayQuestions?.length || 0} essay`);
-
-        return jsonResponse({ success: true, data: analysisResult });
-
     } catch (error: any) {
-        console.error('Analysis Fatal Error:', error);
+        console.error('Analyze Edge Fatal Error:', error);
         return new Response(
-            JSON.stringify({ error: error.message || 'Analysis failed', stack: error.stack }),
+            JSON.stringify({ error: error.message || 'Analysis handler crashed', stack: error.stack }),
             { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
     }

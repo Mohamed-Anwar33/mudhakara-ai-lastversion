@@ -185,14 +185,14 @@ export async function ingestFile(
     return firstResult as IngestResponse;
 }
 
-export async function triggerQueueWorker(maxJobs: number = 3): Promise<any> {
-    const response = await fetch(`/api/process-queue?maxJobs=${maxJobs}`, {
+export async function triggerQueueWorker(maxJobs: number = 1): Promise<any> {
+    const response = await fetch(`/api/process-queue?maxJobs=${maxJobs}&t=${Date.now()}`, {
         method: 'POST'
     });
 
-    const payload = await response.json();
+    const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-        throw new Error(payload?.error || 'فشل تشغيل عامل المعالجة');
+        throw new Error(payload?.error || `فشل تشغيل عامل المعالجة: ${response.status}`);
     }
 
     return payload;
@@ -206,11 +206,16 @@ export async function triggerQueueWorker(maxJobs: number = 3): Promise<any> {
  * يجلب حالة جميع الوظائف لدرس معين.
  */
 export async function getJobStatus(lessonId: string): Promise<LessonJobsResponse> {
-    const response = await fetch(`/api/job-status?lessonId=${lessonId}`);
+    const response = await fetch(`/api/job-status?lessonId=${lessonId}&t=${Date.now()}`, {
+        headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache'
+        }
+    });
 
     if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || 'فشل جلب الحالة');
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || `فشل جلب الحالة: ${response.status}`);
     }
 
     return await response.json();
@@ -221,18 +226,19 @@ export async function getJobStatus(lessonId: string): Promise<LessonJobsResponse
  * 
  * @param lessonId - معرف الدرس
  * @param onUpdate - callback عند كل تحديث
- * @param intervalMs - الفاصل بين الاستعلامات (افتراضي 3 ثوانٍ)
- * @param maxAttempts - الحد الأقصى للمحاولات (افتراضي 100 = 5 دقائق)
+ * @param intervalMs - الفاصل بين الاستعلامات (افتراضي 5 ثوانٍ)
+ * @param maxAttempts - الحد الأقصى للمحاولات (افتراضي 200)
  * @returns Promise تنتهي عند اكتمال المعالجة
  */
 export function pollJobStatus(
     lessonId: string,
     onUpdate: (response: LessonJobsResponse) => void,
-    intervalMs: number = 3000,
-    maxAttempts: number = 100
+    intervalMs: number = 5000,
+    maxAttempts: number = 200
 ): { promise: Promise<LessonJobsResponse>; cancel: () => void } {
     let cancelled = false;
     let attempt = 0;
+    let backoffMs = intervalMs;
 
     const cancel = () => { cancelled = true; };
 
@@ -251,13 +257,12 @@ export function pollJobStatus(
             try {
                 attempt++;
                 const status = await getJobStatus(lessonId);
+
+                // Reset backoff on success
+                backoffMs = intervalMs;
+
                 onUpdate(status);
 
-                // Check if pipeline is truly done:
-                // - All current jobs must be terminal
-                // - AND lessonStatus must be 'completed' or 'failed'
-                // (embed/analysis jobs are enqueued AFTER extraction completes,
-                //  so jobs alone can't tell us if the pipeline is finished)
                 const allTerminal = status.jobs.length > 0 && status.jobs.every(
                     j => j.status === 'completed' || j.status === 'failed' || j.status === 'dead'
                 );
@@ -268,10 +273,18 @@ export function pollJobStatus(
                     return;
                 }
 
-                // Continue polling
-                setTimeout(poll, intervalMs);
-            } catch (err) {
-                reject(err);
+                setTimeout(poll, backoffMs);
+            } catch (err: any) {
+                console.warn(`[Polling] Attempt ${attempt} failed: ${err.message}. Retrying...`);
+
+                // Exponential backoff for 5xx errors like 504 Gateway Timeout
+                if (err.message.includes('504') || err.message.includes('500') || err.message.includes('502')) {
+                    backoffMs = Math.min(backoffMs * 1.5, 15000); // Max backoff 15s
+                } else {
+                    backoffMs = intervalMs;
+                }
+
+                setTimeout(poll, backoffMs);
             }
         };
 
