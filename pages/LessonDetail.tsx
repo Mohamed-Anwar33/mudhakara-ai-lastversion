@@ -140,43 +140,7 @@ const LessonDetail: React.FC = () => {
 
     const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-    const enqueueIngest = async (
-      filePayload: { fileName: string; filePath: string; fileType: 'pdf' | 'audio' | 'image'; contentHash?: string },
-      retries = 2
-    ) => {
-      let lastError: Error | null = null;
-      for (let attempt = 1; attempt <= retries + 1; attempt++) {
-        try {
-          const response = await fetch('/api/ingest-file', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              lessonId: lesson.id,
-              files: [filePayload]
-            })
-          });
-          const payload = await response.json().catch(() => ({}));
-
-          if (!response.ok) {
-            throw new Error(payload?.error || `Ingest failed (${response.status})`);
-          }
-
-          const first = payload?.results?.[0] || payload;
-          if (!first || typeof first !== 'object' || !first.status) {
-            throw new Error('Invalid ingest response');
-          }
-
-          return first as { status: string; message?: string; jobId?: string };
-        } catch (err: any) {
-          lastError = err instanceof Error ? err : new Error(String(err));
-          if (attempt <= retries) {
-            await delay(700 * attempt);
-          }
-        }
-      }
-
-      throw lastError || new Error('Ingest failed');
-    };
+    // Removed enqueueIngest in favor of inline batch fetch
 
     const triggerQueueWorker = async (maxJobs = 1) => {
       const workerRes = await fetch(`/api/process-queue?maxJobs=${maxJobs}`, {
@@ -278,26 +242,43 @@ const LessonDetail: React.FC = () => {
       let acceptedIngestCount = 0;
       const acceptedStatuses = new Set(['queued', 'duplicate', 'already_queued']);
 
-      for (let i = 0; i < filesToIngest.length; i++) {
-        const fileItem = filesToIngest[i];
-        setProgressMsg(`Queueing file ${i + 1}/${filesToIngest.length}: ${fileItem.name}`);
+      setProgressMsg(`Queueing ${filesToIngest.length} files...`);
 
-        try {
-          const ingestResult = await enqueueIngest({
-            fileName: fileItem.name,
-            filePath: fileItem.path,
-            fileType: fileItem.type,
-            contentHash: fileItem.contentHash
-          });
+      try {
+        const response = await fetch('/api/ingest-file', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            lessonId: lesson.id,
+            files: filesToIngest.map(f => ({
+              fileName: f.name,
+              filePath: f.path,
+              fileType: f.type,
+              contentHash: f.contentHash
+            })),
+            forceReextract: true
+          })
+        });
 
-          if (acceptedStatuses.has(ingestResult.status)) {
-            acceptedIngestCount++;
-          } else {
-            ingestFailures.push(`${fileItem.name}: ${ingestResult.message || ingestResult.status}`);
-          }
-        } catch (ingestErr: any) {
-          ingestFailures.push(`${fileItem.name}: ${ingestErr.message || 'enqueue failed'}`);
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload?.error || `Batch ingest failed (${response.status})`);
         }
+
+        if (Array.isArray(payload.results)) {
+          for (const r of payload.results) {
+            if (acceptedStatuses.has(r.status)) {
+              acceptedIngestCount++;
+            } else {
+              ingestFailures.push(`${r.fileName}: ${r.message || r.status}`);
+            }
+          }
+        } else {
+          // Fallback if results array is missing but request succeeded
+          acceptedIngestCount = filesToIngest.length;
+        }
+      } catch (err: any) {
+        throw new Error(`Failed to enqueue files: ${err.message}`);
       }
 
       if (acceptedIngestCount === 0) {

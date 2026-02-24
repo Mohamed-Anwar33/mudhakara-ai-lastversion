@@ -29,6 +29,7 @@ interface BatchFileInput {
 interface BatchIngestRequest {
     lessonId: string;
     files: BatchFileInput[];
+    forceReextract?: boolean;
 }
 
 interface NormalizedFile {
@@ -42,6 +43,7 @@ interface NormalizedRequest {
     lessonId: string;
     files: NormalizedFile[];
     isLegacy: boolean;
+    forceReextract: boolean;
 }
 
 const getSupabaseAdmin = () => {
@@ -128,7 +130,8 @@ function normalizeBody(body: any): { request?: NormalizedRequest; error?: string
             request: {
                 lessonId: payload.lessonId,
                 files: normalizedFiles,
-                isLegacy: false
+                isLegacy: false,
+                forceReextract: !!payload.forceReextract
             }
         };
     }
@@ -155,7 +158,8 @@ function normalizeBody(body: any): { request?: NormalizedRequest; error?: string
                 fileType: normalizedType,
                 contentHash: legacy.contentHash?.trim() || undefined
             }],
-            isLegacy: true
+            isLegacy: true,
+            forceReextract: false
         }
     };
 }
@@ -206,8 +210,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return res.status(400).json({ error: normalized.error || 'Invalid ingest payload' });
         }
 
-        const { lessonId, files, isLegacy } = normalized.request;
+        const { lessonId, files, isLegacy, forceReextract } = normalized.request;
         const supabase = getSupabaseAdmin();
+
+        if (forceReextract) {
+            console.log(`[Ingest] forceReextract=true for lesson ${lessonId}. Purging old data to force full re-extraction.`);
+            await Promise.allSettled([
+                supabase.from('processing_queue').delete().eq('lesson_id', lessonId),
+                supabase.from('file_hashes').delete().eq('lesson_id', lessonId),
+                supabase.from('document_sections').delete().eq('lesson_id', lessonId),
+                supabase.from('lecture_segments').delete().eq('lesson_id', lessonId),
+                supabase.from('book_analysis').delete().eq('lesson_id', lessonId),
+                // Force analysis_result clearing on frontend
+                supabase.from('lessons').update({
+                    analysis_status: 'pending',
+                    analysis_result: null
+                }).eq('id', lessonId)
+            ]);
+        }
 
         const { data: lesson, error: lessonError } = await supabase
             .from('lessons')
