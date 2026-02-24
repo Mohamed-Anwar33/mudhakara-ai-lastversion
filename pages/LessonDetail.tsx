@@ -379,6 +379,14 @@ const LessonDetail: React.FC = () => {
 
         const ingestWarning = ingestFailures.length > 0 ? ` | تعذر معالجة ${ingestFailures.length} ملف` : '';
         setProgressMsg(queueMsg + ingestWarning);
+
+        if (status?.lessonStatus === 'completed' && status?.analysisResult) {
+          result = status.analysisResult;
+          break;
+        } else if (status?.lessonStatus === 'failed') {
+          throw new Error('فشل التحليل الذكي للخلاصة.');
+        }
+
         if (!result) {
           // Keep waiting in the loop
           continue;
