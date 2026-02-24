@@ -61,6 +61,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 .eq('id', lessonId)
                 .single();
 
+            console.log(`[JobStatus Debug] Lesson ${lessonId} | Jobs count: ${data?.length}`);
+            if (data && data.length > 0) {
+                console.log(`[JobStatus Debug] Jobs map:`, data.map((j: any) => `${j.job_type}=${j.status}(${j.stage})`).join(' | '));
+            }
+
             return res.status(200).json({
                 jobs: data,
                 lessonStatus: lesson?.analysis_status,

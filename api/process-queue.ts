@@ -213,20 +213,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Enforce maxJobs = 1 so the orchestration is extremely lightweight
         const maxJobs = 1;
 
-        // Requeue stale jobs using RPC
-        const { data: requeueCount, error: requeueErr } = await supabase.rpc('requeue_stale_jobs', { max_age_minutes: 5 });
-        if (!requeueErr) {
-            if (Number(requeueCount) > 0) {
-                console.log(`[${workerId}] Requeued ${requeueCount} stale jobs`);
+        // Fallback or explicit cleanup for locked jobs older than 5 minutes
+        const fiveMinsAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+        const { data: staleJobs } = await supabase
+            .from('processing_queue')
+            .select('id, attempts')
+            .in('status', ['pending', 'processing'])
+            .not('locked_by', 'is', null)
+            .lt('locked_at', fiveMinsAgo);
+
+        if (staleJobs && staleJobs.length > 0) {
+            console.log(`[${workerId}] Found ${staleJobs.length} stale locked jobs. Cleaning up...`);
+            for (const stale of staleJobs) {
+                const currentAttempts = Number(stale.attempts || 0);
+                if (currentAttempts >= 3) {
+                    await supabase.from('processing_queue')
+                        .update({ status: 'failed', stage: 'failed', error_message: 'Background processing timeout exceeded multiple times', locked_by: null, locked_at: null })
+                        .eq('id', stale.id);
+                } else {
+                    await supabase.from('processing_queue')
+                        .update({ status: 'pending', locked_by: null, locked_at: null }) // Leave attempts alone here because it's incremented when re-acquired
+                        .eq('id', stale.id);
+                }
             }
-        } else {
-            // Fallback for missing RPC: Reset anything locked over 5 mins ago
-            const fiveMinsAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-            await supabase.from('processing_queue')
-                .update({ locked_by: null, locked_at: null, status: 'pending' })
-                .in('status', ['pending', 'processing'])
-                .not('locked_by', 'is', null)
-                .lt('locked_at', fiveMinsAgo);
         }
 
         const startedAt = Date.now();

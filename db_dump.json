@@ -1,0 +1,34 @@
+[
+  {
+    "id": "399e7b3f-382b-4187-9976-9e0cc56574d8",
+    "job_type": "pdf_extract",
+    "status": "completed",
+    "stage": "pending_upload",
+    "progress": 0,
+    "locked_by": null
+  },
+  {
+    "id": "4e0d6208-390b-47b0-a10a-1fdcb8a3625c",
+    "job_type": "audio_transcribe",
+    "status": "completed",
+    "stage": "completed",
+    "progress": 100,
+    "locked_by": null
+  },
+  {
+    "id": "8d446fcb-5b24-45fa-89ca-af8dc388f2a7",
+    "job_type": "audio_transcribe",
+    "status": "processing",
+    "stage": "extracting_text",
+    "progress": 20,
+    "locked_by": "worker-1771943693366-vmklxz"
+  },
+  {
+    "id": "26d17d75-d2a1-40f7-b466-38d55d9c264e",
+    "job_type": "pdf_extract",
+    "status": "processing",
+    "stage": "extracting_text",
+    "progress": 20,
+    "locked_by": "worker-1771943788340-r1e5e3"
+  }
+]
