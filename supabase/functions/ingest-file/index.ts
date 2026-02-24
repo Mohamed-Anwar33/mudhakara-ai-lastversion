@@ -221,6 +221,7 @@ serve(async (req) => {
         };
 
         const setComplete = async () => {
+            await checkAndSpawnAnalysis();
             await supabase.from('processing_queue').update({
                 status: 'completed',
                 stage: 'completed',
@@ -235,7 +236,7 @@ serve(async (req) => {
             delete nextPayload.batches;
             delete nextPayload.summaryParts;
 
-            const dKey = dedupeKey || `lesson:${lessonId}:${type}`;
+            const dKey = dedupeKey || `hash:${contentHash || lessonId}:${type}`;
 
             let { error: insertErr } = await supabase.from('processing_queue').insert({
                 lesson_id: lessonId,
@@ -258,7 +259,12 @@ serve(async (req) => {
                 .from('processing_queue')
                 .select('*', { count: 'exact', head: true })
                 .eq('lesson_id', lessonId)
-                .in('job_type', ['ingest_upload', 'ingest_extract', 'ingest_chunk', 'pdf_extract', 'audio_transcribe', 'image_ocr'])
+                .in('job_type', [
+                    'ingest_upload', 'ingest_extract', 'ingest_chunk',
+                    'pdf_extract', 'audio_transcribe', 'image_ocr',
+                    'extract_toc', 'build_lecture_segments', 'extract_text_range',
+                    'ocr_range', 'chunk_lecture', 'embed_lecture', 'embed_sections'
+                ])
                 .in('status', ['pending', 'processing'])
                 .neq('id', jobId);
 
@@ -405,8 +411,6 @@ serve(async (req) => {
                         lecture_id: firstLecture.id,
                         page: firstLecture.page_from
                     }, `lecture:extract_text:${firstLecture.id}:page_${firstLecture.page_from}`);
-                } else {
-                    await checkAndSpawnAnalysis();
                 }
 
                 return await setComplete();

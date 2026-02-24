@@ -1,6 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
 import { PDFDocument } from 'pdf-lib';
-const PDFParse = require('pdf-parse');
 
 /**
  * Handles the 'extract_text_range' job natively in Node.js on Vercel.
@@ -75,7 +74,9 @@ export async function processExtractTextRange(supabase: any, job: any) {
         // Extract text using pdf-parse
         let parsedText = '';
         try {
-            const parsed = await PDFParse(croppedBuffer);
+            const pdfParseModule = await import('pdf-parse');
+            const ParseFunction = (pdfParseModule as any).default || pdfParseModule;
+            const parsed = await ParseFunction(croppedBuffer);
             parsedText = parsed.text || '';
         } catch (e) {
             console.warn(`[ParsePDF] pdf-parse failed, assuming empty text:`, e);

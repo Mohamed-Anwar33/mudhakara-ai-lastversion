@@ -159,8 +159,8 @@ async function processSingleJob(supabase: any, job: any, workerId: string, supab
 
         // Call the appropriate handler
         if (endpoint === 'extract-text-node') {
-            const { processExtractTextRange } = require('./_lib/parse-pdf');
-            result = await processExtractTextRange(supabase, job);
+            const parseModule = await import('./_lib/parse-pdf.js');
+            result = await parseModule.processExtractTextRange(supabase, job);
         } else {
             result = await executeEdgeFunctionStep(supabaseUrl, serviceKey, endpoint, job.id);
         }
@@ -189,7 +189,19 @@ async function processSingleJob(supabase: any, job: any, workerId: string, supab
     } catch (processingError: any) {
         console.error(`[${workerId}] Job ${job.id} failed: ${processingError.message}`);
 
-        await unlockJob(supabase, job.id, 'pending'); // unlock it so it can retry or fail
+        const failedAttempts = Number(job.attempts || 0);
+        if (failedAttempts >= 3) {
+            console.error(`[${workerId}] Job ${job.id} has reached max attempts and is FAILED.`);
+            await supabase.from('processing_queue').update({
+                status: 'failed',
+                stage: 'failed',
+                error_message: processingError.message,
+                locked_by: null,
+                locked_at: null
+            }).eq('id', job.id);
+        } else {
+            await unlockJob(supabase, job.id, 'pending'); // unlock it so it can retry
+        }
 
         return {
             jobId: job.id,
