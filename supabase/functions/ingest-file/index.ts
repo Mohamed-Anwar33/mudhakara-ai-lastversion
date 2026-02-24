@@ -585,7 +585,11 @@ serve(async (req) => {
                 }
 
                 // Save text directly to file_hashes.transcription to avoid DB Row Limit on processing_queue.payload
-                await supabase.from('file_hashes').upsert({ content_hash: contentHash, transcription: text });
+                const { error: updErr } = await supabase.from('file_hashes')
+                    .update({ transcription: text })
+                    .eq('content_hash', contentHash);
+
+                if (updErr) throw new Error(`Save transcription failed: ${updErr.message}`);
 
                 if (fileType === 'image') {
                     await checkAndSpawnAnalysis(); // no chunking needed for images
@@ -723,9 +727,16 @@ serve(async (req) => {
             if (attempt_count >= 3) {
                 return await setFail(e.message);
             } else {
-                // Increment attempt
-                await supabase.from('processing_queue').update({ attempt_count: attempt_count + 1 }).eq('id', jobId);
-                return jsonResponse({ success: false, stage, status: 'processing', error: e.message, attempt: attempt_count + 1 });
+                // Increment attempt and UNLOCK the job so it can be retried
+                await supabase.from('processing_queue').update({
+                    attempt_count: attempt_count + 1,
+                    status: 'pending',
+                    locked_by: null,
+                    locked_at: null,
+                    error_message: e.message
+                }).eq('id', jobId);
+
+                return jsonResponse({ success: false, stage, status: 'pending', error: e.message, attempt: attempt_count + 1 });
             }
         }
 
