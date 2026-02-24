@@ -144,7 +144,7 @@ async function processSingleJob(supabase: any, job: any, workerId: string, supab
 
     try {
         // Map job_type to Edge Function Name
-        if (['pdf_extract', 'audio_transcribe', 'image_ocr', 'embed_sections'].includes(job.job_type)) {
+        if (['ingest_upload', 'ingest_extract', 'ingest_chunk', 'pdf_extract', 'audio_transcribe', 'image_ocr', 'embed_sections'].includes(job.job_type)) {
             endpoint = 'ingest-file';
         } else if (job.job_type === 'generate_analysis') {
             endpoint = 'analyze-lesson';
@@ -168,17 +168,14 @@ async function processSingleJob(supabase: any, job: any, workerId: string, supab
             };
         }
 
-        // Status update logic depending on what Edge Function returns
-        const finalStatus = (result.status === 'completed' || result.status === 'failed') ? result.status : 'pending';
-
-        // Edge functions updates the specific stage and status rows directly,
-        // but the orchestrator must unlock the job so the next Vercel ping can pick it up again.
-        await unlockJob(supabase, job.id, finalStatus);
+        // The Edge function handles its own status mutations directly in DB (e.g. completed, failed)
+        // Orchestrator just releases the lock without overriding the status the edge function just set locally.
+        await unlockJob(supabase, job.id);
 
         return {
             jobId: job.id,
             jobType: job.job_type,
-            status: finalStatus,
+            status: result.status || 'pending',
             edgeResult: result
         };
 

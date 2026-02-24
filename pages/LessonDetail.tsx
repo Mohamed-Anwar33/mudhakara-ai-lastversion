@@ -336,24 +336,53 @@ const LessonDetail: React.FC = () => {
         const activeJobs = jobs.filter((job: any) => job.status === 'pending' || job.status === 'processing');
         const failedJobs = jobs.filter((job: any) => job.status === 'failed' || job.status === 'dead');
 
-        if (status?.lessonStatus === 'completed' && status?.analysisResult) {
-          result = status.analysisResult as AIResult;
-          break;
+        let queueMsg = 'التحليل قيد الانتظار...';
+        if (activeJobs.length > 0) {
+          const processingJob = activeJobs.find((j: any) => j.status === 'processing') || activeJobs[0];
+
+          // Determine the type from the payload we now reliably get
+          const payloadType = processingJob.payload?.source_type || 'ملف';
+          const typeMap: Record<string, string> = {
+            'pdf': 'مستند PDF',
+            'audio': 'مقطع صوتي',
+            'image': 'صورة'
+          };
+          const readableType = typeMap[payloadType] || payloadType;
+
+          // Map the new atomic job types to readable stages
+          const jobStageMap: Record<string, string> = {
+            'ingest_upload': 'جاري الرفع...',
+            'ingest_extract': 'استخراج النص...',
+            'ingest_chunk': 'تحليل وحفظ...',
+            'generate_analysis': 'توليد الملخص الذكي...'
+          };
+
+          const stageName = jobStageMap[processingJob.job_type] || processingJob.stage || 'قيد العمل';
+
+          let progressStr = '';
+          if (processingJob.progress && processingJob.progress > 0) {
+            progressStr = ` (${processingJob.progress}%)`;
+          }
+
+          queueMsg = `[${readableType}] ${stageName}${progressStr}`;
+
+          if (activeJobs.length > 1) {
+            // Group other active jobs by unique path to avoid counting chained jobs as multiple parallel files visually
+            const uniqueActiveFiles = new Set(activeJobs.map((j: any) => j.payload?.file_path).filter(Boolean));
+            const remainingFiles = uniqueActiveFiles.size > 1 ? uniqueActiveFiles.size - 1 : 0;
+
+            if (remainingFiles > 0) {
+              queueMsg += ` (+${remainingFiles} ملفات بالانتظار)`;
+            }
+          }
         }
 
-        if (status?.lessonStatus === 'failed') {
-          const reasons = failedJobs
-            .map((job: any) => job.error_message)
-            .filter((message: string | null) => Boolean(message))
-            .slice(0, 3);
-          throw new Error(reasons.length > 0 ? `Analysis failed: ${reasons.join(' | ')}` : 'Analysis failed');
+        const ingestWarning = ingestFailures.length > 0 ? ` | تعذر معالجة ${ingestFailures.length} ملف` : '';
+        setProgressMsg(queueMsg + ingestWarning);
+        if (!result) {
+          // Keep waiting in the loop
+          continue;
         }
-
-        const ingestWarning = ingestFailures.length > 0 ? ` | فشل رفع ${ingestFailures.length} ملف` : '';
-        const queueMsg = activeJobs.length > 0 ? `جاري معالجة ${activeJobs.length} ملف${ingestWarning}` : `التحليل قيد الانتظار...`;
-        setProgressMsg(queueMsg);
-
-        await delay(pollIntervalMs);
       }
 
       if (!result) {

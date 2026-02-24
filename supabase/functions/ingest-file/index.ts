@@ -227,18 +227,39 @@ serve(async (req) => {
                 progress: 100,
                 completed_at: new Date().toISOString()
             }).eq('id', jobId);
+            return jsonResponse({ success: true, stage: 'completed', progress: 100, status: 'completed' });
+        };
 
-            // Check if this was the last extraction job
+        const spawnNextAtomicJob = async (nextJobType: string, payloadUpdates: any = {}) => {
+            const nextPayload = { ...fileInfo, ...payloadUpdates };
+            // Idempotency Check
+            const { data: existing } = await supabase.from('processing_queue')
+                .select('id')
+                .eq('lesson_id', lessonId)
+                .eq('job_type', nextJobType)
+                .contains('payload', { content_hash: contentHash })
+                .maybeSingle();
+
+            if (!existing) {
+                await supabase.from('processing_queue').insert({
+                    lesson_id: lessonId,
+                    job_type: nextJobType,
+                    payload: nextPayload,
+                    status: 'pending'
+                });
+            }
+        };
+
+        const checkAndSpawnAnalysis = async () => {
             const { count: pendingExtracts, error: countErr } = await supabase
                 .from('processing_queue')
                 .select('*', { count: 'exact', head: true })
                 .eq('lesson_id', lessonId)
-                .in('job_type', ['pdf_extract', 'audio_transcribe', 'image_ocr'])
+                .in('job_type', ['ingest_upload', 'ingest_extract', 'ingest_chunk', 'pdf_extract', 'audio_transcribe', 'image_ocr'])
                 .in('status', ['pending', 'processing'])
-                .neq('id', jobId); // Exclude the current job since it might still be fetching as processing
+                .neq('id', jobId);
 
             if (!countErr && pendingExtracts === 0) {
-                // No extractions pending, safe to queue analysis
                 const { error: insertErr } = await supabase.from('processing_queue').insert({
                     lesson_id: lessonId,
                     job_type: 'generate_analysis',
@@ -246,75 +267,67 @@ serve(async (req) => {
                 });
 
                 if (!insertErr || insertErr.code === '23505') {
-                    // Update lesson status if inserted successfully or already exists
-                    await supabase
-                        .from('lessons')
-                        .update({ analysis_status: 'pending' })
-                        .eq('id', lessonId);
+                    await supabase.from('lessons').update({ analysis_status: 'pending' }).eq('id', lessonId);
                 } else {
                     console.error('[Ingest] Failed to queue generate_analysis:', insertErr);
                 }
             }
-
-            return jsonResponse({ success: true, stage: 'completed', progress: 100, status: 'completed' });
         };
 
         try {
             // ==========================================
-            // STAGE 1: upload_to_gemini
+            // ATOMIC JOB: ingest_upload
             // ==========================================
-            if (stage === 'pending_upload' || stage === 'uploaded_to_gemini') {
-                if (!gemini_file_uri) {
-                    // Check local cache first for audio
-                    if (fileType === 'audio') {
-                        const { data: cached } = await supabase.from('file_hashes').select('transcription')
-                            .eq('content_hash', contentHash).maybeSingle();
-                        if (cached?.transcription && cached.transcription.length > 100) {
-                            console.log(`[Audio Cache] Found matching transcription for ${contentHash}`);
-                            await supabase.from('file_hashes').update({ transcription: cached.transcription }).eq('content_hash', contentHash);
-                            // We have the text! Let's save it directly to a temp table or payload so the next stage can chunk it.
-                            // Actually, let's just create chunks immediately if it's cached, as a fast track.
-                            return await advanceStage('saving_chunks', 40, { payload: { ...fileInfo, extractedText: cached.transcription } });
-                        }
+            if (job.job_type === 'ingest_upload') {
+                await advanceStage('pending_upload', 10);
+
+                // Cache check for audio before uploading
+                if (fileType === 'audio') {
+                    const { data: cached } = await supabase.from('file_hashes').select('transcription')
+                        .eq('content_hash', contentHash).maybeSingle();
+                    if (cached?.transcription && cached.transcription.length > 100) {
+                        console.log(`[Audio Cache] Found matching transcription for ${contentHash}`);
+                        await spawnNextAtomicJob('ingest_chunk', {}); // Bypass extraction entirely
+                        return await setComplete();
                     }
-
-                    // Otherwise, upload to Gemini
-                    const { data: signData, error: signErr } = await supabase.storage.from('homework-uploads').createSignedUrl(filePath, 60);
-                    if (signErr || !signData) throw new Error(`Sign URL failed: ${signErr?.message}`);
-
-                    const storageRes = await fetch(signData.signedUrl);
-                    if (!storageRes.ok) throw new Error(`Fetch stream failed: ${storageRes.statusText}`);
-
-                    const fileName = filePath.split('/').pop() || 'file';
-                    const mimeType = getMime(fileName);
-
-                    console.log(`[Ingest] Uploading ${filePath} to Gemini...`);
-                    const fileUri = await uploadToGeminiFiles(storageRes, fileName, mimeType, geminiKey);
-
-                    return await advanceStage('extracting_text', 20, { gemini_file_uri: fileUri });
-                } else {
-                    return await advanceStage('extracting_text', 20);
                 }
+
+                const { data: signData, error: signErr } = await supabase.storage.from('homework-uploads').createSignedUrl(filePath, 60);
+                if (signErr || !signData) throw new Error(`Sign URL failed: ${signErr?.message}`);
+
+                const storageRes = await fetch(signData.signedUrl);
+                if (!storageRes.ok) throw new Error(`Fetch stream failed: ${storageRes.statusText}`);
+
+                const fileName = filePath.split('/').pop() || 'file';
+                const mimeType = getMime(fileName);
+
+                console.log(`[Ingest] Uploading ${filePath} to Gemini...`);
+                const fileUri = await uploadToGeminiFiles(storageRes, fileName, mimeType, geminiKey);
+
+                await spawnNextAtomicJob('ingest_extract', { gemini_file_uri: fileUri });
+                return await setComplete();
             }
 
             // ==========================================
-            // STAGE 2: extracting_text
+            // ATOMIC JOB: ingest_extract
             // ==========================================
-            if (stage === 'extracting_text') {
-                if (!gemini_file_uri) throw new Error("Missing gemini_file_uri for extraction");
+            if (job.job_type === 'ingest_extract') {
+                await advanceStage('extracting_text', 10);
+                if (!gemini_file_uri && !fileInfo.gemini_file_uri) throw new Error("Missing gemini_file_uri for extraction");
+
+                const activeUri = gemini_file_uri || fileInfo.gemini_file_uri;
 
                 let prompt = PDF_PROMPT;
                 if (fileType === 'audio') prompt = AUDIO_PROMPT;
                 if (fileType === 'image') prompt = IMAGE_PROMPT;
 
                 const mimeType = getMime(filePath);
-                const filePart = { fileData: { fileUri: gemini_file_uri, mimeType } };
+                const filePart = { fileData: { fileUri: activeUri, mimeType } };
 
                 console.log(`[Ingest] Extracting text using Gemini...`);
                 let text = '';
 
                 if (fileType === 'audio') {
-                    // Audio prompt array fallback logic
                     const prompts = [AUDIO_PROMPT, 'استمع للتسجيل الصوتي التالي بعناية وحوّله إلى نص عربي مكتوب. اكتب كل ما يقوله المتحدث بالضبط. اكتب النص فقط.'];
                     for (const p of prompts) {
                         try {
@@ -330,117 +343,129 @@ serve(async (req) => {
                     if (fileType !== 'image') throw new Error(`Extraction failed, response too short: ${text?.length} chars`);
                 }
 
-                if (fileType === 'audio') {
-                    await supabase.from('file_hashes').upsert({ content_hash: contentHash, transcription: text });
+                // Save text directly to file_hashes.transcription to avoid DB Row Limit on processing_queue.payload
+                await supabase.from('file_hashes').upsert({ content_hash: contentHash, transcription: text });
+
+                if (fileType === 'image') {
+                    await checkAndSpawnAnalysis(); // no chunking needed for images
+                } else {
+                    await spawnNextAtomicJob('ingest_chunk', {});
                 }
 
-                // Append text to the payload to survive this step boundary
-                const newPayload = { ...fileInfo, extractedText: text };
-                return await advanceStage('saving_chunks', 40, { payload: newPayload });
+                return await setComplete();
             }
 
             // ==========================================
-            // STAGE 3: saving_chunks
+            // ATOMIC JOB: ingest_chunk
             // ==========================================
-            if (stage === 'saving_chunks') {
-                const text = fileInfo.extractedText || '';
+            if (job.job_type === 'ingest_chunk') {
+                // Fetch the heavy text safely from file_hashes
+                const { data: hashData } = await supabase.from('file_hashes').select('transcription').eq('content_hash', contentHash).single();
+                const text = hashData?.transcription || '';
+
                 if (!text) {
-                    console.warn(`[Ingest] No extractedText in payload at saving_chunks stage! Marking complete if empty image.`);
-                    if (fileType === 'image') return await setComplete();
-                    throw new Error("Missing extractedText in job payload");
+                    console.warn(`[Ingest] No transcription found in file_hashes for chunking.`);
+                    if (fileType === 'image') {
+                        await checkAndSpawnAnalysis();
+                        return await setComplete();
+                    }
+                    throw new Error("Missing extracted text in file_hashes");
                 }
 
-                console.log(`[Ingest] Chunking text of length ${text.length}`);
+                if (stage === 'pending_upload') stage = 'saving_chunks';
 
-                // Clear existing sections ONLY if extraction_cursor is 0
-                if (extraction_cursor === 0) {
-                    await supabase.from('document_sections')
-                        .delete()
-                        .eq('lesson_id', lessonId)
-                        .eq('source_type', fileType);
-                }
+                // --- STAGE: saving_chunks ---
+                if (stage === 'saving_chunks') {
+                    console.log(`[Ingest] Chunking text of length ${text.length}`);
 
-                const chunks = chunkText(text);
-                const BATCH_SIZE = 30; // 30 chunks per step max
+                    if (extraction_cursor === 0) {
+                        await supabase.from('document_sections')
+                            .delete()
+                            .eq('lesson_id', lessonId)
+                            .eq('source_type', fileType);
+                    }
 
-                let currentBatch = [];
-                let iterCount = 0;
+                    const chunks = chunkText(text);
+                    const BATCH_SIZE = 30;
 
-                for (let i = extraction_cursor; i < chunks.length; i++) {
-                    const chunk = chunks[i];
-                    currentBatch.push({
-                        lesson_id: lessonId,
-                        content: chunk.content,
-                        source_type: fileType,
-                        source_file_id: filePath,
-                        chunk_index: chunk.chunkIndex,
-                        metadata: {
-                            content_hash: contentHash,
-                            start_char: chunk.metadata.startChar,
-                            end_char: chunk.metadata.endChar,
-                            token_estimate: chunk.metadata.tokenEstimate
-                        }
-                    });
+                    let currentBatch = [];
+                    for (let i = extraction_cursor; i < chunks.length; i++) {
+                        const chunk = chunks[i];
+                        currentBatch.push({
+                            lesson_id: lessonId,
+                            content: chunk.content,
+                            source_type: fileType,
+                            source_file_id: filePath,
+                            chunk_index: chunk.chunkIndex,
+                            metadata: {
+                                content_hash: contentHash,
+                                start_char: chunk.metadata.startChar,
+                                end_char: chunk.metadata.endChar,
+                                token_estimate: chunk.metadata.tokenEstimate
+                            }
+                        });
 
-                    if (currentBatch.length === BATCH_SIZE || i === chunks.length - 1) {
-                        const { error: insertErr } = await supabase.from('document_sections').insert(currentBatch);
-                        if (insertErr) throw new Error(`Insert chunks failed: ${insertErr.message}`);
+                        if (currentBatch.length === BATCH_SIZE || i === chunks.length - 1) {
+                            const { error: insertErr } = await supabase.from('document_sections').insert(currentBatch);
+                            if (insertErr) throw new Error(`Insert chunks failed: ${insertErr.message}`);
 
-                        iterCount += currentBatch.length;
-                        currentBatch = [];
-
-                        // We successfully saved a batch. Return and continue on next Vercel ping.
-                        const nextCursor = i + 1;
-                        if (nextCursor < chunks.length) {
-                            const prog = Math.floor(40 + ((nextCursor / chunks.length) * 30)); // 40-70%
-                            return await advanceStage('saving_chunks', prog, { extraction_cursor: nextCursor });
+                            currentBatch = [];
+                            const nextCursor = i + 1;
+                            if (nextCursor < chunks.length) {
+                                const prog = Math.floor((nextCursor / chunks.length) * 50); // 0-50% progress for chunking
+                                return await advanceStage('saving_chunks', prog, { extraction_cursor: nextCursor });
+                            }
                         }
                     }
+
+                    return await advanceStage('embedding_batch', 50, { extraction_cursor: 0 }); // Switch to embeddings
                 }
 
-                // Finished all chunks! Remove the bulky text from payload to save DB size.
-                delete fileInfo.extractedText;
-                return await advanceStage('embedding_batch', 75, { payload: fileInfo, extraction_cursor: 0 });
+                // --- STAGE: embedding_batch ---
+                if (stage === 'embedding_batch') {
+                    if (!openaiKey) {
+                        console.warn('[Ingest] No OPENAI_API_KEY, skipping embeddings');
+                        await checkAndSpawnAnalysis();
+                        return await setComplete();
+                    }
+
+                    const { data: sections } = await supabase.from('document_sections')
+                        .select('id, content')
+                        .eq('lesson_id', lessonId)
+                        .is('embedding', null)
+                        .limit(25);
+
+                    if (!sections || sections.length === 0) {
+                        console.log('[Ingest] All chunks embedded. Done.');
+                        await checkAndSpawnAnalysis();
+                        return await setComplete();
+                    }
+
+                    console.log(`[Ingest] Embedding batch of ${sections.length} chunks`);
+                    const texts = sections.map((s: any) => s.content);
+                    const res = await fetch('https://api.openai.com/v1/embeddings', {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ model: 'text-embedding-3-small', input: texts })
+                    });
+
+                    if (!res.ok) throw new Error(`OpenAI failed: ${res.statusText}`);
+                    const data = await res.json();
+
+                    for (let j = 0; j < data.data.length; j++) {
+                        await supabase.from('document_sections')
+                            .update({ embedding: JSON.stringify(data.data[j].embedding) })
+                            .eq('id', sections[j].id);
+                    }
+
+                    // Progress estimate logic could go here, for now stay in embedding_batch until sections === 0
+                    return await advanceStage('embedding_batch', 85);
+                }
             }
 
-            // ==========================================
-            // STAGE 4: embedding_batch
-            // ==========================================
-            if (stage === 'embedding_batch') {
-                if (!openaiKey) {
-                    console.warn('[Ingest] No OPENAI_API_KEY, skipping embeddings');
-                    return await setComplete();
-                }
-
-                const { data: sections } = await supabase.from('document_sections')
-                    .select('id, content')
-                    .eq('lesson_id', lessonId)
-                    .is('embedding', null)
-                    .limit(25); // smaller batches for 20s cap
-
-                if (!sections || sections.length === 0) {
-                    console.log('[Ingest] All chunks embedded. Done.');
-                    return await setComplete();
-                }
-
-                console.log(`[Ingest] Embedding batch of ${sections.length} chunks`);
-                const texts = sections.map((s: any) => s.content);
-                const res = await fetch('https://api.openai.com/v1/embeddings', {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ model: 'text-embedding-3-small', input: texts })
-                });
-
-                if (!res.ok) throw new Error(`OpenAI failed: ${res.statusText}`);
-                const data = await res.json();
-
-                for (let j = 0; j < data.data.length; j++) {
-                    await supabase.from('document_sections')
-                        .update({ embedding: JSON.stringify(data.data[j].embedding) })
-                        .eq('id', sections[j].id);
-                }
-
-                return await advanceStage('embedding_batch', 85); // Stay in this stage until limit returns 0
+            // Catch-all for old uncompleted monolithic jobs to gracefully fail them.
+            if (['pdf_extract', 'audio_transcribe', 'image_ocr'].includes(job.job_type)) {
+                throw new Error(`Legacy job type ${job.job_type} is no longer supported by the Step engine. Job marked as failed.`);
             }
 
             // Should not reach here if completed

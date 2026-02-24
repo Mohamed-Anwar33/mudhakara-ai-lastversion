@@ -282,12 +282,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 throw hashError;
             }
 
-            const jobType = mapFileTypeToJobType(file.fileType);
+            // New atomic pipeline: Always start with ingest_upload
             const { data: job, error: queueError } = await supabase
                 .from('processing_queue')
                 .insert({
                     lesson_id: lessonId,
-                    job_type: jobType,
+                    job_type: 'ingest_upload',
                     payload: {
                         file_path: filePath,
                         file_name: file.fileName,
@@ -333,7 +333,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 .from('processing_queue')
                 .select('*', { count: 'exact', head: true })
                 .eq('lesson_id', lessonId)
-                .in('job_type', ['pdf_extract', 'audio_transcribe', 'image_ocr'])
+                .in('job_type', ['ingest_upload', 'ingest_extract', 'ingest_chunk', 'pdf_extract', 'audio_transcribe', 'image_ocr'])
                 .in('status', ['pending', 'processing']);
 
             if (!countErr && pendingExtracts === 0) {

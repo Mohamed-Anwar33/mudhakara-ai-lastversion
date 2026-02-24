@@ -37,7 +37,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (jobId) {
             const { data, error } = await supabase
                 .from('processing_queue')
-                .select('id, job_type, status, attempts, error_message, created_at, completed_at, stage, progress')
+                .select('id, job_type, status, attempts, error_message, created_at, completed_at, stage, progress, payload')
                 .eq('id', jobId)
                 .single();
 
@@ -49,7 +49,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (lessonId) {
             const { data, error } = await supabase
                 .from('processing_queue')
-                .select('id, job_type, status, attempts, error_message, created_at, completed_at, stage, progress')
+                .select('id, job_type, status, attempts, error_message, created_at, completed_at, stage, progress, payload')
                 .eq('lesson_id', lessonId)
                 .order('created_at', { ascending: false });
 
