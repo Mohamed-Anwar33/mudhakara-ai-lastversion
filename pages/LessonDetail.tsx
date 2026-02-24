@@ -174,7 +174,7 @@ const LessonDetail: React.FC = () => {
       throw lastError || new Error('Ingest failed');
     };
 
-    const triggerQueueWorker = async (maxJobs = 3) => {
+    const triggerQueueWorker = async (maxJobs = 1) => {
       const workerRes = await fetch(`/api/process-queue?maxJobs=${maxJobs}`, {
         method: 'POST'
       });
@@ -301,18 +301,37 @@ const LessonDetail: React.FC = () => {
       }
 
       setProgressMsg('Triggering queue worker...');
-      await triggerQueueWorker(3).catch(() => undefined);
+      await triggerQueueWorker(1).catch(() => undefined);
 
       setProgressMsg('Processing queue and waiting for analysis...');
       let result: AIResult | null = null;
-      const maxPollAttempts = 240;
+      const pollIntervalMs = 6000;
+      const queueKickEveryAttempts = 5; // Kick queue roughly every 30s while polling
+      const maxPollAttempts = 100; // ~10 minutes max wait
+      const maxConsecutiveStatusErrors = 4;
+      let consecutiveStatusErrors = 0;
 
       for (let attempt = 1; attempt <= maxPollAttempts; attempt++) {
-        if (attempt % 2 === 1) {
-          await triggerQueueWorker(3).catch(() => undefined);
+        if (attempt === 1 || attempt % queueKickEveryAttempts === 0) {
+          await triggerQueueWorker(1).catch(() => undefined);
         }
 
-        const status = await fetchJobStatus();
+        let status: any;
+        try {
+          status = await fetchJobStatus();
+          consecutiveStatusErrors = 0;
+        } catch (statusErr: any) {
+          consecutiveStatusErrors++;
+
+          if (consecutiveStatusErrors >= maxConsecutiveStatusErrors) {
+            throw statusErr;
+          }
+
+          setProgressMsg('Temporary connection issue while checking status. Retrying...');
+          await delay(Math.min(pollIntervalMs * consecutiveStatusErrors, 15000));
+          continue;
+        }
+
         const jobs = Array.isArray(status?.jobs) ? status.jobs : [];
         const activeJobs = jobs.filter((job: any) => job.status === 'pending' || job.status === 'processing');
         const failedJobs = jobs.filter((job: any) => job.status === 'failed' || job.status === 'dead');
@@ -334,7 +353,7 @@ const LessonDetail: React.FC = () => {
         const queueMsg = activeJobs.length > 0 ? `جاري معالجة ${activeJobs.length} ملف${ingestWarning}` : `التحليل قيد الانتظار...`;
         setProgressMsg(queueMsg);
 
-        await delay(3000);
+        await delay(pollIntervalMs);
       }
 
       if (!result) {

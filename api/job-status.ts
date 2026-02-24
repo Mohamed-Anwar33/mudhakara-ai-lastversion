@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
+import { getRequestSearchParams } from './_lib/request-url';
 
 /**
  * Vercel API Route: /api/job-status
@@ -28,10 +29,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         const supabase = createClient(supabaseUrl, supabaseKey);
-        const { jobId, lessonId } = req.query;
+        const searchParams = getRequestSearchParams(req);
+        const jobId = searchParams.get('jobId');
+        const lessonId = searchParams.get('lessonId');
 
         // Query by jobId
-        if (jobId && typeof jobId === 'string') {
+        if (jobId) {
             const { data, error } = await supabase
                 .from('processing_queue')
                 .select('id, job_type, status, attempts, error_message, created_at, completed_at, stage, progress')
@@ -43,7 +46,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         // Query by lessonId
-        if (lessonId && typeof lessonId === 'string') {
+        if (lessonId) {
             const { data, error } = await supabase
                 .from('processing_queue')
                 .select('id, job_type, status, attempts, error_message, created_at, completed_at, stage, progress')

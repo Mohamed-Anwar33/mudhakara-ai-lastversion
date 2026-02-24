@@ -94,7 +94,8 @@ router.post('/analyze', async (req, res) => {
             return res.status(400).json({ error: 'Missing lessonId' });
         }
 
-        const useSSE = req.query.stream === '1';
+        const requestUrl = new URL(req.originalUrl || req.url || '/api/analyze', 'http://localhost');
+        const useSSE = requestUrl.searchParams.get('stream') === '1';
         console.log(`🧠 Analyzing lesson ${lessonId}${useSSE ? ' (SSE stream)' : ''}...`);
 
         if (useSSE) {

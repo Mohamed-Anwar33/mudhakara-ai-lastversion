@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
+import { getRequestSearchParams } from './_lib/request-url';
 
 /**
  * Vercel API Route: /api/search
@@ -50,13 +51,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     try {
-        const { lessonId, q, topK } = req.query;
+        const searchParams = getRequestSearchParams(req);
+        const lessonId = searchParams.get('lessonId');
+        const q = searchParams.get('q');
+        const topK = searchParams.get('topK');
 
-        if (!lessonId || typeof lessonId !== 'string') {
+        if (!lessonId) {
             return res.status(400).json({ error: 'lessonId مطلوب' });
         }
 
-        if (!q || typeof q !== 'string' || q.trim().length === 0) {
+        if (!q || q.trim().length === 0) {
             return res.status(400).json({ error: 'q (نص البحث) مطلوب' });
         }
 
@@ -68,7 +72,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         const supabase = createClient(supabaseUrl, supabaseKey);
-        const limit = Math.min(parseInt(String(topK)) || 5, 20);
+        const parsedTopK = topK ? parseInt(topK, 10) : NaN;
+        const limit = Math.min(Number.isFinite(parsedTopK) ? parsedTopK : 5, 20);
 
         // ==========================================
         // 1. Compute query embedding
