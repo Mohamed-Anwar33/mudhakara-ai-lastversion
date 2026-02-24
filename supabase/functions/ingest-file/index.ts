@@ -227,6 +227,35 @@ serve(async (req) => {
                 progress: 100,
                 completed_at: new Date().toISOString()
             }).eq('id', jobId);
+
+            // Check if this was the last extraction job
+            const { count: pendingExtracts, error: countErr } = await supabase
+                .from('processing_queue')
+                .select('*', { count: 'exact', head: true })
+                .eq('lesson_id', lessonId)
+                .in('job_type', ['pdf_extract', 'audio_transcribe', 'image_ocr'])
+                .in('status', ['pending', 'processing'])
+                .neq('id', jobId); // Exclude the current job since it might still be fetching as processing
+
+            if (!countErr && pendingExtracts === 0) {
+                // No extractions pending, safe to queue analysis
+                const { error: insertErr } = await supabase.from('processing_queue').insert({
+                    lesson_id: lessonId,
+                    job_type: 'generate_analysis',
+                    status: 'pending'
+                });
+
+                if (!insertErr || insertErr.code === '23505') {
+                    // Update lesson status if inserted successfully or already exists
+                    await supabase
+                        .from('lessons')
+                        .update({ analysis_status: 'pending' })
+                        .eq('id', lessonId);
+                } else {
+                    console.error('[Ingest] Failed to queue generate_analysis:', insertErr);
+                }
+            }
+
             return jsonResponse({ success: true, stage: 'completed', progress: 100, status: 'completed' });
         };
 

@@ -327,6 +327,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 .from('lessons')
                 .update({ analysis_status: 'pending' })
                 .eq('id', lessonId);
+        } else {
+            // If nothing was queued (e.g. all files duplicate), check if we should trigger analysis
+            const { count: pendingExtracts, error: countErr } = await supabase
+                .from('processing_queue')
+                .select('*', { count: 'exact', head: true })
+                .eq('lesson_id', lessonId)
+                .in('job_type', ['pdf_extract', 'audio_transcribe', 'image_ocr'])
+                .in('status', ['pending', 'processing']);
+
+            if (!countErr && pendingExtracts === 0) {
+                // No extractions pending, safe to queue analysis
+                await supabase.from('processing_queue').insert({
+                    lesson_id: lessonId,
+                    job_type: 'generate_analysis',
+                    status: 'pending'
+                });
+                await supabase
+                    .from('lessons')
+                    .update({ analysis_status: 'pending' })
+                    .eq('id', lessonId);
+            }
         }
 
         if (isLegacy && results.length === 1) {
