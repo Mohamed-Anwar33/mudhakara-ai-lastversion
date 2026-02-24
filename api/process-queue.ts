@@ -1,10 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { processPdfJob } from './_lib/pdf-processor';
-import { processAudioJob } from './_lib/audio-processor.ts';
+import { processAudioJob } from './_lib/audio-processor';
 import { embedLessonSections } from './_lib/embeddings';
 import { generateLessonAnalysis } from './_lib/analysis';
-import { processImageJob } from './_lib/image-processor.ts';
+import { processImageJob } from './_lib/image-processor';
 import { segmentBook } from './_lib/book-segmenter';
 
 export const config = {
@@ -87,6 +87,149 @@ function toPositiveInt(input: unknown, fallback: number, maxValue: number): numb
     return Math.min(Math.floor(parsed), maxValue);
 }
 
+function isMissingFunctionError(error: any, functionName: string): boolean {
+    const message = `${error?.message || ''} ${error?.details || ''}`.toLowerCase();
+    return error?.code === '42883' ||
+        (message.includes(functionName.toLowerCase()) && message.includes('does not exist'));
+}
+
+async function acquireJobId(supabase: any, workerId: string): Promise<string | null> {
+    const { data: rpcJobId, error: rpcError } = await supabase
+        .rpc('acquire_job', { worker_id: workerId });
+
+    if (!rpcError) {
+        return rpcJobId || null;
+    }
+
+    if (!isMissingFunctionError(rpcError, 'acquire_job')) {
+        throw rpcError;
+    }
+
+    console.warn(`[${workerId}] acquire_job RPC missing. Using SQL fallback lock flow.`);
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+        const { data: nextPending, error: pendingError } = await supabase
+            .from('processing_queue')
+            .select('id, attempts')
+            .eq('status', 'pending')
+            .order('created_at', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+
+        if (pendingError) {
+            throw pendingError;
+        }
+
+        if (!nextPending?.id) {
+            return null;
+        }
+
+        const nowIso = new Date().toISOString();
+        const { data: claimed, error: claimError } = await supabase
+            .from('processing_queue')
+            .update({
+                status: 'processing',
+                locked_at: nowIso,
+                locked_by: workerId,
+                attempts: Number(nextPending.attempts || 0) + 1,
+                updated_at: nowIso
+            })
+            .eq('id', nextPending.id)
+            .eq('status', 'pending')
+            .select('id')
+            .maybeSingle();
+
+        if (claimError) {
+            throw claimError;
+        }
+
+        if (claimed?.id) {
+            return claimed.id;
+        }
+    }
+
+    return null;
+}
+
+async function completeJob(supabase: any, workerId: string, jobId: string): Promise<void> {
+    const { error: rpcError } = await supabase.rpc('complete_job', { target_job_id: jobId });
+    if (!rpcError) return;
+
+    if (!isMissingFunctionError(rpcError, 'complete_job')) {
+        throw rpcError;
+    }
+
+    console.warn(`[${workerId}] complete_job RPC missing. Using SQL fallback.`);
+
+    const nowIso = new Date().toISOString();
+    const { error: updateError } = await supabase
+        .from('processing_queue')
+        .update({
+            status: 'completed',
+            completed_at: nowIso,
+            locked_at: null,
+            locked_by: null,
+            updated_at: nowIso
+        })
+        .eq('id', jobId);
+
+    if (updateError) {
+        throw updateError;
+    }
+}
+
+async function failJob(
+    supabase: any,
+    workerId: string,
+    job: any,
+    errorMessage: string
+): Promise<void> {
+    const { error: rpcError } = await supabase
+        .rpc('fail_job', { target_job_id: job.id, err_msg: errorMessage });
+    if (!rpcError) return;
+
+    if (!isMissingFunctionError(rpcError, 'fail_job')) {
+        throw rpcError;
+    }
+
+    console.warn(`[${workerId}] fail_job RPC missing. Using SQL fallback.`);
+
+    const attempts = Number(job.attempts || 0);
+    const maxAttempts = Number(job.max_attempts || 3);
+    const toDead = attempts >= maxAttempts;
+    const nowIso = new Date().toISOString();
+
+    if (toDead) {
+        await supabase.from('dead_jobs').insert({
+            original_job_id: job.id,
+            lesson_id: job.lesson_id,
+            job_type: job.job_type,
+            payload: job.payload || {},
+            error_message: errorMessage,
+            attempts
+        }).then(({ error }: any) => {
+            if (error) {
+                console.warn(`[${workerId}] dead_jobs insert failed in fallback: ${error.message}`);
+            }
+        });
+    }
+
+    const { error: updateError } = await supabase
+        .from('processing_queue')
+        .update({
+            status: toDead ? 'dead' : 'pending',
+            error_message: errorMessage,
+            locked_at: null,
+            locked_by: null,
+            updated_at: nowIso
+        })
+        .eq('id', job.id);
+
+    if (updateError) {
+        throw updateError;
+    }
+}
+
 async function processSingleJob(supabase: any, job: any, workerId: string) {
     let result: any;
 
@@ -141,7 +284,7 @@ async function processSingleJob(supabase: any, job: any, workerId: string) {
                 throw new Error(`Unknown job type: ${job.job_type}`);
         }
 
-        await supabase.rpc('complete_job', { target_job_id: job.id });
+        await completeJob(supabase, workerId, job.id);
 
         return {
             jobId: job.id,
@@ -152,7 +295,7 @@ async function processSingleJob(supabase: any, job: any, workerId: string) {
         };
     } catch (processingError: any) {
         console.error(`[${workerId}] Job ${job.id} failed: ${processingError.message}`);
-        await supabase.rpc('fail_job', { target_job_id: job.id, err_msg: processingError.message });
+        await failJob(supabase, workerId, job, processingError.message);
 
         if ((job.attempts || 0) >= (job.max_attempts || 3)) {
             await supabase.from('lessons')
@@ -211,10 +354,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 break;
             }
 
-            const { data: jobId, error: acquireError } = await supabase
-                .rpc('acquire_job', { worker_id: workerId });
-
-            if (acquireError) throw acquireError;
+            const jobId = await acquireJobId(supabase, workerId);
             if (!jobId) break;
 
             const { data: job, error: fetchError } = await supabase
