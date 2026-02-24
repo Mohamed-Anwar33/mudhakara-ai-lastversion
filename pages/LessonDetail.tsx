@@ -45,6 +45,7 @@ const LessonDetail: React.FC = () => {
   const [transientAIResult, setTransientAIResult] = useState<AIResult | null>(null);
   const [progressMsg, setProgressMsg] = useState('');
 
+  const isExtractingRef = useRef(false);
   const audioFileInputRef = useRef<HTMLInputElement>(null);
   const imageFileInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -130,6 +131,9 @@ const LessonDetail: React.FC = () => {
 
   const handleExtractMemory = async () => {
     if (!lesson) return;
+    if (isExtractingRef.current) return;
+
+    isExtractingRef.current = true;
     setIsProcessing(true);
     setProgressMsg('Starting analysis pipeline...');
     setError(null);
@@ -301,19 +305,19 @@ const LessonDetail: React.FC = () => {
       }
 
       setProgressMsg('Triggering queue worker...');
-      await triggerQueueWorker(1).catch(() => undefined);
+      triggerQueueWorker(1).catch(console.warn);
 
       setProgressMsg('Processing queue and waiting for analysis...');
       let result: AIResult | null = null;
-      const pollIntervalMs = 6000;
-      const queueKickEveryAttempts = 5; // Kick queue roughly every 30s while polling
-      const maxPollAttempts = 100; // ~10 minutes max wait
+      const pollIntervalMs = 3000;
+      const queueKickEveryAttempts = 5; // Kick queue roughly every 15s while polling
+      const maxPollAttempts = 200; // ~10 minutes max wait
       const maxConsecutiveStatusErrors = 4;
       let consecutiveStatusErrors = 0;
 
       for (let attempt = 1; attempt <= maxPollAttempts; attempt++) {
         if (attempt === 1 || attempt % queueKickEveryAttempts === 0) {
-          await triggerQueueWorker(1).catch(() => undefined);
+          triggerQueueWorker(1).catch(console.warn);
         }
 
         let status: any;
@@ -424,6 +428,8 @@ const LessonDetail: React.FC = () => {
       console.error('Deep Scan Error:', err);
       setError(err.message || 'Analysis failed');
       setIsProcessing(false);
+    } finally {
+      isExtractingRef.current = false;
     }
   };
 
