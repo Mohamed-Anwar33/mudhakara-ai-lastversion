@@ -311,7 +311,7 @@ const LessonDetail: React.FC = () => {
       let result: AIResult | null = null;
       const pollIntervalMs = 3000;
       const queueKickEveryAttempts = 5; // Kick queue roughly every 15s while polling
-      const maxPollAttempts = 200; // ~10 minutes max wait
+      const maxPollAttempts = 10000; // Run essentially indefinitely for large files
       const maxConsecutiveStatusErrors = 4;
       let consecutiveStatusErrors = 0;
 
@@ -386,6 +386,14 @@ const LessonDetail: React.FC = () => {
             if (remainingFiles > 0) {
               queueMsg += ` (+${remainingFiles} ملفات بالانتظار)`;
             }
+          }
+
+          const totalJobsCount = jobs.length;
+          const completedJobsCount = jobs.filter((j: any) => j.status === 'completed').length;
+
+          if (totalJobsCount > 5) {
+            const percent = Math.floor((completedJobsCount / totalJobsCount) * 100);
+            queueMsg += ` — الإنجاز الكلي: ${percent}%`;
           }
         }
 

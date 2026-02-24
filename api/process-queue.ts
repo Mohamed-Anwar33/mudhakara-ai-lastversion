@@ -93,7 +93,7 @@ async function executeEdgeFunctionStep(supabaseUrl: string, serviceKey: string, 
     console.log(`[Orchestrator] Calling ${url} for job ${jobId}`);
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 seconds timeout
+    const timeoutId = setTimeout(() => controller.abort(), 55000); // 55 seconds timeout (Vercel max Duration is 60s)
 
     try {
         const res = await fetch(url, {
@@ -127,9 +127,7 @@ async function executeEdgeFunctionStep(supabaseUrl: string, serviceKey: string, 
         clearTimeout(timeoutId);
 
         if (error.name === 'AbortError') {
-            console.log(`[Orchestrator] Job ${jobId} triggered function ${functionName} and it is now running in the background (timeout reached).`);
-            // Gracefully tell Vercel to stay pending while Supabase works in background
-            return { success: true, status: 'processing_background', stage: 'processing_background', keep_lock: true };
+            throw new Error(`Orchestrator Timeout: Edge function took longer than 55 seconds.`);
         }
 
         throw error;
@@ -163,16 +161,6 @@ async function processSingleJob(supabase: any, job: any, workerId: string, supab
             result = await parseModule.processExtractTextRange(supabase, job);
         } else {
             result = await executeEdgeFunctionStep(supabaseUrl, serviceKey, endpoint, job.id);
-        }
-
-        if (result.keep_lock) {
-            console.log(`[${workerId}] Job ${job.id} is processing in background, keeping lock intact.`);
-            return {
-                jobId: job.id,
-                jobType: job.job_type,
-                status: 'processing',
-                edgeResult: result
-            };
         }
 
         // The Edge function handles its own status mutations directly in DB (e.g. completed, failed)

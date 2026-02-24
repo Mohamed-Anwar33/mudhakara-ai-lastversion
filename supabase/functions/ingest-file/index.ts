@@ -66,23 +66,47 @@ function getMime(fileName: string): string {
 // ─── Gemini API Calls ───────────────────────────────────
 
 async function callGemini(apiKey: string, parts: any[], maxTokens = 65536): Promise<string> {
-    const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-        {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ parts }],
-                generationConfig: { temperature: 0.1, maxOutputTokens: maxTokens }
-            })
+    const maxAttempts = 4;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        try {
+            const response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts }],
+                        generationConfig: { temperature: 0.1, maxOutputTokens: maxTokens }
+                    })
+                }
+            );
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                if (response.status === 429 || response.status >= 500) {
+                    if (attempt < maxAttempts - 1) {
+                        const delay = Math.min(Math.pow(2, attempt) * 2000, 30000);
+                        console.warn(`[Gemini] ${response.status} Error. Retrying in ${delay / 1000}s...`);
+                        await new Promise(res => setTimeout(res, delay));
+                        continue;
+                    }
+                }
+                throw new Error(`Gemini: ${data.error?.message || response.status}`);
+            }
+
+            const resParts = data.candidates?.[0]?.content?.parts || [];
+            return resParts.filter((p: any) => p.text).map((p: any) => p.text).join('').trim();
+        } catch (error: any) {
+            if (attempt < maxAttempts - 1 && (error.message.includes('fetch') || error.message.includes('network'))) {
+                const delay = Math.min(Math.pow(2, attempt) * 2000, 30000);
+                await new Promise(res => setTimeout(res, delay));
+                continue;
+            }
+            throw error;
         }
-    );
-
-    const data = await response.json();
-    if (!response.ok) throw new Error(`Gemini: ${data.error?.message || response.status}`);
-
-    const resParts = data.candidates?.[0]?.content?.parts || [];
-    return resParts.filter((p: any) => p.text).map((p: any) => p.text).join('').trim();
+    }
+    throw new Error('callGemini failed after max retries');
 }
 
 async function uploadToGeminiFiles(storageRes: Response, fileName: string, mimeType: string, apiKey: string): Promise<string> {

@@ -24,9 +24,9 @@ export async function processExtractTextRange(supabase: any, job: any) {
 
         if (lecErr || !lecture) throw new Error(`Lecture not found: ${lecture_id}`);
 
-        // Decide how many pages to process (max 2)
+        // Decide how many pages to process (max 5)
         const pagesToProcess = [];
-        for (let p = page; p <= Math.min(page + 1, lecture.page_to); p++) {
+        for (let p = page; p <= Math.min(page + 4, lecture.page_to); p++) {
             pagesToProcess.push(p);
         }
 

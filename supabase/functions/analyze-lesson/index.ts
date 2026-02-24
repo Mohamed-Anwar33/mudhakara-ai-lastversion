@@ -53,52 +53,100 @@ function repairTruncatedJSON(raw: string): any | null {
 }
 
 async function callGeminiText(prompt: string, apiKey: string): Promise<{ text: string; tokens: number }> {
-    const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-        {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { temperature: 0.2, maxOutputTokens: 65536 }
-            })
+    const maxAttempts = 4;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        try {
+            const response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }] }],
+                        generationConfig: { temperature: 0.2, maxOutputTokens: 65536 }
+                    })
+                }
+            );
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                if (response.status === 429 || response.status >= 500) {
+                    if (attempt < maxAttempts - 1) {
+                        const delay = Math.min(Math.pow(2, attempt) * 2000, 30000);
+                        console.warn(`[Gemini Text] ${response.status} Error. Retrying in ${delay / 1000}s...`);
+                        await new Promise(res => setTimeout(res, delay));
+                        continue;
+                    }
+                }
+                throw new Error(`Gemini TEXT: ${data.error?.message || response.status}`);
+            }
+
+            const parts = data.candidates?.[0]?.content?.parts || [];
+            const text = parts.filter((p: any) => p.text).map((p: any) => p.text).join('').trim();
+            const tokens = data.usageMetadata?.totalTokenCount || 0;
+            return { text, tokens };
+        } catch (error: any) {
+            if (attempt < maxAttempts - 1 && (error.message.includes('fetch') || error.message.includes('network'))) {
+                const delay = Math.min(Math.pow(2, attempt) * 2000, 30000);
+                await new Promise(res => setTimeout(res, delay));
+                continue;
+            }
+            throw error;
         }
-    );
-
-    const data = await response.json();
-    if (!response.ok) throw new Error(`Gemini TEXT: ${data.error?.message || response.status}`);
-
-    const parts = data.candidates?.[0]?.content?.parts || [];
-    const text = parts.filter((p: any) => p.text).map((p: any) => p.text).join('').trim();
-    const tokens = data.usageMetadata?.totalTokenCount || 0;
-    return { text, tokens };
+    }
+    throw new Error('callGeminiText failed after max retries');
 }
 
 async function callGeminiJSON(prompt: string, apiKey: string): Promise<{ parsed: any; tokens: number }> {
-    const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-        {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { temperature: 0.2, maxOutputTokens: 16384, responseMimeType: 'application/json' }
-            })
+    const maxAttempts = 4;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        try {
+            const response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }] }],
+                        generationConfig: { temperature: 0.2, maxOutputTokens: 16384, responseMimeType: 'application/json' }
+                    })
+                }
+            );
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                if (response.status === 429 || response.status >= 500) {
+                    if (attempt < maxAttempts - 1) {
+                        const delay = Math.min(Math.pow(2, attempt) * 2000, 30000);
+                        console.warn(`[Gemini JSON] ${response.status} Error. Retrying in ${delay / 1000}s...`);
+                        await new Promise(res => setTimeout(res, delay));
+                        continue;
+                    }
+                }
+                throw new Error(`Gemini JSON: ${data.error?.message || response.status}`);
+            }
+
+            const parts = data.candidates?.[0]?.content?.parts || [];
+            const content = parts.filter((p: any) => p.text).map((p: any) => p.text).join('').trim();
+            if (!content) throw new Error('Gemini JSON empty response');
+
+            const parsed = repairTruncatedJSON(content);
+            if (!parsed) throw new Error(`Bad JSON from Gemini: ${content.substring(0, 200)}`);
+
+            const tokens = data.usageMetadata?.totalTokenCount || 0;
+            return { parsed, tokens };
+        } catch (error: any) {
+            if (attempt < maxAttempts - 1 && (error.message.includes('fetch') || error.message.includes('network'))) {
+                const delay = Math.min(Math.pow(2, attempt) * 2000, 30000);
+                await new Promise(res => setTimeout(res, delay));
+                continue;
+            }
+            throw error;
         }
-    );
-
-    const data = await response.json();
-    if (!response.ok) throw new Error(`Gemini JSON: ${data.error?.message || response.status}`);
-
-    const parts = data.candidates?.[0]?.content?.parts || [];
-    const content = parts.filter((p: any) => p.text).map((p: any) => p.text).join('').trim();
-    if (!content) throw new Error('Gemini JSON empty response');
-
-    const parsed = repairTruncatedJSON(content);
-    if (!parsed) throw new Error(`Bad JSON from Gemini: ${content.substring(0, 200)}`);
-
-    const tokens = data.usageMetadata?.totalTokenCount || 0;
-    return { parsed, tokens };
+    }
+    throw new Error('callGeminiJSON failed after max retries');
 }
 
 async function buildFocusMap(supabase: any, lessonId: string): Promise<Set<string>> {
