@@ -156,7 +156,7 @@ async function processSingleJob(supabase: any, job: any, workerId: string, supab
     } catch (processingError: any) {
         console.error(`[${workerId}] Job ${job.id} failed: ${processingError.message}`);
 
-        await unlockJob(supabase, job.id); // unlock it so it can retry or fail
+        await unlockJob(supabase, job.id, 'pending'); // unlock it so it can retry or fail
 
         return {
             jobId: job.id,
@@ -184,15 +184,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Enforce maxJobs = 1 so the orchestration is extremely lightweight
         const maxJobs = 1;
 
-        // 1. Try to requeue any stale jobs (e.g., stuck processing)
-        const { data: requeueCount } = await supabase.rpc('requeue_stale_jobs', { max_age_minutes: 5 });
-        if (Number(requeueCount) > 0) {
-            console.log(`[${workerId}] Requeued ${requeueCount} stale jobs`);
+        // Requeue stale jobs using RPC
+        const { data: requeueCount, error: requeueErr } = await supabase.rpc('requeue_stale_jobs', { max_age_minutes: 5 });
+        if (!requeueErr) {
+            if (Number(requeueCount) > 0) {
+                console.log(`[${workerId}] Requeued ${requeueCount} stale jobs`);
+            }
         } else {
             // Fallback for missing RPC: Reset anything locked over 5 mins ago
             const fiveMinsAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
             await supabase.from('processing_queue')
-                .update({ locked_by: null, locked_at: null })
+                .update({ locked_by: null, locked_at: null, status: 'pending' })
                 .in('status', ['pending', 'processing'])
                 .not('locked_by', 'is', null)
                 .lt('locked_at', fiveMinsAgo);

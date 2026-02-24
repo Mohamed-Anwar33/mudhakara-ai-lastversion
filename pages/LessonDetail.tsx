@@ -330,8 +330,9 @@ const LessonDetail: React.FC = () => {
           throw new Error(reasons.length > 0 ? `Analysis failed: ${reasons.join(' | ')}` : 'Analysis failed');
         }
 
-        const ingestWarning = ingestFailures.length > 0 ? ` | skipped files: ${ingestFailures.length}` : '';
-        setProgressMsg(`Queue active: ${activeJobs.length}, failed jobs: ${failedJobs.length}${ingestWarning}`);
+        const ingestWarning = ingestFailures.length > 0 ? ` | فشل رفع ${ingestFailures.length} ملف` : '';
+        const queueMsg = activeJobs.length > 0 ? `جاري معالجة ${activeJobs.length} ملف${ingestWarning}` : `التحليل قيد الانتظار...`;
+        setProgressMsg(queueMsg);
 
         await delay(3000);
       }
