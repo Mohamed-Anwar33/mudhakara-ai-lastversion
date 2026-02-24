@@ -129,7 +129,7 @@ async function executeEdgeFunctionStep(supabaseUrl: string, serviceKey: string, 
         if (error.name === 'AbortError') {
             console.log(`[Orchestrator] Job ${jobId} triggered function ${functionName} and it is now running in the background (timeout reached).`);
             // Gracefully tell Vercel to stay pending while Supabase works in background
-            return { success: true, status: 'pending', stage: 'processing_background' };
+            return { success: true, status: 'processing_background', stage: 'processing_background', keep_lock: true };
         }
 
         throw error;
@@ -157,6 +157,16 @@ async function processSingleJob(supabase: any, job: any, workerId: string, supab
 
         // Call the Edge Function Step endpoint
         result = await executeEdgeFunctionStep(supabaseUrl, serviceKey, endpoint, job.id);
+
+        if (result.keep_lock) {
+            console.log(`[${workerId}] Job ${job.id} is processing in background, keeping lock intact.`);
+            return {
+                jobId: job.id,
+                jobType: job.job_type,
+                status: 'processing',
+                edgeResult: result
+            };
+        }
 
         // Status update logic depending on what Edge Function returns
         const finalStatus = (result.status === 'completed' || result.status === 'failed') ? result.status : 'pending';
