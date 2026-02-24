@@ -191,10 +191,18 @@ serve(async (req) => {
 
         const advanceStage = async (newStage: string, newProgress: number, extraUpdates: any = {}) => {
             const { error } = await supabase.from('processing_queue')
-                .update({ stage: newStage, progress: newProgress, updated_at: new Date().toISOString(), ...extraUpdates })
+                .update({
+                    stage: newStage,
+                    progress: newProgress,
+                    updated_at: new Date().toISOString(),
+                    status: 'pending',     // unlock for next step
+                    locked_by: null,       // unlock for next step
+                    locked_at: null,       // unlock for next step
+                    ...extraUpdates
+                })
                 .eq('id', jobId);
             if (error) throw new Error(`Failed to advance stage: ${error.message}`);
-            return jsonResponse({ success: true, stage: newStage, progress: newProgress, status: 'processing' });
+            return jsonResponse({ success: true, stage: newStage, progress: newProgress, status: 'pending' });
         };
 
         const setFail = async (errMsg: string) => {
@@ -204,6 +212,11 @@ serve(async (req) => {
                 last_error: errMsg,
                 updated_at: new Date().toISOString()
             }).eq('id', jobId);
+
+            await supabase.from('lessons')
+                .update({ analysis_status: 'failed' })
+                .eq('id', lessonId);
+
             return jsonResponse({ success: false, stage: 'failed', status: 'failed', error: errMsg });
         };
 

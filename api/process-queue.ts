@@ -92,29 +92,48 @@ async function executeEdgeFunctionStep(supabaseUrl: string, serviceKey: string, 
     const url = `${supabaseUrl}/functions/v1/${functionName}`;
     console.log(`[Orchestrator] Calling ${url} for job ${jobId}`);
 
-    const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${serviceKey}`,
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ jobId })
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 seconds timeout
 
-    if (!res.ok) {
-        const errorText = await res.text().catch(() => 'No response body');
-        throw new Error(`Edge Function returned ${res.status}: ${errorText}`);
-    }
-
-    // Attempt to parse JSON response. Edge functions should return { success: true, stage: "...", status: "...", progress: 50 }
-    let data;
     try {
-        data = await res.json();
-    } catch {
-        throw new Error('Edge Function returned invalid JSON');
-    }
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${serviceKey}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ jobId }),
+            signal: controller.signal
+        });
 
-    return data;
+        clearTimeout(timeoutId);
+
+        if (!res.ok) {
+            const errorText = await res.text().catch(() => 'No response body');
+            throw new Error(`Edge Function returned ${res.status}: ${errorText}`);
+        }
+
+        // Attempt to parse JSON response
+        let data;
+        try {
+            data = await res.json();
+        } catch {
+            throw new Error('Edge Function returned invalid JSON');
+        }
+
+        return data;
+
+    } catch (error: any) {
+        clearTimeout(timeoutId);
+
+        if (error.name === 'AbortError') {
+            console.log(`[Orchestrator] Job ${jobId} triggered function ${functionName} and it is now running in the background (timeout reached).`);
+            // Gracefully tell Vercel to stay pending while Supabase works in background
+            return { success: true, status: 'pending', stage: 'processing_background' };
+        }
+
+        throw error;
+    }
 }
 
 // ─── Job Processor Route logic ────────────────────────
