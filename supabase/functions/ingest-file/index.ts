@@ -260,16 +260,26 @@ serve(async (req) => {
                 .neq('id', jobId);
 
             if (!countErr && pendingExtracts === 0) {
-                const { error: insertErr } = await supabase.from('processing_queue').insert({
-                    lesson_id: lessonId,
-                    job_type: 'generate_analysis',
-                    status: 'pending'
-                });
+                // Prevent spawning analysis if one is already pending or completed
+                const { data: existingAnalysis } = await supabase
+                    .from('processing_queue')
+                    .select('id')
+                    .eq('lesson_id', lessonId)
+                    .eq('job_type', 'generate_analysis')
+                    .maybeSingle();
 
-                if (!insertErr || insertErr.code === '23505') {
-                    await supabase.from('lessons').update({ analysis_status: 'pending' }).eq('id', lessonId);
-                } else {
-                    console.error('[Ingest] Failed to queue generate_analysis:', insertErr);
+                if (!existingAnalysis) {
+                    const { error: insertErr } = await supabase.from('processing_queue').insert({
+                        lesson_id: lessonId,
+                        job_type: 'generate_analysis',
+                        status: 'pending'
+                    });
+
+                    if (!insertErr || insertErr.code === '23505') {
+                        await supabase.from('lessons').update({ analysis_status: 'pending' }).eq('id', lessonId);
+                    } else {
+                        console.error('[Ingest] Failed to queue generate_analysis:', insertErr);
+                    }
                 }
             }
         };
