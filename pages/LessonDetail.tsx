@@ -391,8 +391,13 @@ const LessonDetail: React.FC = () => {
         if (status?.lessonStatus === 'completed' && status?.analysisResult) {
           result = status.analysisResult;
           break;
-        } else if (status?.lessonStatus === 'failed') {
-          throw new Error('فشل التحليل الذكي للخلاصة.');
+        } else if (status?.lessonStatus === 'failed' && activeJobs.length === 0) {
+          // Only treat 'failed' as terminal if no active jobs AND we've been polling for a while
+          // (the ingest API resets status to 'pending', but there's a race window)
+          const elapsed = Date.now() - pollStartTime;
+          if (elapsed > 30000) {
+            throw new Error('فشل التحليل الذكي للخلاصة.');
+          }
         }
 
         if (!result) {
