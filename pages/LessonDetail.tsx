@@ -293,8 +293,9 @@ const LessonDetail: React.FC = () => {
       const pollIntervalMs = 3000;
       const queueKickEveryAttempts = 5; // Kick queue roughly every 15s while polling
       const maxPollAttempts = 10000; // Run essentially indefinitely for large files
-      const maxConsecutiveStatusErrors = 4;
+      const maxConsecutiveStatusErrors = 10;
       let consecutiveStatusErrors = 0;
+      const pollStartTime = Date.now();
 
       for (let attempt = 1; attempt <= maxPollAttempts; attempt++) {
         if (attempt === 1 || attempt % queueKickEveryAttempts === 0) {
@@ -376,6 +377,12 @@ const LessonDetail: React.FC = () => {
             const percent = Math.floor((completedJobsCount / totalJobsCount) * 100);
             queueMsg += ` — الإنجاز الكلي: ${percent}%`;
           }
+        }
+
+        // Add 10 minute safe background processing message
+        const elapsedSinceStart = Date.now() - pollStartTime;
+        if (elapsedSinceStart > 600000 && activeJobs.length > 0) { // 10 minutes
+          queueMsg += ' (ما زالت المعالجة مستمرة بأمان في الخلفية ⏳)';
         }
 
         const ingestWarning = ingestFailures.length > 0 ? ` | تعذر معالجة ${ingestFailures.length} ملف` : '';

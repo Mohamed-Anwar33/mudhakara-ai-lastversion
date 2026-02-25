@@ -66,7 +66,7 @@ function getMime(fileName: string): string {
 // ─── Gemini API Calls ───────────────────────────────────
 
 async function callGemini(apiKey: string, parts: any[], maxTokens = 65536): Promise<string> {
-    const maxAttempts = 4;
+    const maxAttempts = 6;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
         try {
             const response = await fetch(
@@ -86,7 +86,9 @@ async function callGemini(apiKey: string, parts: any[], maxTokens = 65536): Prom
             if (!response.ok) {
                 if (response.status === 429 || response.status >= 500) {
                     if (attempt < maxAttempts - 1) {
-                        const delay = Math.min(Math.pow(2, attempt) * 2000, 30000);
+                        const baseDelay = Math.pow(2, attempt) * 2000;
+                        const jitter = Math.random() * 1000;
+                        const delay = Math.min(baseDelay + jitter, 45000); // Max 45s wait
                         console.warn(`[Gemini] ${response.status} Error. Retrying in ${delay / 1000}s...`);
                         await new Promise(res => setTimeout(res, delay));
                         continue;
@@ -99,7 +101,9 @@ async function callGemini(apiKey: string, parts: any[], maxTokens = 65536): Prom
             return resParts.filter((p: any) => p.text).map((p: any) => p.text).join('').trim();
         } catch (error: any) {
             if (attempt < maxAttempts - 1 && (error.message.includes('fetch') || error.message.includes('network'))) {
-                const delay = Math.min(Math.pow(2, attempt) * 2000, 30000);
+                const baseDelay = Math.pow(2, attempt) * 2000;
+                const jitter = Math.random() * 1000;
+                const delay = Math.min(baseDelay + jitter, 45000);
                 await new Promise(res => setTimeout(res, delay));
                 continue;
             }
@@ -568,8 +572,24 @@ serve(async (req) => {
 
                 console.log(`[Ingest] Chunking complete for ${lecture_id}. Created ${chunksCreatedCount} chunks.`);
 
+                // Check Minimum Extracted Content Coverage
+                const { data: lecSeg } = await supabase.from('lecture_segments')
+                    .select('page_from, page_to').eq('id', lecture_id).single();
+
+                if (lecSeg) {
+                    const totalPages = Math.max(1, lecSeg.page_to - lecSeg.page_from);
+                    const EXPECTED_MIN_CHARS_PER_PAGE = 300;
+                    const expectedTotal = totalPages * EXPECTED_MIN_CHARS_PER_PAGE;
+                    const extractedTotal = fullText.trim().length;
+
+                    if (extractedTotal < (expectedTotal * 0.4)) { // Below 40% coverage
+                        throw new Error(`Insufficient extracted content. OCR coverage too low (${extractedTotal} chars / expected ~${expectedTotal}).`);
+                    }
+                }
+
                 // 3. Spawn analyze_lecture for this lecture
                 await spawnNextAtomicJob('analyze_lecture', { lecture_id }, `lesson:${lessonId}:analyze_lecture:lec_${lecture_id}`);
+
 
                 // Check if all lectures for this book are fully chunked and analyzed? 
                 // We'll let `generate_book_overview` wait at the end. Actually, when does `generate_book_overview` spawn?
@@ -753,15 +773,31 @@ serve(async (req) => {
             console.error(`[Ingest DBG] Error in ${stage}: ${e.message}`);
 
             // Fast fail if too many attempts
-            if (attempt_count >= 3) {
+            if (attempt_count >= 5) {
+                if (job.job_type === 'ocr_range') {
+                    // Degraded mode: mark as partial / completed to allow chunk_lecture to proceed
+                    await supabase.from('processing_queue').update({
+                        status: 'completed',
+                        stage: 'partial',
+                        error_message: 'Max retries reached. OCR failed for this chunk.',
+                        updated_at: new Date().toISOString()
+                    }).eq('id', jobId);
+                    return jsonResponse({ success: true, stage: 'partial', status: 'completed', message: 'ocr fallback applied' });
+                }
                 return await setFail(e.message);
             } else {
+                // Determine backoff inside Edge function so we explicitly set next_retry_at
+                const baseDelay = Math.pow(2, attempt_count) * 2000;
+                const delayMs = Math.min(baseDelay, 45000);
+                const nextRetry = new Date(Date.now() + delayMs).toISOString();
+
                 // Increment attempt and UNLOCK the job so it can be retried
                 await supabase.from('processing_queue').update({
                     attempt_count: attempt_count + 1,
                     status: 'pending',
                     locked_by: null,
                     locked_at: null,
+                    next_retry_at: nextRetry,
                     error_message: e.message
                 }).eq('id', jobId);
 

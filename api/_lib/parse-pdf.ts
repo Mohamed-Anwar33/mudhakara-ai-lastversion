@@ -185,12 +185,50 @@ export async function processExtractTextRange(supabase: any, job: any) {
 
     } catch (error: any) {
         console.error(`[ParsePDF] Error in processExtractTextRange:`, error);
+
+        // Anti-Deadlock Chaining: Ensure we don't break the pipeline on fatal crashes
+        try {
+            const { lesson_id, payload } = job;
+            if (lesson_id && payload?.lecture_id) {
+                console.log(`[ParsePDF] Anti-deadlock: Spawning chunk_lecture for ${payload.lecture_id}`);
+                await supabase.from('processing_queue').insert({
+                    lesson_id: lesson_id,
+                    job_type: 'chunk_lecture',
+                    payload: { lecture_id: payload.lecture_id },
+                    status: 'pending',
+                    dedupe_key: `lesson:${lesson_id}:chunk_lecture:lec_${payload.lecture_id}`
+                });
+
+                // Also kick off the NEXT lecture if it exists to keep the chain moving
+                const { data: nextLecture } = await supabase.from('lecture_segments')
+                    .select('id, page_from')
+                    .eq('lesson_id', lesson_id)
+                    .gt('page_from', payload.page || 0)
+                    .order('page_from', { ascending: true })
+                    .limit(1)
+                    .maybeSingle();
+
+                if (nextLecture) {
+                    await supabase.from('processing_queue').insert({
+                        lesson_id: lesson_id,
+                        job_type: 'extract_text_range',
+                        payload: { lecture_id: nextLecture.id, page: nextLecture.page_from },
+                        status: 'pending',
+                        dedupe_key: `lesson:${lesson_id}:extract_text_range:lec_${nextLecture.id}:p_${nextLecture.page_from}`
+                    });
+                }
+            }
+        } catch (chainErr) {
+            console.error(`[ParsePDF] Anti-deadlock chaining failed:`, chainErr);
+        }
+
         await supabase.from('processing_queue').update({
             status: 'failed',
             stage: 'failed',
             error_message: error.message,
             updated_at: new Date().toISOString()
         }).eq('id', job.id);
+
         return { status: 'failed', error: error.message };
     }
 }

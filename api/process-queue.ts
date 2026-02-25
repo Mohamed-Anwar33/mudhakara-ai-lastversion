@@ -35,15 +35,36 @@ async function acquireJobId(supabase: any, workerId: string): Promise<string | n
 
     console.warn(`[${workerId}] acquire_job RPC missing. Using SQL fallback lock flow.`);
 
+    // Enforce Concurrency Limits
+    const { count: activeOcr } = await supabase.from('processing_queue')
+        .select('*', { count: 'exact', head: true })
+        .in('job_type', ['ocr_range', 'image_ocr'])
+        .not('locked_by', 'is', null);
+
+    const { count: activeAnalysis } = await supabase.from('processing_queue')
+        .select('*', { count: 'exact', head: true })
+        .in('job_type', ['generate_analysis', 'analyze_lecture'])
+        .not('locked_by', 'is', null);
+
+    const excludedTypes = [];
+    if ((activeOcr || 0) >= 1) excludedTypes.push('ocr_range', 'image_ocr');
+    if ((activeAnalysis || 0) >= 2) excludedTypes.push('generate_analysis', 'analyze_lecture');
+
     for (let attempt = 0; attempt < 3; attempt++) {
-        const { data: nextPending, error: pendingError } = await supabase
+        let query = supabase
             .from('processing_queue')
-            .select('id, attempts')
-            .in('status', ['pending', 'processing']) // Notice we also allow 'processing' to be picked up for step-based
+            .select('id, attempt_count')
+            .in('status', ['pending', 'processing'])
             .is('locked_by', null)
+            .or('next_retry_at.lte.now(),next_retry_at.is.null') // Respect exponential backoff
             .order('created_at', { ascending: true })
-            .limit(1)
-            .maybeSingle();
+            .limit(1);
+
+        if (excludedTypes.length > 0) {
+            query = query.not('job_type', 'in', `(${excludedTypes.join(',')})`);
+        }
+
+        const { data: nextPending, error: pendingError } = await query.maybeSingle();
 
         if (pendingError || !nextPending?.id) {
             return null;
@@ -55,7 +76,7 @@ async function acquireJobId(supabase: any, workerId: string): Promise<string | n
             .update({
                 locked_at: nowIso,
                 locked_by: workerId,
-                attempts: Number(nextPending.attempts || 0) + 1,
+                attempt_count: Number(nextPending.attempt_count || 0) + 1,
                 updated_at: nowIso
             })
             .eq('id', nextPending.id)
@@ -177,7 +198,7 @@ async function processSingleJob(supabase: any, job: any, workerId: string, supab
     } catch (processingError: any) {
         console.error(`[${workerId}] Job ${job.id} failed: ${processingError.message}`);
 
-        const failedAttempts = Number(job.attempts || 0);
+        const failedAttempts = Number(job.attempt_count || 0);
         if (failedAttempts >= 3) {
             console.error(`[${workerId}] Job ${job.id} has reached max attempts and is FAILED.`);
             await supabase.from('processing_queue').update({
@@ -188,7 +209,8 @@ async function processSingleJob(supabase: any, job: any, workerId: string, supab
                 locked_at: null
             }).eq('id', job.id);
         } else {
-            await unlockJob(supabase, job.id, 'pending'); // unlock it so it can retry
+            // Unlocking it so it can retry, we rely on attempt_count to be set properly elsewhere or above 
+            await unlockJob(supabase, job.id, 'pending');
         }
 
         return {
@@ -221,7 +243,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const fiveMinsAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
         const { data: staleJobs } = await supabase
             .from('processing_queue')
-            .select('id, attempts')
+            .select('id, attempt_count')
             .in('status', ['pending', 'processing'])
             .not('locked_by', 'is', null)
             .lt('locked_at', fiveMinsAgo);
@@ -229,7 +251,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (staleJobs && staleJobs.length > 0) {
             console.log(`[${workerId}] Found ${staleJobs.length} stale locked jobs. Cleaning up...`);
             for (const stale of staleJobs) {
-                const currentAttempts = Number(stale.attempts || 0);
+                const currentAttempts = Number(stale.attempt_count || 0);
                 if (currentAttempts >= 3) {
                     await supabase.from('processing_queue')
                         .update({ status: 'failed', stage: 'failed', error_message: 'Background processing timeout exceeded multiple times', locked_by: null, locked_at: null })
