@@ -19,10 +19,10 @@ export interface TextChunk {
     };
 }
 
-const MAX_CHUNK_CHARS = 2500;
+const MAX_CHUNK_CHARS = 5000;
 
 export function chunkText(text: string, options: ChunkOptions = {}): TextChunk[] {
-    const { maxTokens = 400, overlapTokens = 50, tokensPerWord = 2 } = options;
+    const { maxTokens = 800, overlapTokens = 80, tokensPerWord = 2 } = options;
     const safeMaxTokens = Math.floor(maxTokens * 0.85);
     const maxWords = Math.max(20, Math.floor(safeMaxTokens / tokensPerWord));
     const overlapWords = Math.max(5, Math.floor(overlapTokens / tokensPerWord));

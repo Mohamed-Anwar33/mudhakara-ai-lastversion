@@ -24,9 +24,9 @@ export async function processExtractTextRange(supabase: any, job: any) {
 
         if (lecErr || !lecture) throw new Error(`Lecture not found: ${lecture_id}`);
 
-        // Decide how many pages to process (max 5)
+        // Decide how many pages to process (max 10 — doubled for throughput)
         const pagesToProcess = [];
-        for (let p = page; p <= Math.min(page + 4, lecture.page_to); p++) {
+        for (let p = page; p <= Math.min(page + 9, lecture.page_to); p++) {
             pagesToProcess.push(p);
         }
 
@@ -86,8 +86,9 @@ export async function processExtractTextRange(supabase: any, job: any) {
         const cleanText = parsedText.replace(/\0/g, '').trim();
 
         // Hybrid Approach: Check if the text layer is valid
-        // Average page has ~500+ chars. If we extracted less than 100 chars per page, it's likely scanned.
-        const EXPECTED_MIN_CHARS = validIndices.length * 100;
+        // Average page has ~500+ chars. If we extracted less than 150 chars per page, it's likely scanned.
+        // Raised from 100→150 to catch more scanned PDFs that have minimal text layer noise.
+        const EXPECTED_MIN_CHARS = validIndices.length * 150;
         const hasTextLayer = cleanText.length >= EXPECTED_MIN_CHARS;
 
         if (hasTextLayer) {

@@ -88,7 +88,8 @@ async function callGemini(apiKey: string, parts: any[], maxTokens = 65536): Prom
                     if (attempt < maxAttempts - 1) {
                         const baseDelay = Math.pow(2, attempt) * 2000;
                         const jitter = Math.random() * 1000;
-                        const delay = Math.min(baseDelay + jitter, 45000); // Max 45s wait
+                        // Cap at 20s to stay within 150s Edge Function wall clock limit
+                        const delay = Math.min(baseDelay + jitter, 20000);
                         console.warn(`[Gemini] ${response.status} Error. Retrying in ${delay / 1000}s...`);
                         await new Promise(res => setTimeout(res, delay));
                         continue;
@@ -100,10 +101,17 @@ async function callGemini(apiKey: string, parts: any[], maxTokens = 65536): Prom
             const resParts = data.candidates?.[0]?.content?.parts || [];
             return resParts.filter((p: any) => p.text).map((p: any) => p.text).join('').trim();
         } catch (error: any) {
-            if (attempt < maxAttempts - 1 && (error.message.includes('fetch') || error.message.includes('network'))) {
+            if (attempt < maxAttempts - 1 && (
+                error.message.includes('fetch') ||
+                error.message.includes('network') ||
+                error.message.includes('429') ||
+                error.message.includes('500') ||
+                error.message.includes('503')
+            )) {
                 const baseDelay = Math.pow(2, attempt) * 2000;
                 const jitter = Math.random() * 1000;
-                const delay = Math.min(baseDelay + jitter, 45000);
+                const delay = Math.min(baseDelay + jitter, 20000);
+                console.warn(`[Gemini] Network/server error (attempt ${attempt + 1}). Retrying in ${(delay / 1000).toFixed(1)}s...`);
                 await new Promise(res => setTimeout(res, delay));
                 continue;
             }
@@ -328,6 +336,54 @@ serve(async (req) => {
             if (job.job_type === 'ingest_upload') {
                 await advanceStage('pending_upload', 10);
 
+                // ═══ FRESH RE-ANALYSIS: Clean ALL old data for this lesson ═══
+                // This ensures pressing "analyze" always starts from scratch.
+                // No need to delete and re-upload files!
+                try {
+                    console.log(`[Ingest] 🧹 Cleaning old data for lesson ${lessonId}...`);
+
+                    // 1. Delete old processing jobs (except current one)
+                    await supabase.from('processing_queue')
+                        .delete()
+                        .eq('lesson_id', lessonId)
+                        .neq('id', jobId);
+
+                    // 2. Delete old document sections
+                    await supabase.from('document_sections')
+                        .delete()
+                        .eq('lesson_id', lessonId);
+
+                    // 3. Delete old lecture analysis
+                    await supabase.from('lecture_analysis')
+                        .delete()
+                        .eq('lesson_id', lessonId);
+
+                    // 4. Delete old lecture segments
+                    await supabase.from('lecture_segments')
+                        .delete()
+                        .eq('lesson_id', lessonId);
+
+                    // 5. Delete old book analysis
+                    await supabase.from('book_analysis')
+                        .delete()
+                        .eq('lesson_id', lessonId);
+
+                    // 6. Clear old file hashes (so cache doesn't interfere)
+                    await supabase.from('file_hashes')
+                        .delete()
+                        .eq('lesson_id', lessonId);
+
+                    // 7. Reset lesson status
+                    await supabase.from('lessons')
+                        .update({ analysis_status: 'processing' })
+                        .eq('id', lessonId);
+
+                    console.log(`[Ingest] ✅ Old data cleaned. Starting fresh analysis.`);
+                } catch (cleanErr: any) {
+                    // Non-fatal: continue even if cleanup partially fails
+                    console.warn(`[Ingest] ⚠️ Cleanup warning (non-fatal): ${cleanErr.message}`);
+                }
+
                 // Cache check for audio before uploading
                 if (fileType === 'audio') {
                     const { data: cached } = await supabase.from('file_hashes').select('transcription')
@@ -403,7 +459,7 @@ serve(async (req) => {
                     parsed = { lectures: [{ title: 'محتوى الكتاب (لم يتم العثور على فهرس)', start_page: 1 }] };
                 }
 
-                await spawnNextAtomicJob('build_lecture_segments', { toc: parsed });
+                await spawnNextAtomicJob('build_lecture_segments', { toc: parsed, gemini_file_uri: activeUri });
                 return await setComplete();
             }
 
@@ -413,11 +469,12 @@ serve(async (req) => {
             if (job.job_type === 'build_lecture_segments') {
                 await advanceStage('building_segments', 20);
                 const toc = payload.toc;
+                const cachedGeminiUri = payload.gemini_file_uri;
 
                 const lectures = toc.lectures.map((l: any, idx: number) => {
                     const start_page = l.start_page || 1;
                     const next = toc.lectures[idx + 1];
-                    const page_to = next && next.start_page ? next.start_page - 1 : start_page + 100; // Cap to 100 pages per lecture
+                    const page_to = next && next.start_page ? next.start_page - 1 : start_page + 100;
                     return {
                         lesson_id: lessonId,
                         title: l.title,
@@ -434,11 +491,40 @@ serve(async (req) => {
                 if (error) throw new Error(`Failed to save lecture segments: ${error.message}`);
 
                 if (inserted && inserted.length > 0) {
-                    const firstLecture = inserted[0];
-                    await spawnNextAtomicJob('extract_text_range', {
-                        lecture_id: firstLecture.id,
-                        page: firstLecture.page_from
-                    }, `lecture:extract_text:${firstLecture.id}:page_${firstLecture.page_from}`);
+                    if (cachedGeminiUri) {
+                        // ═══ FAST PATH: Spawn ALL OCR jobs upfront using cached Gemini URI ═══
+                        // This bypasses Vercel entirely! OCR runs on Edge Function (no 10s limit)
+                        console.log(`[Ingest] Fast path: spawning OCR jobs for ${inserted.length} lectures using cached Gemini URI`);
+
+                        for (const lecture of inserted) {
+                            // Spawn ocr_range jobs for every 10-page batch
+                            for (let p = lecture.page_from; p <= lecture.page_to; p += 10) {
+                                const pages: number[] = [];
+                                for (let pp = p; pp <= Math.min(p + 9, lecture.page_to); pp++) {
+                                    pages.push(pp);
+                                }
+
+                                await spawnNextAtomicJob('ocr_range', {
+                                    lecture_id: lecture.id,
+                                    pages,
+                                    gemini_file_uri: cachedGeminiUri,
+                                    content_hash: payload.content_hash
+                                }, `lesson:${lessonId}:ocr_range:lec_${lecture.id}:p_${pages[0]}`);
+                            }
+
+                            // Spawn chunk_lecture barrier for this lecture
+                            await spawnNextAtomicJob('chunk_lecture', {
+                                lecture_id: lecture.id
+                            }, `lesson:${lessonId}:chunk_lecture:lec_${lecture.id}`);
+                        }
+                    } else {
+                        // ═══ LEGACY PATH: Use extract_text_range on Vercel (chains sequentially) ═══
+                        const firstLecture = inserted[0];
+                        await spawnNextAtomicJob('extract_text_range', {
+                            lecture_id: firstLecture.id,
+                            page: firstLecture.page_from
+                        }, `lecture:extract_text:${firstLecture.id}:page_${firstLecture.page_from}`);
+                    }
                 }
 
                 return await setComplete();
@@ -449,22 +535,44 @@ serve(async (req) => {
             // ==========================================
             if (job.job_type === 'ocr_range') {
                 await advanceStage('ocr_range', 10);
-                const { cropped_file_path, content_hash, lecture_id, pages } = payload;
-                if (!cropped_file_path) throw new Error("Missing cropped_file_path");
+                const { cropped_file_path, content_hash, lecture_id, pages, gemini_file_uri: cachedUri } = payload;
+
+                if (!cachedUri && !cropped_file_path) throw new Error("Missing both gemini_file_uri and cropped_file_path");
 
                 console.log(`[Ingest] OCR starting for Lecture ${lecture_id}, Pages: ${pages.join(',')}`);
 
-                // Download the cropped PDF from Storage
-                const { data: signData, error: signErr } = await supabase.storage.from('homework-uploads').createSignedUrl(cropped_file_path, 60);
-                if (signErr || !signData) throw new Error(`Sign URL failed for OCR: ${signErr?.message}`);
+                let fileUri: string;
+                let usedCachedUri = false;
 
-                const storageRes = await fetch(signData.signedUrl);
-                if (!storageRes.ok) throw new Error(`Fetch stream failed: ${storageRes.statusText}`);
+                if (cachedUri) {
+                    // ═══ FAST PATH: Use pre-uploaded Gemini URI (no download/crop/upload!) ═══
+                    console.log(`[Ingest] Using cached Gemini URI — zero download overhead`);
+                    fileUri = cachedUri;
+                    usedCachedUri = true;
+                } else {
+                    // ═══ LEGACY PATH: Download cropped PDF from Storage, upload to Gemini ═══
+                    const { data: signData, error: signErr } = await supabase.storage.from('homework-uploads').createSignedUrl(cropped_file_path, 60);
+                    if (signErr || !signData) throw new Error(`Sign URL failed for OCR: ${signErr?.message}`);
 
-                const fileName = cropped_file_path.split('/').pop() || 'ocr-chunk.pdf';
-                const fileUri = await uploadToGeminiFiles(storageRes, fileName, 'application/pdf', geminiKey);
+                    const storageRes = await fetch(signData.signedUrl);
+                    if (!storageRes.ok) throw new Error(`Fetch stream failed: ${storageRes.statusText}`);
 
-                const prompt = `أنت خبير في دقة استخراج النصوص من الكتب المصورة (Scanned Books).
+                    const fileName = cropped_file_path.split('/').pop() || 'ocr-chunk.pdf';
+                    fileUri = await uploadToGeminiFiles(storageRes, fileName, 'application/pdf', geminiKey);
+                }
+
+                // Build page-specific prompt for cached URI, or generic for cropped
+                const prompt = usedCachedUri
+                    ? `أنت خبير في دقة استخراج النصوص من الكتب المصورة (Scanned Books).
+مطلوب منك استخراج النص من الصفحات ${pages.join(' و ')} فقط من هذا الملف.
+
+⚠️ تعليمات صارمة:
+- استخرج النص من الصفحات المطلوبة فقط (${pages[0]} إلى ${pages[pages.length - 1]})
+- لا تقرأ أي صفحات أخرى
+- اكتب النص بالكامل كما هو مع الحفاظ على التشكيل والفقرات
+- قم بتنظيف النص وإزالة أي تكرار غير طبيعي ناتج عن المسح الضوئي
+- لا تضف أي تعليقات أو هوامش من عندك، فقط النص المستخرج الصافي والصحيح إملائياً`
+                    : `أنت خبير في دقة استخراج النصوص من الكتب المصورة (Scanned Books).
 استخرج كل النص الموجود في هذه الصفحات المعروضة أمامك، واكتبه بالكامل كما هو مع الحفاظ على التشكيل والفقرات.
 مهم جداً: قم بتنظيف النص وإزالة أي تكرار غير طبيعي للحروف ناتج عن المسح الضوئي (مثلاً إذا وجدت "اللممححااضضررة" صححها لتصبح "المحاضرة").
 لا تضف أي تعليقات أو هوامش من عندك، فقط النص المستخرج الصافي والصحيح إملائياً.`;
@@ -475,11 +583,11 @@ serve(async (req) => {
                 if (!resultText || resultText.length < 10) {
                     console.warn(`[Ingest] OCR returned very short text for pages ${pages.join(',')}`);
                 } else {
-                    console.log(`[Ingest] OCR succeeded! Length: ${resultText.length}`);
+                    console.log(`[Ingest] OCR succeeded! Length: ${resultText.length} chars for ${pages.length} pages`);
                 }
 
                 // Save to document_sections
-                const physicalPage = pages[0]; // Attach extracted chunk to the first page of the range
+                const physicalPage = pages[0];
                 const { error: insErr } = await supabase.from('document_sections').insert({
                     lesson_id: lessonId,
                     lecture_id: lecture_id,
@@ -487,13 +595,15 @@ serve(async (req) => {
                     content: resultText.trim(),
                     source_type: 'pdf',
                     source_file_id: fileInfo.file_path,
-                    metadata: { extraction_method: 'gemini-ocr', content_hash: content_hash }
+                    metadata: { extraction_method: usedCachedUri ? 'gemini-ocr-cached' : 'gemini-ocr', content_hash: content_hash }
                 });
 
                 if (insErr) throw new Error(`Failed to save OCR section: ${insErr.message}`);
 
-                // Clean up the temp cropped file
-                await supabase.storage.from('homework-uploads').remove([cropped_file_path]);
+                // Clean up the temp cropped file (only if we used legacy path)
+                if (cropped_file_path) {
+                    await supabase.storage.from('homework-uploads').remove([cropped_file_path]);
+                }
 
                 return await setComplete();
             }
@@ -577,23 +687,53 @@ serve(async (req) => {
                     .select('page_from, page_to').eq('id', lecture_id).single();
 
                 if (lecSeg) {
-                    const totalPages = Math.max(1, lecSeg.page_to - lecSeg.page_from);
-                    const EXPECTED_MIN_CHARS_PER_PAGE = 300;
+                    const totalPages = Math.max(1, lecSeg.page_to - lecSeg.page_from + 1);
+                    const EXPECTED_MIN_CHARS_PER_PAGE = 200; // Lowered for scanned Arabic PDFs
                     const expectedTotal = totalPages * EXPECTED_MIN_CHARS_PER_PAGE;
                     const extractedTotal = fullText.trim().length;
+                    const coveragePercent = Math.round((extractedTotal / Math.max(1, expectedTotal)) * 100);
 
-                    if (extractedTotal < (expectedTotal * 0.4)) { // Below 40% coverage
-                        throw new Error(`Insufficient extracted content. OCR coverage too low (${extractedTotal} chars / expected ~${expectedTotal}).`);
+                    console.log(`[Ingest] Coverage: ${extractedTotal} chars extracted / ~${expectedTotal} expected (${coveragePercent}%) for ${totalPages} pages`);
+
+                    if (extractedTotal < (expectedTotal * 0.3)) { // Below 30% = hard fail
+                        throw new Error(`Insufficient extracted content. OCR coverage too low: ${coveragePercent}% (${extractedTotal} chars / expected ~${expectedTotal}).`);
+                    } else if (coveragePercent < 60) {
+                        console.warn(`[Ingest] ⚠️ Low coverage (${coveragePercent}%). Analysis may be incomplete for lecture ${lecture_id}.`);
                     }
                 }
 
                 // 3. Spawn analyze_lecture for this lecture
                 await spawnNextAtomicJob('analyze_lecture', { lecture_id }, `lesson:${lessonId}:analyze_lecture:lec_${lecture_id}`);
 
+                // 4. Auto-cleanup: Delete the original PDF from Supabase Storage
+                //    to free space (critical for 1GB free tier limit).
+                //    The Gemini File URI is already cached for OCR, so the original is no longer needed.
+                if (fileInfo?.file_path) {
+                    try {
+                        // Check if ALL chunk_lecture jobs for this lesson are done
+                        const { count: pendingChunks } = await supabase.from('processing_queue')
+                            .select('*', { count: 'exact', head: true })
+                            .eq('lesson_id', lessonId)
+                            .eq('job_type', 'chunk_lecture')
+                            .in('status', ['pending', 'processing'])
+                            .neq('id', jobId);
 
-                // Check if all lectures for this book are fully chunked and analyzed? 
-                // We'll let `generate_book_overview` wait at the end. Actually, when does `generate_book_overview` spawn?
-                // The orchestrator or the last `analyze_lecture` can spawn it.
+                        if (!pendingChunks || pendingChunks === 0) {
+                            console.log(`[Ingest] 🗑️ All chunks done. Deleting original PDF to free storage: ${fileInfo.file_path}`);
+                            await supabase.storage.from('homework-uploads').remove([fileInfo.file_path]);
+                            // Also clean up any temp OCR files
+                            const { data: tempFiles } = await supabase.storage.from('homework-uploads').list(`temp-ocr/${lessonId}`);
+                            if (tempFiles && tempFiles.length > 0) {
+                                const filesToRemove = tempFiles.map(f => `temp-ocr/${lessonId}/${f.name}`);
+                                await supabase.storage.from('homework-uploads').remove(filesToRemove);
+                                console.log(`[Ingest] 🗑️ Cleaned up ${filesToRemove.length} temp OCR files`);
+                            }
+                        }
+                    } catch (cleanErr: any) {
+                        // Non-fatal: don't fail the job just because cleanup failed
+                        console.warn(`[Ingest] ⚠️ Storage cleanup failed (non-fatal): ${cleanErr.message}`);
+                    }
+                }
 
                 return await setComplete();
             }
@@ -618,12 +758,77 @@ serve(async (req) => {
                 let text = '';
 
                 if (fileType === 'audio') {
-                    const prompts = [AUDIO_PROMPT, 'استمع للتسجيل الصوتي التالي بعناية وحوّله إلى نص عربي مكتوب. اكتب كل ما يقوله المتحدث بالضبط. اكتب النص فقط.'];
-                    for (const p of prompts) {
+                    // ═══ SMART AUDIO TRANSCRIPTION (150s wall-clock safe) ═══
+                    // Strategy:
+                    // 1. Try full transcription (1 Gemini call, ~60s)
+                    // 2. If truncated (<20K chars), spawn a 2nd job for the rest
+                    // This keeps each Edge Function execution under 150s.
+
+                    const audioPartNum = payload.audio_part || 1; // 1 = full/firstHalf, 2 = secondHalf
+
+                    if (audioPartNum === 1) {
+                        // First attempt: full transcription
                         try {
-                            text = await callGemini(geminiKey, [{ text: p }, filePart]);
-                            if (text.length >= 50) break;
-                        } catch (e: any) { console.warn(`Audio gemini attempt failed: ${e.message}`); }
+                            text = await callGemini(geminiKey, [{ text: AUDIO_PROMPT }, filePart]);
+                            console.log(`[Ingest] Full audio transcription: ${text.length} chars`);
+                        } catch (e: any) {
+                            console.warn(`[Ingest] Full transcription failed: ${e.message}`);
+                        }
+
+                        // Fallback with simpler prompt
+                        if (text.length < 50) {
+                            try {
+                                text = await callGemini(geminiKey, [{ text: 'استمع للتسجيل الصوتي التالي بعناية وحوّله إلى نص عربي مكتوب. اكتب كل ما يقوله المتحدث بالضبط. اكتب النص فقط.' }, filePart]);
+                            } catch (e: any) {
+                                console.warn(`[Ingest] Fallback transcription failed: ${e.message}`);
+                            }
+                        }
+
+                        // Check if output looks truncated (heuristic: long audio should produce 20K+ chars)
+                        if (text.length >= 50 && text.length < 20000) {
+                            console.log(`[Ingest] ⚠️ Transcription may be truncated (${text.length} chars). Spawning part 2...`);
+
+                            // Save part 1 immediately
+                            await supabase.from('file_hashes')
+                                .update({ transcription: text })
+                                .eq('content_hash', contentHash);
+
+                            // Spawn a follow-up job for the second half
+                            await spawnNextAtomicJob('ingest_extract', {
+                                gemini_file_uri: activeUri,
+                                audio_part: 2
+                            }, `lesson:${lessonId}:ingest_extract_part2`);
+
+                            return await setComplete();
+                        }
+                    } else if (audioPartNum === 2) {
+                        // Second half transcription
+                        const secondHalfPrompt = `أنت مفرّغ صوتي محترف ودقيق جداً.
+حوّل النصف الثاني من هذا التسجيل الصوتي إلى نص عربي مكتوب.
+
+⚠️ قواعد صارمة:
+- فرّغ النصف الثاني فقط (من المنتصف تقريباً حتى نهاية التسجيل)
+- لا تكرر ما جاء في النصف الأول
+- اكتب كل كلمة بدون حذف أو اختصار
+- اكتب النص المُفرَّغ فقط بدون مقدمات`;
+
+                        try {
+                            const part2Text = await callGemini(geminiKey, [{ text: secondHalfPrompt }, filePart]);
+                            console.log(`[Ingest] Part 2 (second half): ${part2Text.length} chars`);
+
+                            // Fetch existing part 1 and combine
+                            const { data: existing } = await supabase.from('file_hashes')
+                                .select('transcription').eq('content_hash', contentHash).single();
+                            const part1 = existing?.transcription || '';
+                            text = (part1 + '\n\n' + part2Text).trim();
+                            console.log(`[Ingest] Combined transcription: ${text.length} chars`);
+                        } catch (e: any) {
+                            console.warn(`[Ingest] Part 2 failed: ${e.message}. Using part 1 only.`);
+                            // Fall back to part 1 only
+                            const { data: existing } = await supabase.from('file_hashes')
+                                .select('transcription').eq('content_hash', contentHash).single();
+                            text = existing?.transcription || '';
+                        }
                     }
                 } else {
                     text = await callGemini(geminiKey, [{ text: prompt }, filePart]);
@@ -633,12 +838,22 @@ serve(async (req) => {
                     if (fileType !== 'image') throw new Error(`Extraction failed, response too short: ${text?.length} chars`);
                 }
 
-                // Save text directly to file_hashes.transcription to avoid DB Row Limit on processing_queue.payload
+                // Save text directly to file_hashes.transcription
                 const { error: updErr } = await supabase.from('file_hashes')
                     .update({ transcription: text })
                     .eq('content_hash', contentHash);
 
                 if (updErr) throw new Error(`Save transcription failed: ${updErr.message}`);
+
+                // Auto-cleanup: Delete original audio/pdf file from Storage to free space (1GB limit)
+                if (fileType === 'audio' && fileInfo?.file_path) {
+                    try {
+                        console.log(`[Ingest] 🗑️ Deleting original audio to free storage: ${fileInfo.file_path}`);
+                        await supabase.storage.from('homework-uploads').remove([fileInfo.file_path]);
+                    } catch (cleanErr: any) {
+                        console.warn(`[Ingest] ⚠️ Audio cleanup failed (non-fatal): ${cleanErr.message}`);
+                    }
+                }
 
                 if (fileType === 'image') {
                     await checkAndSpawnAnalysis(); // no chunking needed for images

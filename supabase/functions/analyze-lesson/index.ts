@@ -73,7 +73,7 @@ async function callGeminiText(prompt: string, apiKey: string): Promise<{ text: s
             if (!response.ok) {
                 if (response.status === 429 || response.status >= 500) {
                     if (attempt < maxAttempts - 1) {
-                        const delay = Math.min(Math.pow(2, attempt) * 2000, 30000);
+                        const delay = Math.min(Math.pow(2, attempt) * 2000, 20000);
                         console.warn(`[Gemini Text] ${response.status} Error. Retrying in ${delay / 1000}s...`);
                         await new Promise(res => setTimeout(res, delay));
                         continue;
@@ -87,8 +87,14 @@ async function callGeminiText(prompt: string, apiKey: string): Promise<{ text: s
             const tokens = data.usageMetadata?.totalTokenCount || 0;
             return { text, tokens };
         } catch (error: any) {
-            if (attempt < maxAttempts - 1 && (error.message.includes('fetch') || error.message.includes('network'))) {
-                const delay = Math.min(Math.pow(2, attempt) * 2000, 30000);
+            if (attempt < maxAttempts - 1 && (
+                error.message.includes('fetch') ||
+                error.message.includes('network') ||
+                error.message.includes('429') ||
+                error.message.includes('503')
+            )) {
+                const delay = Math.min(Math.pow(2, attempt) * 2000, 20000);
+                console.warn(`[Gemini Text] Retry ${attempt + 1}: ${(delay / 1000).toFixed(1)}s...`);
                 await new Promise(res => setTimeout(res, delay));
                 continue;
             }
@@ -138,8 +144,14 @@ async function callGeminiJSON(prompt: string, apiKey: string): Promise<{ parsed:
             const tokens = data.usageMetadata?.totalTokenCount || 0;
             return { parsed, tokens };
         } catch (error: any) {
-            if (attempt < maxAttempts - 1 && (error.message.includes('fetch') || error.message.includes('network'))) {
-                const delay = Math.min(Math.pow(2, attempt) * 2000, 30000);
+            if (attempt < maxAttempts - 1 && (
+                error.message.includes('fetch') ||
+                error.message.includes('network') ||
+                error.message.includes('429') ||
+                error.message.includes('503')
+            )) {
+                const delay = Math.min(Math.pow(2, attempt) * 2000, 20000);
+                console.warn(`[Gemini JSON] Retry ${attempt + 1}: ${(delay / 1000).toFixed(1)}s...`);
                 await new Promise(res => setTimeout(res, delay));
                 continue;
             }
@@ -490,7 +502,7 @@ ${concatenated.substring(0, 80000)}`;
                 const cleanContent = cleanParagraphs.join('\n\n');
 
                 // Prepare batches
-                const batches = splitIntoBatches(cleanParagraphs, 100000, 3);
+                const batches = splitIntoBatches(cleanParagraphs, 80000, 3);
 
                 // Save to payload
                 payload.batches = batches;
@@ -537,7 +549,15 @@ ${concatenated.substring(0, 80000)}`;
             if (stage === 'merging_summaries') {
                 console.log(`[Analyze] Merging summaries...`);
                 const validParts = (payload.summaryParts || []).filter((p: string) => p && p.length > 50);
-                payload.summary = mergeAndDedup(validParts);
+                let merged = mergeAndDedup(validParts);
+
+                // Enforce max 100,000 character limit (user requirement)
+                const MAX_SUMMARY_CHARS = 100000;
+                if (merged.length > MAX_SUMMARY_CHARS) {
+                    console.warn(`[Analyze] Summary too long (${merged.length} chars). Truncating to ${MAX_SUMMARY_CHARS}.`);
+                    merged = merged.substring(0, MAX_SUMMARY_CHARS) + '\n\n---\n⚠️ تم اقتطاع الملخص (تجاوز الحد الأقصى 100,000 حرف)';
+                }
+                payload.summary = merged;
 
                 return await advanceStage('generating_quiz_focus', 60, { payload });
             }

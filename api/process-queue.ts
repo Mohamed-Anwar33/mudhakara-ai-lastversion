@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 
 // No local processing heavy imports!
 export const config = {
-    maxDuration: 60 // Return to standard hobby limit (we don't need 300s anymore)
+    maxDuration: 10 // Vercel Free plan limit = 10 seconds
 };
 
 const getSupabaseAdmin = () => {
@@ -114,7 +114,9 @@ async function executeEdgeFunctionStep(supabaseUrl: string, serviceKey: string, 
     console.log(`[Orchestrator] Calling ${url} for job ${jobId}`);
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 55000); // 55 seconds timeout (Vercel max Duration is 60s)
+    // Vercel Free = 10s max. Keep 2s for overhead → 8s for Edge Function call.
+    // If Edge Function takes longer, we disconnect. It will update DB directly.
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
 
     try {
         const res = await fetch(url, {
@@ -148,7 +150,10 @@ async function executeEdgeFunctionStep(supabaseUrl: string, serviceKey: string, 
         clearTimeout(timeoutId);
 
         if (error.name === 'AbortError') {
-            throw new Error(`Orchestrator Timeout: Edge function took longer than 55 seconds.`);
+            // Fire-and-forget: Edge Function is still running in the background.
+            // It will update the DB directly when done. This is expected on Free plan.
+            console.log(`[Orchestrator] Edge Function still running (>8s). Disconnecting gracefully.`);
+            return { status: 'dispatched', message: 'Edge function triggered but still running' };
         }
 
         throw error;
