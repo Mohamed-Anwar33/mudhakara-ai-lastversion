@@ -263,8 +263,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                         .eq('id', stale.id);
                 } else {
                     await supabase.from('processing_queue')
-                        .update({ status: 'pending', locked_by: null, locked_at: null }) // Leave attempts alone here because it's incremented when re-acquired
+                        .update({ status: 'pending', locked_by: null, locked_at: null })
                         .eq('id', stale.id);
+                }
+            }
+        }
+
+        // ═══ ORPHANED JOB RECOVERY ═══
+        // Jobs stuck in 'processing' with NO lock holder (locked_by IS NULL)
+        // and not updated in 3+ minutes are orphaned — Edge Function crashed/timed out
+        // after advanceStage (which sets locked_by=null) but before completing.
+        const threeMinsAgo = new Date(Date.now() - 3 * 60 * 1000).toISOString();
+        const { data: orphanedJobs } = await supabase
+            .from('processing_queue')
+            .select('id, attempt_count')
+            .eq('status', 'processing')
+            .is('locked_by', null)
+            .lt('updated_at', threeMinsAgo);
+
+        if (orphanedJobs && orphanedJobs.length > 0) {
+            console.log(`[${workerId}] Found ${orphanedJobs.length} orphaned processing jobs. Resetting to pending...`);
+            for (const orphan of orphanedJobs) {
+                const attempts = Number(orphan.attempt_count || 0);
+                if (attempts >= 5) {
+                    await supabase.from('processing_queue')
+                        .update({ status: 'failed', stage: 'failed', error_message: 'Orphaned job exceeded recovery attempts', locked_by: null, locked_at: null })
+                        .eq('id', orphan.id);
+                } else {
+                    await supabase.from('processing_queue')
+                        .update({ status: 'pending', locked_by: null, locked_at: null, attempt_count: attempts + 1 })
+                        .eq('id', orphan.id);
+                    console.log(`[${workerId}] Reset orphaned job ${orphan.id} to pending (attempt ${attempts + 1})`);
                 }
             }
         }
