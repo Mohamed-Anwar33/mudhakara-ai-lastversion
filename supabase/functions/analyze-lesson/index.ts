@@ -280,25 +280,37 @@ function normalizeQuizResponse(parsed: any): any {
     return parsed;
 }
 
-function buildSummaryPrompt(content: string, batchNum: number, totalBatches: number, hasAudio: boolean): string {
+function buildSummaryPrompt(content: string, batchNum: number, totalBatches: number, hasAudio: boolean, isRetry: boolean = false): string {
     const batchInfo = totalBatches > 1 ? ` (الجزء ${batchNum} من ${totalBatches})` : '';
-    const audioNote = hasAudio ? '\n6. **الأجزاء المميزة بـ ⭐ ركّز عليها المعلم في شرحه الصوتي** — أعطها اهتماماً إضافياً.' : '';
+    const audioNote = hasAudio ? '\n- **الأجزاء المميزة بـ ⭐ ركّز عليها المعلم في شرحه الصوتي** — أعطها اهتماماً إضافياً.' : '';
+    const retryWarning = isRetry ? '\n\n🚨🚨🚨 تحذير: الإجابة السابقة كانت مختصرة جداً وغير مقبولة! هذه المرة يجب أن تكتب شرحاً مفصلاً جداً لكل درس (500+ كلمة لكل درس). الاختصار = فشل.\n' : '';
 
-    return `أنت خبير أكاديمي متخصص. مطلوب منك استخراج وتلخيص كل الدروس والمحاضرات الموجودة في هذا النص${batchInfo} من الكتاب/الملزمة.
+    return `أنت الخبير الأكاديمي المسؤول عن استخراج القواعد والدروس من هذا الجزء${batchInfo} من الكتاب/الملزمة.${retryWarning}
 
-⚠️⚠️⚠️ قواعد حاسمة:
-1. **استخرج كل درس/محاضرة/فصل** موجود في هذا النص. لا تتجاهل أي محاضرة أبداً.
-2. **اكتب تحت كل محاضرة** شرحاً تفصيلياً شاملاً: كل المفاهيم، التعريفات، القواعد، الأمثلة، الملاحظات. الاختصار ممنوع.
-3. **حافظ على الترتيب** الموجود في الكتاب الأصلي.
-4. إذا انقطعت محاضرة في آخر النص، لخّص الموجود فقط ولا تختلق باقيه.
-5. **لا تكتب مقدمات أو خاتمات**. ادخل مباشرة في المحتوى.${audioNote}
+⚠️⚠️⚠️ قواعد حاسمة وصارمة (عدم الالتزام = فشل كامل):
 
-المخرجات (نص Markdown — ليس JSON):
-- عنوان كل محاضرة/درس بـ \`## عنوان المحاضرة\`
-- تحت كل عنوان: شرح تفصيلي بنقاط (\`- \`) وفقرات
-- كل التعريفات والقواعد والأمثلة والشروط
+1. **استخرج كل درس/محاضرة/فصل/قاعدة** موجود في هذا النص بدون استثناء.
+2. **العمق والتفصيل الشديد (أهم قاعدة على الإطلاق)**:
+   - إياك أن تختصر شرح أي درس! اكتب كل نقطة، كل تعريف، كل شرط، كل استثناء، وكل مثال.
+   - كل درس يجب أن يشمل: التعريف + القاعدة + الشروط/الاستثناءات + الأمثلة + الملاحظات.
+   - الشرح السطحي ممنوع قطعاً. إذا كان الدرس يمتد في الكتاب لصفحتين، يجب أن يمتد في ملخصك لعشرات الأسطر.
+3. **لا تتجاهل أي درس أبداً** — حتى لو بدا قصيراً أو بسيطاً. استخرجه وفصّله.
+4. **لا تدمج دروساً مستقلة معاً** — كل درس له عنوان ## منفصل.
+5. **حافظ على الترتيب** الموجود في الكتاب الأصلي.
+6. إذا انقطعت محاضرة في آخر النص، لخّص الموجود فقط ولا تختلق باقيه.
+7. **لا تكتب مقدمات أو استنتاجات**. ادخل في سرد الدروس وقواعدها مباشرة.
+8. **لا تتوقف قبل النهاية** — تأكد من استخراج وتلخيص الدروس الموجودة في آخر سطر من هذا الجزء.${audioNote}
 
---- المحتوى${batchInfo} ---
+المخرجات المطلوبة (نص Markdown منسق بدقة وبأقصى تفصيل):
+- استخدم عنوان من المستوى الثاني (\`##\`) لكل درس جديد.
+- تحت كل عنوان درس: القواعد والمفاهيم والشرح بالتفصيل الممل في شكل:
+  - نقاط (\`- \`) للقواعد والشروط
+  - فقرات للشرح والتفصيل
+  - أمثلة مُرقَّمة
+  - جداول إن لزم الأمر
+- لا تترك أي تفصيلة علمية أو لغوية أو إملائية إلا وذكرتها.
+
+--- محتوى الجزء${batchInfo} ---
 
 ${content}`;
 }
@@ -502,7 +514,7 @@ ${concatenated.substring(0, 80000)}`;
                 const cleanContent = cleanParagraphs.join('\n\n');
 
                 // Prepare batches
-                const batches = splitIntoBatches(cleanParagraphs, 80000, 3);
+                const batches = splitIntoBatches(cleanParagraphs, 40000, 3);
 
                 // Save to payload
                 payload.batches = batches;
@@ -526,15 +538,34 @@ ${concatenated.substring(0, 80000)}`;
                 }
 
                 const content = batches[batchIndex];
-                const prompt = buildSummaryPrompt(content, batchIndex + 1, batches.length, payload.hasAudio);
+                const contentChars = content.length;
+                // Expect at least 15% of input length as output (minimum depth)
+                const minExpectedOutput = Math.max(500, Math.round(contentChars * 0.15));
 
-                console.log(`[Analyze] Summarizing batch ${batchIndex + 1}/${batches.length}...`);
+                console.log(`[Analyze] Summarizing batch ${batchIndex + 1}/${batches.length} (${contentChars} chars, min output: ${minExpectedOutput})...`);
 
-                const result = await callGeminiText(prompt, geminiKey);
+                let bestResult = { text: '', tokens: 0 };
+                for (let attempt = 0; attempt < 2; attempt++) {
+                    const isRetry = attempt > 0;
+                    const prompt = buildSummaryPrompt(content, batchIndex + 1, batches.length, payload.hasAudio, isRetry);
+                    const result = await callGeminiText(prompt, geminiKey);
+                    bestResult = result;
+
+                    if (result.text.length >= minExpectedOutput) {
+                        console.log(`[Analyze] ✅ Batch ${batchIndex + 1}: ${result.text.length} chars (meets ${minExpectedOutput} min)`);
+                        break;
+                    }
+
+                    if (attempt === 0) {
+                        console.warn(`[Analyze] ⚠️ Batch ${batchIndex + 1}: output too short (${result.text.length} < ${minExpectedOutput}). Retrying with stronger prompt...`);
+                    } else {
+                        console.warn(`[Analyze] ⚠️ Batch ${batchIndex + 1}: retry still short (${result.text.length}). Using best attempt.`);
+                    }
+                }
 
                 if (!payload.summaryParts) payload.summaryParts = [];
-                payload.summaryParts[batchIndex] = result.text;
-                payload.totalTokens = (payload.totalTokens || 0) + result.tokens;
+                payload.summaryParts[batchIndex] = bestResult.text;
+                payload.totalTokens = (payload.totalTokens || 0) + bestResult.tokens;
 
                 const nextCursor = batchIndex + 1;
                 const nextStage = nextCursor >= batches.length ? 'merging_summaries' : 'summarizing_batch_i';

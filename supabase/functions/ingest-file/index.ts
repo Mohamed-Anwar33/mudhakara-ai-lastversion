@@ -343,11 +343,13 @@ serve(async (req) => {
                 try {
                     console.log(`[Ingest] 🧹 Cleaning old data for lesson ${lessonId}...`);
 
-                    // 1. Delete old processing jobs (except current one)
+                    // 1. Delete old processing jobs (except current one AND other ingest_upload jobs)
+                    // IMPORTANT: Do NOT delete other ingest_upload jobs — those are sibling files!
                     await supabase.from('processing_queue')
                         .delete()
                         .eq('lesson_id', lessonId)
-                        .neq('id', jobId);
+                        .neq('id', jobId)
+                        .neq('job_type', 'ingest_upload');
 
                     // 2. Delete old document sections
                     await supabase.from('document_sections')
