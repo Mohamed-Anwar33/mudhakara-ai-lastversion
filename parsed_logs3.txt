@@ -1,0 +1,302 @@
+[0] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[1] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=completed(completed) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[2] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[3] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(saving_analysis) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[4] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[5] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(saving_analysis) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[6] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[7] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=pending(saving_analysis) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[8] ? |  | [worker-1772057896834-zeq0yw] Orchestrating analyze_lecture (2e9d9117-6783-4319-9fab-f33ad5a7f920)
+[9] ? |  | [Orchestrator] Calling https://hsabozxfjdeoddlltivw.supabase.co/functions/v1/analyze-lesson for job 2e9d9117-6783-4319-9fab-f33ad5a7f920
+[10] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[11] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(generating_quiz_focus) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[12] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[13] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(generating_quiz_focus) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[14] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[15] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(generating_quiz_focus) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[16] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[17] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(generating_quiz_focus) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[18] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[19] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(generating_quiz_focus) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[20] ? |  | [worker-1772057892432-g7oe6h] No available jobs to claim.
+[21] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[22] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(generating_quiz_focus) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[23] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[24] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(generating_quiz_focus) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[25] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[26] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(generating_quiz_focus) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[27] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[28] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(generating_quiz_focus) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[29] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[30] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(generating_quiz_focus) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[31] ? |  | [worker-1772057887919-p6utwf] No available jobs to claim.
+[32] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[33] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(generating_quiz_focus) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[34] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[35] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(generating_quiz_focus) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[36] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[37] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(generating_quiz_focus) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[38] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[39] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(generating_quiz_focus) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[40] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[41] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(generating_quiz_focus) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[42] ? |  | [worker-1772057883412-njo9os] No available jobs to claim.
+[43] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[44] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(generating_quiz_focus) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[45] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[46] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(generating_quiz_focus) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[47] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[48] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(generating_quiz_focus) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[49] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[50] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(generating_quiz_focus) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[51] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[52] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(generating_quiz_focus) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[53] ? |  | [worker-1772057878794-mpn9ck] No available jobs to claim.
+[54] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[55] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(generating_quiz_focus) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[56] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[57] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(generating_quiz_focus) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[58] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[59] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(generating_quiz_focus) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[60] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[61] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(generating_quiz_focus) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[62] ? |  | [worker-1772057874270-rjdwo8] Orchestrating analyze_lecture (2e9d9117-6783-4319-9fab-f33ad5a7f920)
+[63] ? |  | [Orchestrator] Calling https://hsabozxfjdeoddlltivw.supabase.co/functions/v1/analyze-lesson for job 2e9d9117-6783-4319-9fab-f33ad5a7f920
+[64] ? |  | [Orchestrator] Edge Function still running (>8s). Disconnecting gracefully.
+[65] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[66] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=pending(generating_quiz_focus) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[67] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[68] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=pending(generating_quiz_focus) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[69] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[70] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=pending(generating_quiz_focus) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[71] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[72] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=pending(generating_quiz_focus) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[73] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[74] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(merging_summaries) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[75] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[76] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=pending(merging_summaries) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[77] ? |  | [worker-1772057869592-icvpfa] Orchestrating analyze_lecture (2e9d9117-6783-4319-9fab-f33ad5a7f920)
+[78] ? |  | [Orchestrator] Calling https://hsabozxfjdeoddlltivw.supabase.co/functions/v1/analyze-lesson for job 2e9d9117-6783-4319-9fab-f33ad5a7f920
+[79] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[80] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=pending(merging_summaries) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[81] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[82] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(summarizing_batch_i) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[83] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[84] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(summarizing_batch_i) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[85] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[86] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(summarizing_batch_i) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[87] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[88] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(summarizing_batch_i) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[89] ? |  | [worker-1772057865085-rc3wo3] No available jobs to claim.
+[90] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[91] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(summarizing_batch_i) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[92] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[93] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(summarizing_batch_i) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[94] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[95] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(summarizing_batch_i) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[96] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[97] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(summarizing_batch_i) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[98] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[99] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(summarizing_batch_i) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[100] ? |  | [worker-1772057860479-pbmf11] No available jobs to claim.
+[101] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[102] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(summarizing_batch_i) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[103] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[104] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(summarizing_batch_i) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[105] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[106] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(summarizing_batch_i) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[107] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[108] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(summarizing_batch_i) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[109] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[110] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(summarizing_batch_i) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[111] ? |  | [worker-1772057856083-ook6ih] No available jobs to claim.
+[112] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[113] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(summarizing_batch_i) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[114] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[115] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(summarizing_batch_i) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[116] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[117] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(summarizing_batch_i) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[118] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[119] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(summarizing_batch_i) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[120] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[121] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(summarizing_batch_i) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[122] ? |  | [worker-1772057851458-ggxedv] No available jobs to claim.
+[123] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[124] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(summarizing_batch_i) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[125] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[126] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(summarizing_batch_i) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[127] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[128] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(summarizing_batch_i) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[129] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[130] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(summarizing_batch_i) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[131] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[132] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=pending(summarizing_batch_i) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[133] ? |  | [worker-1772057846935-uiclfq] Orchestrating analyze_lecture (2e9d9117-6783-4319-9fab-f33ad5a7f920)
+[134] ? |  | [Orchestrator] Calling https://hsabozxfjdeoddlltivw.supabase.co/functions/v1/analyze-lesson for job 2e9d9117-6783-4319-9fab-f33ad5a7f920
+[135] ? |  | [Orchestrator] Edge Function still running (>8s). Disconnecting gracefully.
+[136] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[137] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=pending(summarizing_batch_i) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[138] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[139] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=pending(summarizing_batch_i) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[140] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[141] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=pending(summarizing_batch_i) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[142] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[143] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=processing(pending_upload) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[144] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[145] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=pending(pending_upload) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[146] ? |  | [worker-1772057841854-kk9410] Orchestrating analyze_lecture (2e9d9117-6783-4319-9fab-f33ad5a7f920)
+[147] ? |  | [Orchestrator] Calling https://hsabozxfjdeoddlltivw.supabase.co/functions/v1/analyze-lesson for job 2e9d9117-6783-4319-9fab-f33ad5a7f920
+[148] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[149] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=pending(pending_upload) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[150] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[151] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=pending(pending_upload) | ocr_range=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[152] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[153] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=pending(pending_upload) | ocr_range=pending(ocr_range) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[154] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[155] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=pending(pending_upload) | ocr_range=processing(ocr_range) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[156] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[157] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=pending(pending_upload) | ocr_range=pending(ocr_range) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[158] ? |  | [worker-1772057837223-ejqf6h] Orchestrating ocr_range (7c64b7fb-50e5-4e81-af82-20dff6bf8f0c)
+[159] ? |  | [Orchestrator] Calling https://hsabozxfjdeoddlltivw.supabase.co/functions/v1/ingest-file for job 7c64b7fb-50e5-4e81-af82-20dff6bf8f0c
+[160] ? |  | [Orchestrator] Edge Function still running (>8s). Disconnecting gracefully.
+[161] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[162] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=pending(pending_upload) | ocr_range=pending(ocr_range) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[163] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[164] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=pending(pending_upload) | ocr_range=pending(ocr_range) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[165] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[166] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=pending(pending_upload) | ocr_range=pending(ocr_range) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[167] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[168] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=pending(pending_upload) | ocr_range=processing(ocr_range) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[169] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[170] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=pending(pending_upload) | ocr_range=pending(ocr_range) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[171] ? |  | [worker-1772057832733-xw5hii] Orchestrating ocr_range (7c64b7fb-50e5-4e81-af82-20dff6bf8f0c)
+[172] ? |  | [Orchestrator] Calling https://hsabozxfjdeoddlltivw.supabase.co/functions/v1/ingest-file for job 7c64b7fb-50e5-4e81-af82-20dff6bf8f0c
+[173] ? |  | [Orchestrator] Edge Function still running (>8s). Disconnecting gracefully.
+[174] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[175] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=pending(pending_upload) | ocr_range=pending(ocr_range) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[176] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[177] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=pending(pending_upload) | ocr_range=pending(ocr_range) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[178] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[179] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=pending(pending_upload) | ocr_range=pending(ocr_range) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[180] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[181] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=pending(pending_upload) | ocr_range=processing(pending_upload) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[182] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[183] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=pending(pending_upload) | ocr_range=pending(pending_upload) | chunk_lecture=pending(chunking_lecture) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[184] ? |  | [worker-1772057828320-x0vyh2] Orchestrating ocr_range (7c64b7fb-50e5-4e81-af82-20dff6bf8f0c)
+[185] ? |  | [Orchestrator] Calling https://hsabozxfjdeoddlltivw.supabase.co/functions/v1/ingest-file for job 7c64b7fb-50e5-4e81-af82-20dff6bf8f0c
+[186] ? |  | [Orchestrator] Edge Function still running (>8s). Disconnecting gracefully.
+[187] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[188] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=pending(pending_upload) | ocr_range=pending(pending_upload) | chunk_lecture=pending(chunking_lecture) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[189] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[190] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=pending(pending_upload) | ocr_range=pending(pending_upload) | chunk_lecture=pending(chunking_lecture) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[191] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[192] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=pending(pending_upload) | ocr_range=pending(pending_upload) | chunk_lecture=pending(chunking_lecture) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[193] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[194] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=pending(pending_upload) | ocr_range=pending(pending_upload) | chunk_lecture=processing(chunking_lecture) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[195] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[196] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=pending(pending_upload) | ocr_range=pending(pending_upload) | chunk_lecture=pending(chunking_lecture) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[197] ? |  | [worker-1772057823811-ekhe6x] Orchestrating chunk_lecture (4dba1caf-4150-4ef0-8fe4-e09fbbaeecae)
+[198] ? |  | [Orchestrator] Calling https://hsabozxfjdeoddlltivw.supabase.co/functions/v1/ingest-file for job 4dba1caf-4150-4ef0-8fe4-e09fbbaeecae
+[199] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 7
+[200] ? |  | [JobStatus Debug] Jobs map: analyze_lecture=pending(pending_upload) | ocr_range=pending(pending_upload) | chunk_lecture=pending(chunking_lecture) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[201] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6
+[202] ? |  | [JobStatus Debug] Jobs map: ocr_range=pending(pending_upload) | chunk_lecture=pending(chunking_lecture) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[203] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6
+[204] ? |  | [JobStatus Debug] Jobs map: ocr_range=pending(pending_upload) | chunk_lecture=processing(pending_upload) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[205] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6
+[206] ? |  | [JobStatus Debug] Jobs map: ocr_range=pending(pending_upload) | chunk_lecture=processing(pending_upload) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[207] ? |  | [worker-1772057819418-mjydwc] Orchestrating chunk_lecture (4dba1caf-4150-4ef0-8fe4-e09fbbaeecae)
+[208] ? |  | [Orchestrator] Calling https://hsabozxfjdeoddlltivw.supabase.co/functions/v1/ingest-file for job 4dba1caf-4150-4ef0-8fe4-e09fbbaeecae
+[209] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6
+[210] ? |  | [JobStatus Debug] Jobs map: ocr_range=pending(pending_upload) | chunk_lecture=pending(pending_upload) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[211] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6
+[212] ? |  | [JobStatus Debug] Jobs map: ocr_range=pending(pending_upload) | chunk_lecture=pending(pending_upload) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[213] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6
+[214] ? |  | [JobStatus Debug] Jobs map: ocr_range=pending(pending_upload) | chunk_lecture=pending(pending_upload) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[215] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6
+[216] ? |  | [JobStatus Debug] Jobs map: ocr_range=pending(pending_upload) | chunk_lecture=pending(pending_upload) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[217] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 5
+[218] ? |  | [JobStatus Debug] Jobs map: chunk_lecture=pending(pending_upload) | ocr_range=processing(ocr_range) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[219] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 5
+[220] ? |  | [JobStatus Debug] Jobs map: chunk_lecture=pending(pending_upload) | ocr_range=pending(ocr_range) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[221] ? |  | [worker-1772057814899-31jabi] Orchestrating ocr_range (cd3d3129-42f2-4894-a434-8aea78839a5b)
+[222] ? |  | [Orchestrator] Calling https://hsabozxfjdeoddlltivw.supabase.co/functions/v1/ingest-file for job cd3d3129-42f2-4894-a434-8aea78839a5b
+[223] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 5
+[224] ? |  | [JobStatus Debug] Jobs map: chunk_lecture=pending(pending_upload) | ocr_range=pending(ocr_range) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[225] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 5
+[226] ? |  | [JobStatus Debug] Jobs map: chunk_lecture=pending(pending_upload) | ocr_range=pending(ocr_range) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[227] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 5
+[228] ? |  | [JobStatus Debug] Jobs map: chunk_lecture=pending(pending_upload) | ocr_range=pending(ocr_range) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[229] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 5
+[230] ? |  | [JobStatus Debug] Jobs map: chunk_lecture=pending(pending_upload) | ocr_range=processing(pending_upload) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[231] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 5
+[232] ? |  | [JobStatus Debug] Jobs map: chunk_lecture=pending(pending_upload) | ocr_range=pending(pending_upload) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[233] ? |  | [worker-1772057810495-6rzcrb] Orchestrating ocr_range (cd3d3129-42f2-4894-a434-8aea78839a5b)
+[234] ? |  | [Orchestrator] Calling https://hsabozxfjdeoddlltivw.supabase.co/functions/v1/ingest-file for job cd3d3129-42f2-4894-a434-8aea78839a5b
+[235] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 5
+[236] ? |  | [JobStatus Debug] Jobs map: chunk_lecture=pending(pending_upload) | ocr_range=pending(pending_upload) | build_lecture_segments=pending(building_segments) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[237] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 5
+[238] ? |  | [JobStatus Debug] Jobs map: chunk_lecture=pending(pending_upload) | ocr_range=pending(pending_upload) | build_lecture_segments=pending(building_segments) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[239] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 5
+[240] ? |  | [JobStatus Debug] Jobs map: chunk_lecture=pending(pending_upload) | ocr_range=pending(pending_upload) | build_lecture_segments=pending(building_segments) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[241] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 5
+[242] ? |  | [JobStatus Debug] Jobs map: chunk_lecture=pending(pending_upload) | ocr_range=pending(pending_upload) | build_lecture_segments=processing(building_segments) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[243] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 5
+[244] ? |  | [JobStatus Debug] Jobs map: chunk_lecture=pending(pending_upload) | ocr_range=pending(pending_upload) | build_lecture_segments=pending(building_segments) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[245] ? |  | [worker-1772057806108-wbd9av] Orchestrating build_lecture_segments (f87a6854-0403-4297-b2cb-19088d8a8cfa)
+[246] ? |  | [Orchestrator] Calling https://hsabozxfjdeoddlltivw.supabase.co/functions/v1/ingest-file for job f87a6854-0403-4297-b2cb-19088d8a8cfa
+[247] ? |  | [Orchestrator] Edge Function still running (>8s). Disconnecting gracefully.
+[248] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 5
+[249] ? |  | [JobStatus Debug] Jobs map: chunk_lecture=pending(pending_upload) | ocr_range=pending(pending_upload) | build_lecture_segments=pending(building_segments) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[250] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 5
+[251] ? |  | [JobStatus Debug] Jobs map: chunk_lecture=pending(pending_upload) | ocr_range=pending(pending_upload) | build_lecture_segments=pending(building_segments) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[252] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 5
+[253] ? |  | [JobStatus Debug] Jobs map: chunk_lecture=pending(pending_upload) | ocr_range=pending(pending_upload) | build_lecture_segments=pending(building_segments) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[254] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 5
+[255] ? |  | [JobStatus Debug] Jobs map: chunk_lecture=pending(pending_upload) | ocr_range=pending(pending_upload) | build_lecture_segments=processing(building_segments) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[256] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 5
+[257] ? |  | [JobStatus Debug] Jobs map: chunk_lecture=pending(pending_upload) | ocr_range=pending(pending_upload) | build_lecture_segments=pending(building_segments) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[258] ? |  | [worker-1772057801178-s0s5kp] Orchestrating build_lecture_segments (f87a6854-0403-4297-b2cb-19088d8a8cfa)
+[259] ? |  | [Orchestrator] Calling https://hsabozxfjdeoddlltivw.supabase.co/functions/v1/ingest-file for job f87a6854-0403-4297-b2cb-19088d8a8cfa
+[260] ? |  | [Orchestrator] Edge Function still running (>8s). Disconnecting gracefully.
+[261] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 5
+[262] ? |  | [JobStatus Debug] Jobs map: chunk_lecture=pending(pending_upload) | ocr_range=pending(pending_upload) | build_lecture_segments=pending(building_segments) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[263] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 5
+[264] ? |  | [JobStatus Debug] Jobs map: chunk_lecture=pending(pending_upload) | ocr_range=pending(pending_upload) | build_lecture_segments=pending(building_segments) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[265] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 5
+[266] ? |  | [JobStatus Debug] Jobs map: chunk_lecture=pending(pending_upload) | ocr_range=pending(pending_upload) | build_lecture_segments=pending(building_segments) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[267] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 5
+[268] ? |  | [JobStatus Debug] Jobs map: chunk_lecture=pending(pending_upload) | ocr_range=pending(pending_upload) | build_lecture_segments=processing(building_segments) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[269] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 5
+[270] ? |  | [JobStatus Debug] Jobs map: chunk_lecture=pending(pending_upload) | ocr_range=pending(pending_upload) | build_lecture_segments=pending(building_segments) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[271] ? |  | [worker-1772057796685-46kyvu] Orchestrating build_lecture_segments (f87a6854-0403-4297-b2cb-19088d8a8cfa)
+[272] ? |  | [Orchestrator] Calling https://hsabozxfjdeoddlltivw.supabase.co/functions/v1/ingest-file for job f87a6854-0403-4297-b2cb-19088d8a8cfa
+[273] ? |  | [Orchestrator] Edge Function still running (>8s). Disconnecting gracefully.
+[274] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 5
+[275] ? |  | [JobStatus Debug] Jobs map: chunk_lecture=pending(pending_upload) | ocr_range=pending(pending_upload) | build_lecture_segments=pending(building_segments) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[276] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 3
+[277] ? |  | [JobStatus Debug] Jobs map: build_lecture_segments=pending(building_segments) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[278] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 3
+[279] ? |  | [JobStatus Debug] Jobs map: build_lecture_segments=processing(pending_upload) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[280] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 3
+[281] ? |  | [JobStatus Debug] Jobs map: build_lecture_segments=processing(pending_upload) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[282] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 3
+[283] ? |  | [JobStatus Debug] Jobs map: build_lecture_segments=pending(pending_upload) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[284] ? |  | [worker-1772057792267-5pazzn] Orchestrating build_lecture_segments (f87a6854-0403-4297-b2cb-19088d8a8cfa)
+[285] ? |  | [Orchestrator] Calling https://hsabozxfjdeoddlltivw.supabase.co/functions/v1/ingest-file for job f87a6854-0403-4297-b2cb-19088d8a8cfa
+[286] ? |  | [Orchestrator] Edge Function still running (>8s). Disconnecting gracefully.
+[287] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 3
+[288] ? |  | [JobStatus Debug] Jobs map: build_lecture_segments=pending(pending_upload) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[289] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 3
+[290] ? |  | [JobStatus Debug] Jobs map: build_lecture_segments=pending(pending_upload) | extract_toc=completed(completed) | ingest_upload=completed(completed)
+[291] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 3
+[292] ? |  | [JobStatus Debug] Jobs map: build_lecture_segments=pending(pending_upload) | extract_toc=processing(extracting_toc) | ingest_upload=completed(completed)
+[293] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 3
+[294] ? |  | [JobStatus Debug] Jobs map: build_lecture_segments=pending(pending_upload) | extract_toc=pending(extracting_toc) | ingest_upload=completed(completed)
+[295] ? |  | [worker-1772057787792-qqmilg] Orchestrating extract_toc (30fc90a7-f89b-43b6-ac2f-0fe9d4b6779f)
+[296] ? |  | [Orchestrator] Calling https://hsabozxfjdeoddlltivw.supabase.co/functions/v1/ingest-file for job 30fc90a7-f89b-43b6-ac2f-0fe9d4b6779f
+[297] ? |  | [Orchestrator] Edge Function still running (>8s). Disconnecting gracefully.
+[298] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 3
+[299] ? |  | [JobStatus Debug] Jobs map: build_lecture_segments=pending(pending_upload) | extract_toc=pending(extracting_toc) | ingest_upload=completed(completed)
+[300] ? |  | [JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 3
+[301] ? |  | [JobStatus Debug] Jobs map: build_lecture_segments=pending(pending_upload) | extract_toc=pending(extracting_toc) | ingest_upload=completed(completed)

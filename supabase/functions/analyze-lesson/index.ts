@@ -717,13 +717,13 @@ ${quizSourceContent}`;
                         .select('id', { count: 'exact', head: true }).in('lecture_id', segIds);
 
                     if (segmentsCount && segmentsCount === analysisCount) {
-                        console.log(`[Analyze] All ${segmentsCount} lectures analyzed! Spawning book overview...`);
+                        console.log(`[Analyze] All ${segmentsCount} lectures analyzed! Spawning final generate_analysis...`);
                         await supabase.from('processing_queue').insert({
                             lesson_id: lessonId,
-                            job_type: 'generate_book_overview',
+                            job_type: 'generate_analysis',
                             payload: {},
                             status: 'pending',
-                            dedupe_key: `lesson:${lessonId}:generate_book_overview`
+                            dedupe_key: `lesson:${lessonId}:generate_analysis`
                         });
                     }
                 } else {
