@@ -391,18 +391,22 @@ const LessonDetail: React.FC = () => {
         if (status?.lessonStatus === 'completed' && status?.analysisResult) {
           result = status.analysisResult;
           break;
-        } else if (status?.lessonStatus === 'failed' && activeJobs.length === 0) {
-          // Only treat 'failed' as terminal if no active jobs AND we've been polling for a while
-          // (the ingest API resets status to 'pending', but there's a race window)
-          const elapsed = Date.now() - pollStartTime;
-          if (elapsed > 30000) {
-            throw new Error('فشل التحليل الذكي للخلاصة.');
-          }
         }
 
-        if (!result) {
-          // Keep waiting in the loop
-          continue;
+        // If no active jobs AND we have a result somewhere, we're done
+        if (activeJobs.length === 0 && jobs.length > 0 && status?.analysisResult) {
+          result = status.analysisResult;
+          break;
+        }
+
+        // All jobs finished but no result — real failure (only after grace period)
+        if (activeJobs.length === 0 && jobs.length > 0) {
+          const allDone = jobs.every((j: any) => ['completed', 'failed', 'dead'].includes(j.status));
+          const elapsed = Date.now() - pollStartTime;
+          if (allDone && !status?.analysisResult && elapsed > 30000) {
+            const failInfo = failedJobs.map((j: any) => j.job_type).join(', ');
+            throw new Error(`فشل التحليل: ${failInfo || 'خطأ غير معروف'}`);
+          }
         }
       }
 

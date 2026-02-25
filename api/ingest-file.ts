@@ -215,17 +215,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         if (forceReextract) {
             console.log(`[Ingest] forceReextract=true for lesson ${lessonId}. Purging old data to force full re-extraction.`);
+
+            // CRITICAL: Reset lesson status FIRST synchronously — before anything else
+            // This prevents the frontend from seeing stale 'failed' status during polling
+            await supabase.from('lessons').update({
+                analysis_status: 'pending',
+                analysis_result: null
+            }).eq('id', lessonId);
+
+            // Then purge old pipeline data in parallel
             await Promise.allSettled([
                 supabase.from('processing_queue').delete().eq('lesson_id', lessonId),
                 supabase.from('file_hashes').delete().eq('lesson_id', lessonId),
                 supabase.from('document_sections').delete().eq('lesson_id', lessonId),
                 supabase.from('lecture_segments').delete().eq('lesson_id', lessonId),
                 supabase.from('book_analysis').delete().eq('lesson_id', lessonId),
-                // Force analysis_result clearing on frontend
-                supabase.from('lessons').update({
-                    analysis_status: 'pending',
-                    analysis_result: null
-                }).eq('id', lessonId)
             ]);
         }
 
