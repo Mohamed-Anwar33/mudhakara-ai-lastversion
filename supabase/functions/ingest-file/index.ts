@@ -299,7 +299,8 @@ serve(async (req) => {
                     'ingest_upload', 'ingest_extract', 'ingest_chunk',
                     'pdf_extract', 'audio_transcribe', 'image_ocr',
                     'extract_toc', 'build_lecture_segments', 'extract_text_range',
-                    'ocr_range', 'chunk_lecture', 'embed_lecture', 'embed_sections'
+                    'ocr_range', 'chunk_lecture', 'embed_lecture', 'embed_sections',
+                    'analyze_lecture'
                 ])
                 .in('status', ['pending', 'processing'])
                 .neq('id', jobId);

@@ -409,8 +409,8 @@ export async function generateLessonAnalysis(
                 currentLen += part.length + 2;
             }
         }
-        // Don't push the last batch if it's completely redundant (just the overlap)
-        if (currentBatch.length > Math.min(OVERLAP_PARAGRAPHS + 1, cleanParagraphs.length)) {
+        // Always push the last batch if it has meaningful content
+        if (currentBatch.length > 0 && currentLen > 100) {
             batches.push(currentBatch.join('\n\n'));
         }
 
