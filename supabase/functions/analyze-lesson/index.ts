@@ -362,6 +362,13 @@ serve(async (req) => {
 
         console.log(`[Analyze DBG] Job ${jobId} | Stage: ${stage} | Progress: ${progress}%`);
 
+        // Self-healing timeout guard: Supabase Free tier = 400s max.
+        // At 350s, save current progress and return cleanly so the job
+        // can be re-picked up by the orchestrator for the next stage.
+        const edgeFunctionStartTime = Date.now();
+        const EDGE_TIMEOUT_MS = 350_000; // 350s safety margin
+        const isNearTimeout = () => (Date.now() - edgeFunctionStartTime) > EDGE_TIMEOUT_MS;
+
         const advanceStage = async (newStage: string, newProgress: number, extraUpdates: any = {}) => {
             // Set to 'pending' + unlock so the orchestrator can re-invoke for the next stage.
             // The orchestrator only claims 'pending' jobs, so this is the handoff signal.
@@ -579,6 +586,12 @@ ${concatenated.substring(0, 80000)}`;
                     return await advanceStage('merging_summaries', 50);
                 }
 
+                // Self-healing: if near timeout, save progress and return
+                if (isNearTimeout()) {
+                    console.warn(`[Analyze] ⏰ Near Edge timeout. Saving progress at batch ${batchIndex}/${batches.length} and returning.`);
+                    return await advanceStage('summarizing_batch_i', progress, { payload, extraction_cursor: batchIndex });
+                }
+
                 const content = batches[batchIndex];
                 const contentChars = content.length;
                 // Expect at least 15% of input length as output (minimum depth)
@@ -787,7 +800,7 @@ ${quizSourceContent}`;
 
         } catch (e: any) {
             console.error(`[Analyze DBG] Error in ${stage}: ${e.message}`);
-            if (attempt_count >= 3) {
+            if (attempt_count >= 5) {
                 return await setFail(e.message);
             } else {
                 // Proper error recovery: unlock the job, set to pending with exponential backoff

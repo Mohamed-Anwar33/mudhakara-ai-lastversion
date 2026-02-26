@@ -153,8 +153,11 @@ async function executeEdgeFunctionStep(supabaseUrl: string, serviceKey: string, 
         if (error.name === 'AbortError') {
             // Fire-and-forget: Edge Function is still running in the background.
             // It will update the DB directly when done. This is expected on Free plan.
-            console.log(`[Orchestrator] Edge Function still running (>8s). Disconnecting gracefully.`);
-            return { status: 'dispatched', message: 'Edge function triggered but still running' };
+            // CRITICAL FIX: Release the lock immediately so the job isn't stuck for 8 minutes.
+            // Keep status='processing' so no other worker claims it — the Edge Function
+            // will call advanceStage() which sets status='pending' when the stage completes.
+            console.log(`[Orchestrator] Edge Function still running (>8s). Disconnecting gracefully. Releasing lock.`);
+            return { status: 'dispatched', message: 'Edge function triggered but still running', unlockNeeded: true };
         }
 
         throw error;
@@ -191,10 +194,17 @@ async function processSingleJob(supabase: any, job: any, workerId: string, supab
         }
 
         // If the Edge Function was dispatched (fire-and-forget due to >8s timeout),
-        // do NOT unlock — the Edge Function will update the DB directly when it finishes.
-        // Unlocking here would cause a race condition where another worker claims the job
-        // while the Edge Function is still processing it.
-        if (result?.status !== 'dispatched') {
+        // release the lock but keep status='processing' so no other worker claims it.
+        // The Edge Function will call advanceStage() → status='pending' when done.
+        // This prevents the job from being stuck as locked for 8+ minutes.
+        if (result?.status === 'dispatched' && result?.unlockNeeded) {
+            await supabase.from('processing_queue').update({
+                locked_by: null,
+                locked_at: null,
+                updated_at: new Date().toISOString()
+                // status stays 'processing' — Edge Function is still working on it
+            }).eq('id', job.id);
+        } else if (result?.status !== 'dispatched') {
             await unlockJob(supabase, job.id);
         }
 
@@ -209,8 +219,8 @@ async function processSingleJob(supabase: any, job: any, workerId: string, supab
         console.error(`[${workerId}] Job ${job.id} failed: ${processingError.message}`);
 
         const failedAttempts = Number(job.attempt_count || 0);
-        if (failedAttempts >= 3) {
-            console.error(`[${workerId}] Job ${job.id} has reached max attempts and is FAILED.`);
+        if (failedAttempts >= 5) {
+            console.error(`[${workerId}] Job ${job.id} has reached max attempts (5) and is FAILED.`);
             await supabase.from('processing_queue').update({
                 status: 'failed',
                 stage: 'failed',
@@ -249,21 +259,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Enforce maxJobs = 1 so the orchestration is extremely lightweight
         const maxJobs = 1;
 
-        // Fallback cleanup for locked jobs older than 8 minutes.
-        // Must match orphan recovery timeout to prevent premature kill of Gemini calls.
-        const eightMinsAgoLock = new Date(Date.now() - 8 * 60 * 1000).toISOString();
+        // Fallback cleanup for locked jobs older than 3 minutes.
+        // Reduced from 8 to 3 min: since we now release locks on disconnect,
+        // any job still locked after 3 min is truly stuck (Edge Function crashed).
+        const staleLockCutoff = new Date(Date.now() - 3 * 60 * 1000).toISOString();
         const { data: staleJobs } = await supabase
             .from('processing_queue')
             .select('id, attempt_count')
             .in('status', ['pending', 'processing'])
             .not('locked_by', 'is', null)
-            .lt('locked_at', eightMinsAgoLock);
+            .lt('locked_at', staleLockCutoff);
 
         if (staleJobs && staleJobs.length > 0) {
             console.log(`[${workerId}] Found ${staleJobs.length} stale locked jobs. Cleaning up...`);
             for (const stale of staleJobs) {
                 const currentAttempts = Number(stale.attempt_count || 0);
-                if (currentAttempts >= 3) {
+                if (currentAttempts >= 5) {
                     await supabase.from('processing_queue')
                         .update({ status: 'failed', stage: 'failed', error_message: 'Background processing timeout exceeded multiple times', locked_by: null, locked_at: null })
                         .eq('id', stale.id);
@@ -279,15 +290,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Jobs stuck in 'processing' with NO lock holder (locked_by IS NULL)
         // and not updated in 3+ minutes are orphaned — Edge Function crashed/timed out
         // after advanceStage (which sets locked_by=null) but before completing.
-        // 8 minutes: Gemini calls can take 2-5 minutes, plus Edge Function overhead.
-        // Do NOT reduce this — it causes infinite orphan recovery loops.
-        const eightMinsAgo = new Date(Date.now() - 8 * 60 * 1000).toISOString();
+        // 5 minutes: Gemini calls can take 2-3 minutes, plus Edge Function overhead.
+        // Reduced from 8 to 5 min for faster recovery of crashed Edge Functions.
+        const orphanCutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
         const { data: orphanedJobs } = await supabase
             .from('processing_queue')
             .select('id, attempt_count')
             .eq('status', 'processing')
             .is('locked_by', null)
-            .lt('updated_at', eightMinsAgo);
+            .lt('updated_at', orphanCutoff);
 
         if (orphanedJobs && orphanedJobs.length > 0) {
             console.log(`[${workerId}] Found ${orphanedJobs.length} orphaned processing jobs. Resetting to pending...`);
