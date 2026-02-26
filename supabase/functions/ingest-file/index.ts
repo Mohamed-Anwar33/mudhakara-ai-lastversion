@@ -243,6 +243,20 @@ serve(async (req) => {
             return jsonResponse({ success: true, stage: newStage, progress: newProgress, status: 'pending' });
         };
 
+        // Update progress/stage WITHOUT releasing the lock.
+        // Use this when the Edge Function is still actively working on the job.
+        // advanceStage() should only be used for genuine handoffs to the orchestrator.
+        const updateProgress = async (newStage: string, newProgress: number) => {
+            await supabase.from('processing_queue')
+                .update({
+                    stage: newStage,
+                    progress: newProgress,
+                    updated_at: new Date().toISOString()
+                    // NO status/locked_by/locked_at change — job stays processing+locked
+                })
+                .eq('id', jobId);
+        };
+
         const setFail = async (errMsg: string) => {
             await supabase.from('processing_queue').update({
                 status: 'failed',
@@ -337,7 +351,7 @@ serve(async (req) => {
             // ATOMIC JOB: ingest_upload
             // ==========================================
             if (job.job_type === 'ingest_upload') {
-                await advanceStage('pending_upload', 10);
+                await updateProgress('pending_upload', 10);
 
                 // ═══ FRESH RE-ANALYSIS: Clean ALL old data for this lesson ═══
                 // This ensures pressing "analyze" always starts from scratch.
@@ -424,7 +438,7 @@ serve(async (req) => {
             // ATOMIC JOB: extract_toc (For PDFs)
             // ==========================================
             if (job.job_type === 'extract_toc') {
-                await advanceStage('extracting_toc', 10);
+                await updateProgress('extracting_toc', 10);
                 const activeUri = gemini_file_uri || fileInfo.gemini_file_uri;
                 if (!activeUri) throw new Error("Missing gemini_file_uri");
 
@@ -472,7 +486,7 @@ serve(async (req) => {
             // ATOMIC JOB: build_lecture_segments
             // ==========================================
             if (job.job_type === 'build_lecture_segments') {
-                await advanceStage('building_segments', 20);
+                await updateProgress('building_segments', 20);
                 const toc = payload.toc;
                 const cachedGeminiUri = payload.gemini_file_uri;
 
@@ -539,7 +553,7 @@ serve(async (req) => {
             // ATOMIC JOB: ocr_range
             // ==========================================
             if (job.job_type === 'ocr_range') {
-                await advanceStage('ocr_range', 10);
+                await updateProgress('ocr_range', 10);
                 const { cropped_file_path, content_hash, lecture_id, pages, gemini_file_uri: cachedUri } = payload;
 
                 if (!cachedUri && !cropped_file_path) throw new Error("Missing both gemini_file_uri and cropped_file_path");
@@ -639,7 +653,7 @@ serve(async (req) => {
                     return jsonResponse({ success: true, stage: 'waiting', status: 'pending' });
                 }
 
-                await advanceStage('chunking_lecture', 50);
+                await updateProgress('chunking_lecture', 50);
 
                 // 2. Group text and chunk it
                 const { data: sections } = await supabase.from('document_sections')
@@ -747,7 +761,7 @@ serve(async (req) => {
             // ATOMIC JOB: ingest_extract
             // ==========================================
             if (job.job_type === 'ingest_extract') {
-                await advanceStage('extracting_text', 10);
+                await updateProgress('extracting_text', 10);
                 if (!gemini_file_uri && !fileInfo.gemini_file_uri) throw new Error("Missing gemini_file_uri for extraction");
 
                 const activeUri = gemini_file_uri || fileInfo.gemini_file_uri;
