@@ -47,7 +47,7 @@ async function acquireJobId(supabase: any, workerId: string): Promise<string | n
         .not('locked_by', 'is', null);
 
     const excludedTypes = [];
-    if ((activeOcr || 0) >= 1) excludedTypes.push('ocr_range', 'image_ocr');
+    if ((activeOcr || 0) >= 3) excludedTypes.push('ocr_range', 'image_ocr');
     if ((activeAnalysis || 0) >= 2) excludedTypes.push('generate_analysis', 'analyze_lecture');
 
     for (let attempt = 0; attempt < 3; attempt++) {

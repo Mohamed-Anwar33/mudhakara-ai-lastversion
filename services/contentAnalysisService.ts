@@ -191,6 +191,12 @@ export async function triggerQueueWorker(maxJobs: number = 1): Promise<any> {
     });
 
     const payload = await response.json().catch(() => ({}));
+
+    // 504 Gateway Timeout is normal on Vercel free tier — Edge Function still runs in background
+    if (response.status === 504) {
+        return { status: 'dispatched', message: 'Worker dispatched (background)' };
+    }
+
     if (!response.ok) {
         throw new Error(payload?.error || `فشل تشغيل عامل المعالجة: ${response.status}`);
     }

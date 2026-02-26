@@ -214,6 +214,7 @@ serve(async (req) => {
         const lessonId = job.lesson_id;
         let { stage, progress, attempt_count, gemini_file_uri, extraction_cursor, payload } = job;
         stage = stage || 'pending_upload';
+        if (stage === 'queued') stage = 'pending_upload';
         progress = progress || 0;
         extraction_cursor = extraction_cursor || 0;
         attempt_count = attempt_count || 0;

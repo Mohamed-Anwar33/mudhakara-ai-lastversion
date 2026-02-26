@@ -452,7 +452,7 @@ const LessonDetail: React.FC = () => {
           // Grace period: 120s (was 30s). Edge Functions can take minutes for Gemini calls.
           // Short grace periods cause false "خطأ غير معروف" errors.
           if (allDone && !status?.analysisResult && elapsed > 120000) {
-            const failInfo = failedJobs.map((j: any) => j.job_type).join(', ');
+            const failInfo = failedJobs.map((j: any) => `${j.job_type}: ${j.error_message || 'فشل'}`).join(' | ');
             throw new Error(`فشل التحليل: ${failInfo || 'خطأ غير معروف'}`);
           }
         }
