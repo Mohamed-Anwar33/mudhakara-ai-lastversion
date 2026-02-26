@@ -66,6 +66,11 @@ function getMime(fileName: string): string {
 // ─── Gemini API Calls ───────────────────────────────────
 
 async function callGemini(apiKey: string, parts: any[], maxTokens = 65536): Promise<string> {
+    // Rate limit: Gemini Free tier = 15 RPM. Space calls ~4.5s apart to stay safe.
+    // This is per-invocation only; concurrent Edge Functions may still overlap,
+    // but the existing retry+backoff handles 429 responses gracefully.
+    await new Promise(r => setTimeout(r, 4500));
+
     const maxAttempts = 6;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
         try {
@@ -846,13 +851,22 @@ serve(async (req) => {
 
                 if (updErr) throw new Error(`Save transcription failed: ${updErr.message}`);
 
-                // Auto-cleanup: Delete original audio/pdf file from Storage to free space (1GB limit)
+                // Auto-cleanup: Delete original audio/image file from Storage to free space (1GB limit)
                 if (fileType === 'audio' && fileInfo?.file_path) {
                     try {
                         console.log(`[Ingest] 🗑️ Deleting original audio to free storage: ${fileInfo.file_path}`);
                         await supabase.storage.from('homework-uploads').remove([fileInfo.file_path]);
                     } catch (cleanErr: any) {
                         console.warn(`[Ingest] ⚠️ Audio cleanup failed (non-fatal): ${cleanErr.message}`);
+                    }
+                }
+
+                if (fileType === 'image' && fileInfo?.file_path) {
+                    try {
+                        console.log(`[Ingest] 🗑️ Deleting original image to free storage: ${fileInfo.file_path}`);
+                        await supabase.storage.from('homework-uploads').remove([fileInfo.file_path]);
+                    } catch (cleanErr: any) {
+                        console.warn(`[Ingest] ⚠️ Image cleanup failed (non-fatal): ${cleanErr.message}`);
                     }
                 }
 

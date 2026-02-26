@@ -7,8 +7,8 @@ import { supabase } from './supabaseService';
  * المسؤوليات:
  * 1. حساب SHA-256 للملفات (client-side dedup)
  * 2. رفع الملفات لـ Supabase Storage
- * 3. إرسال metadata لـ ingest-file function
- * 4. Polling لحالة المعالجة
+ * 3. إرسال metadata لـ /api/ingest-file endpoint
+ * 4. Polling لحالة المعالجة عبر processing_queue + lessons
  */
 
 // ============================================================================
@@ -35,7 +35,9 @@ export interface JobStatus {
     id: string;
     job_type: string;
     status: 'pending' | 'processing' | 'completed' | 'failed' | 'dead';
-    attempts: number;
+    stage?: string;
+    progress?: number;
+    attempt_count: number;
     error_message: string | null;
     created_at: string;
     completed_at: string | null;
@@ -67,8 +69,8 @@ export async function computeFileHash(file: File): Promise<string> {
 // ============================================================================
 
 /**
- * يرفع ملف إلى Supabase Storage bucket "raw-files".
- * المسار: raw-files/{lessonId}/{timestamp}_{filename}
+ * يرفع ملف إلى Supabase Storage bucket "homework-uploads".
+ * المسار: homework-uploads/{lessonId}/{timestamp}_{filename}
  */
 export async function uploadFileToStorage(
     file: File,
@@ -130,7 +132,7 @@ function validateFileSize(file: File, fileType: FileType): void {
 }
 
 /**
- * Pipeline كامل: Hash → Upload → Ingest
+ * Pipeline كامل: Hash → Upload → Ingest via /api/ingest-file
  * 
  * @param file - الملف المُراد معالجته
  * @param lessonId - معرف الدرس
@@ -154,37 +156,39 @@ export async function ingestFile(
     onProgress?.('جاري رفع الملف...', 30);
     const filePath = await uploadFileToStorage(file, lessonId);
 
-    // Step 4: Send to ingest API
-    // Step 4: Insert directly into analysis_jobs to bypass Vercel Timeout limits
+    // Step 4: Send to /api/ingest-file (the REAL pipeline endpoint)
     onProgress?.('جاري تسجيل الملف للمعالجة الخلفية...', 70);
 
-    const { data: jobData, error: jobError } = await supabase
-        .from('analysis_jobs')
-        .insert({
-            lesson_id: lessonId,
-            file_path: filePath,
-            file_type: fileType,
-            status: fileType === 'pdf' || fileType === 'image' || fileType === 'audio' ? 'pending' : 'completed', // Only async process heavy files
-            progress_percent: 0
+    const response = await fetch('/api/ingest-file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            lessonId,
+            files: [{
+                filePath,
+                fileName: file.name,
+                fileType,
+                contentHash
+            }],
+            forceReextract: false
         })
-        .select('id')
-        .single();
+    });
 
-    if (jobError || !jobData) {
-        throw new Error(`فشل التسجيل في طابور المعالجة: ${jobError?.message}`);
+    if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `فشل التسجيل: ${response.status}`);
     }
 
-    // Trigger the webhook/edge function artificially (if you don't use DB webhooks)
-    // Here we assume Supabase Database Webhooks are configured to listen to `INSERT on analysis_jobs`
-    // and fire the respective Edge Function.
+    const data = await response.json();
+    const result = data.results?.[0] || data;
 
     onProgress?.('تم بنجاح! جاري المعالجة الذكية في الخلفية...', 100);
 
     return {
-        status: 'queued',
-        jobId: jobData.id,
-        message: 'تمت إضافته إلى طابور المعالجة',
-        filePath,
+        status: result.status || 'queued',
+        jobId: result.jobId,
+        message: result.message || 'تمت إضافته إلى طابور المعالجة',
+        filePath: result.filePath || filePath,
         fileName: file.name
     };
 }
@@ -209,49 +213,60 @@ export async function triggerQueueWorker(maxJobs: number = 1): Promise<any> {
 }
 
 // ============================================================================
-// 5. POLLING — متابعة حالة المعالجة
+// 5. POLLING — متابعة حالة المعالجة (uses processing_queue + lessons tables)
 // ============================================================================
 
 /**
- * يجلب حالة جميع الوظائف لدرس معين.
+ * يجلب حالة جميع الوظائف لدرس معين من processing_queue + lessons.
  */
 export async function getJobStatus(lessonId: string): Promise<LessonJobsResponse> {
-    // Read from Supabase instead of Vercel API to get real-time Async job data
+    if (!supabase) throw new Error('Supabase غير متصل');
+
+    // Query the REAL pipeline table: processing_queue
     const { data: jobs, error: jobsError } = await supabase
-        .from('analysis_jobs')
-        .select('*')
+        .from('processing_queue')
+        .select('id, job_type, status, stage, progress, attempt_count, error_message, created_at, completed_at')
         .eq('lesson_id', lessonId)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: true });
 
     if (jobsError) {
         throw new Error(`فشل جلب حالة المهام من قاعدة البيانات: ${jobsError.message}`);
     }
 
-    const { data: output, error: outputError } = await supabase
-        .from('final_lesson_output')
-        .select('massive_summary, focus_points, quiz')
-        .eq('lesson_id', lessonId)
+    // Get the lesson's analysis_result directly
+    const { data: lesson, error: lessonError } = await supabase
+        .from('lessons')
+        .select('analysis_status, analysis_result')
+        .eq('id', lessonId)
         .single();
 
-    // Convert to our expected return format
-    let lessonStatus = 'pending';
-    if (jobs && jobs.length > 0) {
-        const allCompleted = jobs.every(j => j.status === 'completed');
-        const anyFailed = jobs.some(j => j.status === 'failed');
-        if (anyFailed) lessonStatus = 'failed';
-        else if (allCompleted) lessonStatus = 'completed';
-        else lessonStatus = 'processing';
+    if (lessonError && lessonError.code !== 'PGRST116') {
+        throw new Error(`فشل جلب حالة الدرس: ${lessonError.message}`);
     }
 
+    // Determine overall lesson status
+    let lessonStatus = lesson?.analysis_status || 'pending';
+
     return {
-        jobs: jobs || [],
-        lessonStatus: lessonStatus,
-        analysisResult: output || null
+        jobs: (jobs || []).map(j => ({
+            id: j.id,
+            job_type: j.job_type,
+            status: j.status,
+            stage: j.stage,
+            progress: j.progress,
+            attempt_count: j.attempt_count,
+            error_message: j.error_message,
+            created_at: j.created_at,
+            completed_at: j.completed_at
+        })),
+        lessonStatus,
+        analysisResult: lesson?.analysis_result || null
     };
 }
 
 /**
  * Polling ذكي: يستعلم كل interval ويتوقف عند الاكتمال أو الفشل.
+ * Also triggers the queue worker on each poll to keep processing alive.
  * 
  * @param lessonId - معرف الدرس
  * @param onUpdate - callback عند كل تحديث
@@ -285,6 +300,11 @@ export function pollJobStatus(
 
             try {
                 attempt++;
+
+                // Trigger the orchestrator on every poll to keep the pipeline moving
+                // This is critical because Vercel Free cron only runs once daily
+                triggerQueueWorker(1).catch(() => { });
+
                 const status = await getJobStatus(lessonId);
 
                 // Reset backoff on success
@@ -292,13 +312,22 @@ export function pollJobStatus(
 
                 onUpdate(status);
 
-                const allTerminal = status.jobs.length > 0 && status.jobs.every(
-                    j => j.status === 'completed' || j.status === 'failed' || j.status === 'dead'
-                );
                 const pipelineDone = status.lessonStatus === 'completed' || status.lessonStatus === 'failed';
 
-                if (allTerminal && pipelineDone) {
+                if (pipelineDone) {
                     resolve(status);
+                    return;
+                }
+
+                // Check if all non-completed jobs are stuck
+                const activeJobs = status.jobs.filter(
+                    j => j.status === 'pending' || j.status === 'processing'
+                );
+                const allTerminal = status.jobs.length > 0 && activeJobs.length === 0;
+
+                if (allTerminal && !pipelineDone) {
+                    // All jobs done but lesson not marked complete — give it one more cycle
+                    setTimeout(poll, backoffMs);
                     return;
                 }
 
@@ -306,9 +335,9 @@ export function pollJobStatus(
             } catch (err: any) {
                 console.warn(`[Polling] Attempt ${attempt} failed: ${err.message}. Retrying...`);
 
-                // Exponential backoff for 5xx errors like 504 Gateway Timeout
+                // Exponential backoff for errors
                 if (err.message.includes('504') || err.message.includes('500') || err.message.includes('502')) {
-                    backoffMs = Math.min(backoffMs * 1.5, 15000); // Max backoff 15s
+                    backoffMs = Math.min(backoffMs * 1.5, 15000);
                 } else {
                     backoffMs = intervalMs;
                 }

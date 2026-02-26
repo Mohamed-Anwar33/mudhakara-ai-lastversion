@@ -53,6 +53,9 @@ function repairTruncatedJSON(raw: string): any | null {
 }
 
 async function callGeminiText(prompt: string, apiKey: string): Promise<{ text: string; tokens: number }> {
+    // Rate limit: Gemini Free tier = 15 RPM. Space calls ~4.5s apart.
+    await new Promise(r => setTimeout(r, 4500));
+
     const maxAttempts = 4;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
         try {
@@ -105,6 +108,9 @@ async function callGeminiText(prompt: string, apiKey: string): Promise<{ text: s
 }
 
 async function callGeminiJSON(prompt: string, apiKey: string): Promise<{ parsed: any; tokens: number }> {
+    // Rate limit: Gemini Free tier = 15 RPM. Space calls ~4.5s apart.
+    await new Promise(r => setTimeout(r, 4500));
+
     const maxAttempts = 4;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
         try {
@@ -771,8 +777,22 @@ ${quizSourceContent}`;
             if (attempt_count >= 3) {
                 return await setFail(e.message);
             } else {
-                await supabase.from('processing_queue').update({ attempt_count: attempt_count + 1 }).eq('id', jobId);
-                return jsonResponse({ success: false, stage, status: 'processing', error: e.message, attempt: attempt_count + 1 });
+                // Proper error recovery: unlock the job, set to pending with exponential backoff
+                // This matches the pattern in ingest-file/index.ts (lines 1005-1021)
+                const baseDelay = Math.pow(2, attempt_count) * 2000;
+                const delayMs = Math.min(baseDelay, 45000);
+                const nextRetry = new Date(Date.now() + delayMs).toISOString();
+
+                await supabase.from('processing_queue').update({
+                    attempt_count: attempt_count + 1,
+                    status: 'pending',
+                    locked_by: null,
+                    locked_at: null,
+                    next_retry_at: nextRetry,
+                    error_message: e.message
+                }).eq('id', jobId);
+
+                return jsonResponse({ success: false, stage, status: 'pending', error: e.message, attempt: attempt_count + 1 });
             }
         }
 
