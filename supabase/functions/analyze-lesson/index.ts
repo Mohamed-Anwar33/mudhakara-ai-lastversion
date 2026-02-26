@@ -352,6 +352,8 @@ serve(async (req) => {
         let { stage, progress, attempt_count, extraction_cursor, payload } = job;
 
         stage = stage || 'collecting_sections';
+        // Our spawnNextAtomicJob sets stage='queued' — treat it as the initial stage
+        if (stage === 'queued') stage = 'collecting_sections';
         progress = progress || 0;
         attempt_count = attempt_count || 0;
         extraction_cursor = extraction_cursor || 0;
