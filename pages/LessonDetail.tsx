@@ -186,19 +186,17 @@ const LessonDetail: React.FC = () => {
 
     // Removed enqueueIngest in favor of inline batch fetch
 
-    const triggerQueueWorker = async (maxJobs = 1) => {
-      const workerRes = await fetch(`/api/process-queue?maxJobs=${maxJobs}`, {
-        method: 'POST'
-      });
-      const workerPayload = await workerRes.json().catch(() => ({}));
-
-      // 504 is expected: Vercel times out but Edge Function continues in background.
-      // Don't throw on 504 — the job is still running.
-      if (!workerRes.ok && workerRes.status !== 504) {
-        throw new Error(workerPayload?.error || `Queue worker failed (${workerRes.status})`);
-      }
-
-      return workerPayload;
+    const triggerQueueWorker = async (concurrency = 1) => {
+      // Fire N parallel Vercel invocations. Each processes 1 job within 10s limit.
+      // This is safe because acquire_job uses SELECT...FOR UPDATE SKIP LOCKED,
+      // so each worker claims a DIFFERENT job — no duplicates.
+      const promises = Array.from({ length: concurrency }, (_, i) =>
+        fetch(`/api/process-queue?t=${Date.now()}_${i}`, { method: 'POST' })
+          .then(r => r.json().catch(() => ({})))
+          .catch(() => ({ status: 'dispatched' }))
+      );
+      const results = await Promise.allSettled(promises);
+      return results[0]?.status === 'fulfilled' ? (results[0] as any).value : { status: 'dispatched' };
     };
 
     const fetchJobStatus = async () => {
@@ -340,12 +338,12 @@ const LessonDetail: React.FC = () => {
       }
 
       setProgressMsg('Triggering queue worker...');
-      triggerQueueWorker(1).catch(console.warn);
+      triggerQueueWorker(5).catch(console.warn);
 
       setProgressMsg('Processing queue and waiting for analysis...');
       let result: AIResult | null = null;
-      const pollIntervalMs = 5000;  // Poll every 5s (was 3s) — reduces performance violations
-      const queueKickEveryAttempts = 8; // Kick queue every ~40s (was 15s) — reduces 504 errors
+      const pollIntervalMs = 3000;  // Poll every 3s for faster feedback
+      const queueKickEveryAttempts = 4; // Kick queue every ~12s to keep pipeline alive
       const maxPollAttempts = 10000; // Run essentially indefinitely for large files
       const maxConsecutiveStatusErrors = 10;
       let consecutiveStatusErrors = 0;
@@ -353,7 +351,7 @@ const LessonDetail: React.FC = () => {
 
       for (let attempt = 1; attempt <= maxPollAttempts; attempt++) {
         if (attempt === 1 || attempt % queueKickEveryAttempts === 0) {
-          triggerQueueWorker(1).catch(console.warn);
+          triggerQueueWorker(5).catch(console.warn);
         }
 
         let status: any;

@@ -53,9 +53,6 @@ function repairTruncatedJSON(raw: string): any | null {
 }
 
 async function callGeminiText(prompt: string, apiKey: string): Promise<{ text: string; tokens: number }> {
-    // Rate limit: Gemini Free tier = 15 RPM. Space calls ~4.5s apart.
-    await new Promise(r => setTimeout(r, 4500));
-
     const maxAttempts = 4;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
         try {
@@ -108,9 +105,6 @@ async function callGeminiText(prompt: string, apiKey: string): Promise<{ text: s
 }
 
 async function callGeminiJSON(prompt: string, apiKey: string): Promise<{ parsed: any; tokens: number }> {
-    // Rate limit: Gemini Free tier = 15 RPM. Space calls ~4.5s apart.
-    await new Promise(r => setTimeout(r, 4500));
-
     const maxAttempts = 4;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
         try {
