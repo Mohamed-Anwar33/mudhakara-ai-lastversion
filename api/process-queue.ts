@@ -190,9 +190,13 @@ async function processSingleJob(supabase: any, job: any, workerId: string, supab
             result = await executeEdgeFunctionStep(supabaseUrl, serviceKey, endpoint, job.id);
         }
 
-        // The Edge function handles its own status mutations directly in DB (e.g. completed, failed)
-        // Orchestrator just releases the lock without overriding the status the edge function just set locally.
-        await unlockJob(supabase, job.id);
+        // If the Edge Function was dispatched (fire-and-forget due to >8s timeout),
+        // do NOT unlock — the Edge Function will update the DB directly when it finishes.
+        // Unlocking here would cause a race condition where another worker claims the job
+        // while the Edge Function is still processing it.
+        if (result?.status !== 'dispatched') {
+            await unlockJob(supabase, job.id);
+        }
 
         return {
             jobId: job.id,

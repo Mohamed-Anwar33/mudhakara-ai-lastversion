@@ -295,6 +295,7 @@ serve(async (req) => {
                 job_type: type,
                 payload: nextPayload,
                 status: 'pending',
+                stage: 'queued',
                 dedupe_key: dKey
             });
 
