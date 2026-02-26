@@ -399,7 +399,12 @@ serve(async (req) => {
             await supabase.from('processing_queue').update({
                 status: 'completed', stage: 'completed', progress: 100, completed_at: new Date().toISOString()
             }).eq('id', jobId);
-            await supabase.from('lessons').update({ analysis_status: 'completed' }).eq('id', lessonId);
+            // Only mark lesson as 'completed' for the FINAL aggregation job.
+            // Individual analyze_lecture jobs should NOT flip the lesson to completed
+            // because other lectures may still be pending.
+            if (job.job_type === 'generate_analysis' || job.job_type === 'generate_book_overview') {
+                await supabase.from('lessons').update({ analysis_status: 'completed' }).eq('id', lessonId);
+            }
             return jsonResponse({ success: true, stage: 'completed', progress: 100, status: 'completed' });
         };
 
@@ -446,7 +451,21 @@ ${concatenated.substring(0, 80000)}`;
                     updated_at: new Date().toISOString()
                 }, { onConflict: 'lesson_id' });
 
-                await supabase.from('lessons').update({ analysis_status: 'completed' }).eq('id', lessonId);
+                // CRITICAL: Save analysis_result into lessons table!
+                // The frontend reads lessons.analysis_result — if it's null, it shows "خطأ غير معروف".
+                const analysisResult = {
+                    summary: finalSummary,
+                    indexMap: indexMap,
+                    metadata: {
+                        generatedAt: new Date().toISOString(),
+                        schemaVersion: 10,
+                        lecturesAnalyzed: allSegments?.length || 0
+                    }
+                };
+                await supabase.from('lessons').update({
+                    analysis_status: 'completed',
+                    analysis_result: analysisResult
+                }).eq('id', lessonId);
 
                 return await setComplete();
             }
