@@ -1,29 +1,17 @@
-import * as dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
-
+import * as dotenv from 'dotenv';
 dotenv.config();
 
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.APP_SUPABASE_URL || '';
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.APP_SUPABASE_SERVICE_ROLE_KEY || '';
+const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-if (!SUPABASE_URL || !SUPABASE_KEY) {
-    console.error('Missing Supabase credentials in .env');
-    process.exit(1);
+async function fixDb() {
+    console.log("Dropping idx_processing_queue_active_job index...");
+    // We cannot drop index directly via Supabase JS client data API.
+    // We need to use RPC or just raw Postgres query if possible.
+    // Wait, the easiest way is to use Supabase SQL editor or run it via a psql string if we have connection string,
+    // but we can just use `supabase.rpc` if we have a way to execute arbitrary SQL, which we don't by default.
+    // Let's check `supabase` CLI instead.
+    console.log("Done checking.");
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-const lessonId = 'c8989bcb-8858-4ea5-b0d8-4bdd48398b89';
-
-async function main() {
-    const { data: segments } = await supabase.from('lecture_segments')
-        .select('*')
-        .eq('lesson_id', lessonId)
-        .order('page_from', { ascending: true });
-
-    console.log(`segmentsCount: ${segments?.length}`);
-    if (segments) {
-        segments.forEach((s: any) => console.log(`- ${s.id}: ${s.title} (Page ${s.page_from} to ${s.page_to})`));
-    }
-}
-
-main().catch(console.error);
+fixDb();
