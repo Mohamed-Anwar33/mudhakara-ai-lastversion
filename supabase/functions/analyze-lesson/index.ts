@@ -405,9 +405,9 @@ serve(async (req) => {
 
         try {
             // ==========================================
-            // ATOMIC JOB: generate_book_overview
+            // ATOMIC JOB: generate_book_overview / generate_analysis
             // ==========================================
-            if (job.job_type === 'generate_book_overview') {
+            if (job.job_type === 'generate_book_overview' || job.job_type === 'generate_analysis') {
                 await supabase.from('lessons').update({ analysis_status: 'processing' }).eq('id', lessonId);
 
                 const { data: allSegments } = await supabase.from('lecture_segments')

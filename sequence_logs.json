@@ -1,0 +1,914 @@
+[
+  {
+    "time": "2026-02-26 15:17:26",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:17:27",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 5"
+  },
+  {
+    "time": "2026-02-26 15:17:27",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: chunk_lecture=pending(queued) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:17:32",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:17:32",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 5"
+  },
+  {
+    "time": "2026-02-26 15:17:32",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: chunk_lecture=pending(queued) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:17:38",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/process-queue",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:17:38",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:17:38",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 5"
+  },
+  {
+    "time": "2026-02-26 15:17:38",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: chunk_lecture=pending(queued) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:17:39",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/process-queue",
+    "message": "[worker-1772119058510-1i213l] Orchestrating chunk_lecture (40ae34ae-ab55-4fa7-ab1f-9220e53a8eb7)"
+  },
+  {
+    "time": "2026-02-26 15:17:39",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/process-queue",
+    "message": "[Orchestrator] Calling https://hsabozxfjdeoddlltivw.supabase.co/functions/v1/ingest-file for job 40ae34ae-ab55-4fa7-ab1f-9220e53a8eb7"
+  },
+  {
+    "time": "2026-02-26 15:17:44",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:17:45",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:17:45",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(queued) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:17:50",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:17:51",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:17:51",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(queued) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:17:56",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:17:56",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:17:56",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(queued) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:18:02",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:18:03",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:18:03",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(queued) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:18:08",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:18:09",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:18:09",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(queued) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:18:14",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:18:14",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:18:14",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(queued) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:18:20",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:18:21",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:18:21",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(queued) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:18:26",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/process-queue",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:18:26",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:18:27",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/process-queue",
+    "message": "[worker-1772119106517-8lweel] Orchestrating analyze_lecture (17f9a6b3-ac1a-49a7-8974-679784cf9a96)"
+  },
+  {
+    "time": "2026-02-26 15:18:27",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/process-queue",
+    "message": "[Orchestrator] Calling https://hsabozxfjdeoddlltivw.supabase.co/functions/v1/analyze-lesson for job 17f9a6b3-ac1a-49a7-8974-679784cf9a96"
+  },
+  {
+    "time": "2026-02-26 15:18:27",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:18:27",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(queued) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:18:33",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:18:34",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:18:34",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(summarizing_batch_i) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:18:39",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:18:40",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:18:40",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(summarizing_batch_i) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:18:45",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:18:45",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:18:45",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(summarizing_batch_i) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:18:51",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:18:52",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:18:52",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(summarizing_batch_i) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:18:57",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:18:58",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:18:58",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(summarizing_batch_i) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:19:03",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:19:04",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:19:04",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(summarizing_batch_i) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:19:09",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:19:10",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:19:10",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(summarizing_batch_i) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:19:15",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/process-queue",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:19:15",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:19:16",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:19:16",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(summarizing_batch_i) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:19:16",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/process-queue",
+    "message": "[worker-1772119155519-fli1xa] Orchestrating analyze_lecture (17f9a6b3-ac1a-49a7-8974-679784cf9a96)"
+  },
+  {
+    "time": "2026-02-26 15:19:16",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/process-queue",
+    "message": "[Orchestrator] Calling https://hsabozxfjdeoddlltivw.supabase.co/functions/v1/analyze-lesson for job 17f9a6b3-ac1a-49a7-8974-679784cf9a96"
+  },
+  {
+    "time": "2026-02-26 15:19:22",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:19:23",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:19:23",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=processing(summarizing_batch_i) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:19:24",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/process-queue",
+    "message": "[Orchestrator] Edge Function still running (>8s). Disconnecting gracefully."
+  },
+  {
+    "time": "2026-02-26 15:19:29",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:19:29",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:19:29",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(merging_summaries) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:19:35",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:19:36",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:19:36",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(merging_summaries) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:19:42",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:19:43",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:19:43",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(merging_summaries) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:19:48",
+    "status": "",
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:19:49",
+    "status": "",
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:19:49",
+    "status": "",
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(merging_summaries) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:19:54",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:19:54",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:19:54",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(merging_summaries) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:20:00",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:20:01",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:20:01",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(merging_summaries) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:20:06",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:20:06",
+    "status": "",
+    "path": "mudhakara-ai-lastversion.vercel.app/api/process-queue",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:20:07",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:20:07",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(merging_summaries) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:20:07",
+    "status": "",
+    "path": "mudhakara-ai-lastversion.vercel.app/api/process-queue",
+    "message": "[worker-1772119206558-ztao0s] Orchestrating analyze_lecture (17f9a6b3-ac1a-49a7-8974-679784cf9a96)"
+  },
+  {
+    "time": "2026-02-26 15:20:07",
+    "status": "",
+    "path": "mudhakara-ai-lastversion.vercel.app/api/process-queue",
+    "message": "[Orchestrator] Calling https://hsabozxfjdeoddlltivw.supabase.co/functions/v1/analyze-lesson for job 17f9a6b3-ac1a-49a7-8974-679784cf9a96"
+  },
+  {
+    "time": "2026-02-26 15:20:12",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:20:13",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:20:13",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(generating_quiz_focus) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:20:18",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:20:19",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:20:19",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(generating_quiz_focus) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:20:24",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:20:25",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:20:25",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(generating_quiz_focus) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:20:30",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:20:31",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:20:31",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(generating_quiz_focus) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:20:37",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:20:38",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:20:38",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(generating_quiz_focus) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:20:43",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:20:44",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:20:44",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(generating_quiz_focus) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:20:49",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:20:50",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:20:50",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(generating_quiz_focus) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:20:55",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/process-queue",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:20:55",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:20:56",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:20:56",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(generating_quiz_focus) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:20:56",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/process-queue",
+    "message": "[worker-1772119255530-wh1889] Orchestrating analyze_lecture (17f9a6b3-ac1a-49a7-8974-679784cf9a96)"
+  },
+  {
+    "time": "2026-02-26 15:20:56",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/process-queue",
+    "message": "[Orchestrator] Calling https://hsabozxfjdeoddlltivw.supabase.co/functions/v1/analyze-lesson for job 17f9a6b3-ac1a-49a7-8974-679784cf9a96"
+  },
+  {
+    "time": "2026-02-26 15:21:01",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:21:01",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:21:01",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=processing(generating_quiz_focus) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:21:04",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/process-queue",
+    "message": "[Orchestrator] Edge Function still running (>8s). Disconnecting gracefully."
+  },
+  {
+    "time": "2026-02-26 15:21:07",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:21:08",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:21:08",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=processing(generating_quiz_focus) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:21:13",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:21:14",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:21:14",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=processing(generating_quiz_focus) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:21:19",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:21:20",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:21:20",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=processing(generating_quiz_focus) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:21:25",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:21:26",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:21:26",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=processing(generating_quiz_focus) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:21:31",
+    "status": "",
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:21:32",
+    "status": "",
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:21:32",
+    "status": "",
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(saving_analysis) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:21:38",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:21:39",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:21:39",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(saving_analysis) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:21:44",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/process-queue",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:21:44",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:21:45",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:21:45",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=pending(saving_analysis) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  },
+  {
+    "time": "2026-02-26 15:21:45",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/process-queue",
+    "message": "[worker-1772119304516-qaokxn] Orchestrating analyze_lecture (17f9a6b3-ac1a-49a7-8974-679784cf9a96)"
+  },
+  {
+    "time": "2026-02-26 15:21:45",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/process-queue",
+    "message": "[Orchestrator] Calling https://hsabozxfjdeoddlltivw.supabase.co/functions/v1/analyze-lesson for job 17f9a6b3-ac1a-49a7-8974-679784cf9a96"
+  },
+  {
+    "time": "2026-02-26 15:21:50",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": ""
+  },
+  {
+    "time": "2026-02-26 15:21:51",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Lesson c8989bcb-8858-4ea5-b0d8-4bdd48398b89 | Jobs count: 6"
+  },
+  {
+    "time": "2026-02-26 15:21:51",
+    "status": 200,
+    "path": "mudhakara-ai-lastversion.vercel.app/api/job-status",
+    "message": "[JobStatus Debug] Jobs map: analyze_lecture=completed(completed) | chunk_lecture=completed(completed) | ocr_range=completed(completed) | build_lecture_segments=completed(completed) | extract_toc=completed(completed) | ingest_upload=completed(completed)"
+  }
+]

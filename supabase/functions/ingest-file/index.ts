@@ -355,55 +355,9 @@ serve(async (req) => {
             if (job.job_type === 'ingest_upload') {
                 await updateProgress('pending_upload', 10);
 
-                // ═══ FRESH RE-ANALYSIS: Clean ALL old data for this lesson ═══
-                // This ensures pressing "analyze" always starts from scratch.
-                // No need to delete and re-upload files!
-                try {
-                    console.log(`[Ingest] 🧹 Cleaning old data for lesson ${lessonId}...`);
-
-                    // 1. Delete old processing jobs (except current one AND other ingest_upload jobs)
-                    // IMPORTANT: Do NOT delete other ingest_upload jobs — those are sibling files!
-                    await supabase.from('processing_queue')
-                        .delete()
-                        .eq('lesson_id', lessonId)
-                        .neq('id', jobId)
-                        .neq('job_type', 'ingest_upload');
-
-                    // 2. Delete old document sections
-                    await supabase.from('document_sections')
-                        .delete()
-                        .eq('lesson_id', lessonId);
-
-                    // 3. Delete old lecture analysis
-                    await supabase.from('lecture_analysis')
-                        .delete()
-                        .eq('lesson_id', lessonId);
-
-                    // 4. Delete old lecture segments
-                    await supabase.from('lecture_segments')
-                        .delete()
-                        .eq('lesson_id', lessonId);
-
-                    // 5. Delete old book analysis
-                    await supabase.from('book_analysis')
-                        .delete()
-                        .eq('lesson_id', lessonId);
-
-                    // 6. Clear old file hashes (so cache doesn't interfere)
-                    await supabase.from('file_hashes')
-                        .delete()
-                        .eq('lesson_id', lessonId);
-
-                    // 7. Reset lesson status
-                    await supabase.from('lessons')
-                        .update({ analysis_status: 'processing' })
-                        .eq('id', lessonId);
-
-                    console.log(`[Ingest] ✅ Old data cleaned. Starting fresh analysis.`);
-                } catch (cleanErr: any) {
-                    // Non-fatal: continue even if cleanup partially fails
-                    console.warn(`[Ingest] ⚠️ Cleanup warning (non-fatal): ${cleanErr.message}`);
-                }
+                // ═══ FRESH RE-ANALYSIS: No cleanup in Edge Function ═══
+                // Cleanup is fully handled synchronously in /api/ingest-file.ts using \`forceReextract=true\`.
+                // Doing it here asynchronously deletes parallel jobs resulting in broken pipelines!
 
                 // Cache check for audio before uploading
                 if (fileType === 'audio') {
