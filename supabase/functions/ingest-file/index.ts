@@ -471,7 +471,10 @@ serve(async (req) => {
                         // This bypasses Vercel entirely! OCR runs on Edge Function (no 10s limit)
                         console.log(`[Ingest] Fast path: spawning OCR jobs for ${inserted.length} lectures using cached Gemini URI`);
 
-                        const spawnPromises: Promise<void>[] = [];
+                        const jobsToInsert = [];
+                        const basePayload = { ...payload };
+                        delete basePayload.batches;
+                        delete basePayload.summaryParts;
 
                         for (const lecture of inserted) {
                             // Spawn ocr_range jobs for every 10-page batch
@@ -481,27 +484,40 @@ serve(async (req) => {
                                     pages.push(pp);
                                 }
 
-                                spawnPromises.push(
-                                    spawnNextAtomicJob('ocr_range', {
+                                jobsToInsert.push({
+                                    lesson_id: lessonId,
+                                    job_type: 'ocr_range',
+                                    payload: {
+                                        ...basePayload,
                                         lecture_id: lecture.id,
                                         pages,
                                         gemini_file_uri: cachedGeminiUri,
                                         content_hash: payload.content_hash
-                                    }, `lesson:${lessonId}:ocr_range:lec_${lecture.id}:p_${pages[0]}`)
-                                );
+                                    },
+                                    status: 'pending',
+                                    stage: 'queued',
+                                    dedupe_key: `lesson:${lessonId}:ocr_range:lec_${lecture.id}:p_${pages[0]}`
+                                });
                             }
 
                             // Spawn chunk_lecture barrier for this lecture
-                            spawnPromises.push(
-                                spawnNextAtomicJob('chunk_lecture', {
+                            jobsToInsert.push({
+                                lesson_id: lessonId,
+                                job_type: 'chunk_lecture',
+                                payload: {
+                                    ...basePayload,
                                     lecture_id: lecture.id
-                                }, `lesson:${lessonId}:chunk_lecture:lec_${lecture.id}`)
-                            );
+                                },
+                                status: 'pending',
+                                stage: 'queued',
+                                dedupe_key: `lesson:${lessonId}:chunk_lecture:lec_${lecture.id}`
+                            });
                         }
 
-                        console.log(`[Ingest] Spawning ${spawnPromises.length} subsequent jobs in parallel...`);
-                        await Promise.all(spawnPromises);
-                        console.log(`[Ingest] All ${spawnPromises.length} jobs spawned successfully.`);
+                        console.log(`[Ingest] Bulk inserting ${jobsToInsert.length} jobs to queue...`);
+                        const { error: bulkErr } = await supabase.from('processing_queue').insert(jobsToInsert);
+                        if (bulkErr) throw new Error(`[Ingest] Failed bulk insert: ${bulkErr.message}`);
+                        console.log(`[Ingest] Successfully inserted ${jobsToInsert.length} jobs.`);
                     } else {
                         // ═══ LEGACY PATH: Use extract_text_range on Vercel (chains sequentially) ═══
                         const firstLecture = inserted[0];
