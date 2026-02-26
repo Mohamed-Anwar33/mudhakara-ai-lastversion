@@ -361,14 +361,16 @@ serve(async (req) => {
         console.log(`[Analyze DBG] Job ${jobId} | Stage: ${stage} | Progress: ${progress}%`);
 
         const advanceStage = async (newStage: string, newProgress: number, extraUpdates: any = {}) => {
+            // Set to 'pending' + unlock so the orchestrator can re-invoke for the next stage.
+            // The orchestrator only claims 'pending' jobs, so this is the handoff signal.
             const { error } = await supabase.from('processing_queue')
                 .update({
                     stage: newStage,
                     progress: newProgress,
                     updated_at: new Date().toISOString(),
-                    status: 'pending',     // unlock for next step
-                    locked_by: null,       // unlock for next step
-                    locked_at: null,       // unlock for next step
+                    status: 'pending',
+                    locked_by: null,
+                    locked_at: null,
                     ...extraUpdates
                 })
                 .eq('id', jobId);

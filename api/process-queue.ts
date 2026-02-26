@@ -54,7 +54,7 @@ async function acquireJobId(supabase: any, workerId: string): Promise<string | n
         let query = supabase
             .from('processing_queue')
             .select('id, attempt_count')
-            .in('status', ['pending', 'processing'])
+            .eq('status', 'pending')  // Only claim pending jobs — processing jobs are actively running in Edge Functions
             .is('locked_by', null)
             .or('next_retry_at.lte.now(),next_retry_at.is.null') // Respect exponential backoff
             .order('created_at', { ascending: true })
@@ -74,6 +74,7 @@ async function acquireJobId(supabase: any, workerId: string): Promise<string | n
         const { data: claimed, error: claimError } = await supabase
             .from('processing_queue')
             .update({
+                status: 'processing',  // Mark as processing immediately to prevent re-acquisition
                 locked_at: nowIso,
                 locked_by: workerId,
                 attempt_count: Number(nextPending.attempt_count || 0) + 1,
@@ -244,14 +245,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Enforce maxJobs = 1 so the orchestration is extremely lightweight
         const maxJobs = 1;
 
-        // Fallback or explicit cleanup for locked jobs older than 5 minutes
-        const fiveMinsAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+        // Fallback cleanup for locked jobs older than 8 minutes.
+        // Must match orphan recovery timeout to prevent premature kill of Gemini calls.
+        const eightMinsAgoLock = new Date(Date.now() - 8 * 60 * 1000).toISOString();
         const { data: staleJobs } = await supabase
             .from('processing_queue')
             .select('id, attempt_count')
             .in('status', ['pending', 'processing'])
             .not('locked_by', 'is', null)
-            .lt('locked_at', fiveMinsAgo);
+            .lt('locked_at', eightMinsAgoLock);
 
         if (staleJobs && staleJobs.length > 0) {
             console.log(`[${workerId}] Found ${staleJobs.length} stale locked jobs. Cleaning up...`);
@@ -273,13 +275,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Jobs stuck in 'processing' with NO lock holder (locked_by IS NULL)
         // and not updated in 3+ minutes are orphaned — Edge Function crashed/timed out
         // after advanceStage (which sets locked_by=null) but before completing.
-        const threeMinsAgo = new Date(Date.now() - 3 * 60 * 1000).toISOString();
+        // 8 minutes: Gemini calls can take 2-5 minutes, plus Edge Function overhead.
+        // Do NOT reduce this — it causes infinite orphan recovery loops.
+        const eightMinsAgo = new Date(Date.now() - 8 * 60 * 1000).toISOString();
         const { data: orphanedJobs } = await supabase
             .from('processing_queue')
             .select('id, attempt_count')
             .eq('status', 'processing')
             .is('locked_by', null)
-            .lt('updated_at', threeMinsAgo);
+            .lt('updated_at', eightMinsAgo);
 
         if (orphanedJobs && orphanedJobs.length > 0) {
             console.log(`[${workerId}] Found ${orphanedJobs.length} orphaned processing jobs. Resetting to pending...`);

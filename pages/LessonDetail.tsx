@@ -50,6 +50,42 @@ const LessonDetail: React.FC = () => {
   const imageFileInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // ─── Auto-cleanup: حذف بيانات التحليل غير المكتملة عند تحميل الصفحة لتوفير المساحة ───
+  useEffect(() => {
+    const cleanupIncompleteAnalysis = async () => {
+      if (!lessonId || !supabase) return;
+      try {
+        // Check if lesson has incomplete analysis (processing/pending but no result)
+        const { data: lesson } = await supabase.from('lessons')
+          .select('analysis_status, analysis_result').eq('id', lessonId).single();
+
+        if (lesson && ['processing', 'pending'].includes(lesson.analysis_status) && !lesson.analysis_result) {
+          // Check if there are actually any active jobs
+          const { data: activeJobs } = await supabase.from('processing_queue')
+            .select('id').eq('lesson_id', lessonId)
+            .in('status', ['pending', 'processing']).limit(1);
+
+          if (!activeJobs || activeJobs.length === 0) {
+            // No active jobs and no result → stale data, clean it up
+            console.log('[Cleanup] Found incomplete analysis with no active jobs. Cleaning up...');
+            await Promise.allSettled([
+              supabase.from('processing_queue').delete().eq('lesson_id', lessonId),
+              supabase.from('document_sections').delete().eq('lesson_id', lessonId),
+              supabase.from('file_hashes').delete().eq('lesson_id', lessonId),
+            ]);
+            await supabase.from('lessons').update({
+              analysis_status: null, analysis_result: null
+            }).eq('id', lessonId);
+            console.log('[Cleanup] Done. Ready for fresh analysis.');
+          }
+        }
+      } catch (e) {
+        console.warn('[Cleanup] Auto-cleanup skipped:', e);
+      }
+    };
+    cleanupIncompleteAnalysis();
+  }, [lessonId]);
+
   useEffect(() => {
     const loadData = () => {
       try {
@@ -148,7 +184,9 @@ const LessonDetail: React.FC = () => {
       });
       const workerPayload = await workerRes.json().catch(() => ({}));
 
-      if (!workerRes.ok) {
+      // 504 is expected: Vercel times out but Edge Function continues in background.
+      // Don't throw on 504 — the job is still running.
+      if (!workerRes.ok && workerRes.status !== 504) {
         throw new Error(workerPayload?.error || `Queue worker failed (${workerRes.status})`);
       }
 
@@ -226,8 +264,16 @@ const LessonDetail: React.FC = () => {
         }
       };
 
+      // Force re-upload: clear uploadedUrl so files get re-uploaded from scratch
       for (let i = 0; i < lesson.sources.length; i++) {
-        await processSourceForIngest(lesson.sources[i], i);
+        const src = { ...lesson.sources[i] };
+        // Clear cached upload URL to force fresh upload from device storage
+        if (src.uploadedUrl) {
+          src.uploadedUrl = undefined as any;
+          updatedSources[i] = src;
+          hasUpdates = true;
+        }
+        await processSourceForIngest(src, i);
       }
 
       if (hasUpdates) {
@@ -290,8 +336,8 @@ const LessonDetail: React.FC = () => {
 
       setProgressMsg('Processing queue and waiting for analysis...');
       let result: AIResult | null = null;
-      const pollIntervalMs = 3000;
-      const queueKickEveryAttempts = 5; // Kick queue roughly every 15s while polling
+      const pollIntervalMs = 5000;  // Poll every 5s (was 3s) — reduces performance violations
+      const queueKickEveryAttempts = 8; // Kick queue every ~40s (was 15s) — reduces 504 errors
       const maxPollAttempts = 10000; // Run essentially indefinitely for large files
       const maxConsecutiveStatusErrors = 10;
       let consecutiveStatusErrors = 0;
@@ -403,11 +449,16 @@ const LessonDetail: React.FC = () => {
         if (activeJobs.length === 0 && jobs.length > 0) {
           const allDone = jobs.every((j: any) => ['completed', 'failed', 'dead'].includes(j.status));
           const elapsed = Date.now() - pollStartTime;
-          if (allDone && !status?.analysisResult && elapsed > 30000) {
+          // Grace period: 120s (was 30s). Edge Functions can take minutes for Gemini calls.
+          // Short grace periods cause false "خطأ غير معروف" errors.
+          if (allDone && !status?.analysisResult && elapsed > 120000) {
             const failInfo = failedJobs.map((j: any) => j.job_type).join(', ');
             throw new Error(`فشل التحليل: ${failInfo || 'خطأ غير معروف'}`);
           }
         }
+
+        // Wait between poll iterations to avoid hammering the server
+        await delay(pollIntervalMs);
       }
 
       if (!result) {
