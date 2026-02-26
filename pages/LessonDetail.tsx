@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { Lesson, Source, AIResult } from '../types';
 import { saveFile, deleteFile, getFile } from '../services/storage';
-import { uploadHomeworkFile, supabase, upsertLesson } from '../services/supabaseService';
+import { uploadHomeworkFile, deleteHomeworkFile, supabase, upsertLesson } from '../services/supabaseService';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -35,14 +35,27 @@ const RetryBanner: React.FC<{ lessonId: string; supabase: any; onRetry: () => vo
   const [retrying, setRetrying] = useState(false);
 
   useEffect(() => {
+    let isSubscribed = true;
+
     const check = async () => {
       const { data } = await supabase.from('processing_queue')
         .select('id, job_type, error_message')
         .eq('lesson_id', lessonId)
         .in('status', ['failed', 'dead']);
-      if (data && data.length > 0) setFailedJobs(data);
+      if (isSubscribed && data) setFailedJobs(data);
     };
+
     check();
+
+    // Subscribe to realtime changes so banner disappears if jobs are deleted (e.g. user deletes the file)
+    const subscription = supabase.channel(`public:processing_queue:${lessonId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'processing_queue', filter: `lesson_id=eq.${lessonId}` }, check)
+      .subscribe();
+
+    return () => {
+      isSubscribed = false;
+      supabase.removeChannel(subscription);
+    };
   }, [lessonId, supabase]);
 
   if (failedJobs.length === 0) return null;
@@ -227,7 +240,42 @@ const LessonDetail: React.FC = () => {
 
   const handleDeleteSource = async (id: string) => {
     await deleteFile(id);
+
     if (lesson) {
+      const source = lesson.sources.find(s => s.id === id);
+
+      if (source?.uploadedUrl) {
+        // Delete the physical file from Supabase Storage to save space
+        await deleteHomeworkFile(source.uploadedUrl);
+
+        // Delete associated jobs and extracted sections from database
+        if (supabase && lessonId) {
+          const parts = source.uploadedUrl.split('/homework-uploads/');
+          const storagePath = parts.length > 1 ? parts[1] : null;
+
+          if (storagePath) {
+            console.log(`[Cleanup] Deleting database records for file: ${storagePath}`);
+            // Delete jobs for this specific file
+            await supabase.from('processing_queue')
+              .delete()
+              .eq('lesson_id', lessonId)
+              .filter('payload->>file_path', 'eq', storagePath);
+
+            // Delete extracted text sections derived from this file
+            await supabase.from('document_sections')
+              .delete()
+              .eq('lesson_id', lessonId)
+              .eq('source_file_id', storagePath);
+
+            // Removing the cache hash so if the user uploads the identical file again, it re-extracts
+            await supabase.from('file_hashes')
+              .delete()
+              .eq('lesson_id', lessonId)
+              .eq('file_path', storagePath);
+          }
+        }
+      }
+
       updateLesson({ ...lesson, sources: lesson.sources.filter(s => s.id !== id) });
     }
   };

@@ -948,8 +948,8 @@ serve(async (req) => {
 
                 // --- STAGE: embedding_batch ---
                 if (stage === 'embedding_batch') {
-                    if (!openaiKey) {
-                        console.warn('[Ingest] No OPENAI_API_KEY, skipping embeddings');
+                    if (!geminiKey) {
+                        console.warn('[Ingest] No GEMINI_API_KEY, skipping embeddings');
                         await checkAndSpawnAnalysis();
                         return await setComplete();
                     }
@@ -966,26 +966,28 @@ serve(async (req) => {
                         return await setComplete();
                     }
 
-                    console.log(`[Ingest] Embedding batch of ${sections.length} chunks`);
-                    const texts = sections.map((s: any) => s.content);
-                    const res = await fetch('https://api.openai.com/v1/embeddings', {
+                    console.log(`[Ingest] Embedding batch of ${sections.length} chunks using Gemini`);
+                    const requests = sections.map((s: any) => ({
+                        model: 'models/text-embedding-004',
+                        content: { parts: [{ text: s.content }] }
+                    }));
+
+                    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:batchEmbedContents?key=${geminiKey}`, {
                         method: 'POST',
-                        headers: { 'Authorization': `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ model: 'text-embedding-3-small', input: texts })
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ requests })
                     });
 
                     if (!res.ok) {
-                        // RESILIENCE: Embedding failure is non-fatal. Skip and continue.
-                        // Summaries and quizzes work from text directly — embeddings are only for vector search.
-                        console.warn(`[Ingest] ⚠️ OpenAI embeddings failed (${res.statusText}). Skipping embeddings — analysis will continue without vector search.`);
+                        console.warn(`[Ingest] ⚠️ Gemini embeddings failed (${res.statusText}). Skipping embeddings — analysis will continue without vector search.`);
                         await checkAndSpawnAnalysis();
                         return await setComplete();
                     }
                     const data = await res.json();
 
-                    for (let j = 0; j < data.data.length; j++) {
+                    for (let j = 0; j < data.embeddings.length; j++) {
                         await supabase.from('document_sections')
-                            .update({ embedding: JSON.stringify(data.data[j].embedding) })
+                            .update({ embedding: JSON.stringify(data.embeddings[j].values) })
                             .eq('id', sections[j].id);
                     }
 

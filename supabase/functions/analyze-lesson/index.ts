@@ -467,6 +467,25 @@ ${concatenated.substring(0, 80000)}`;
                     analysis_result: analysisResult
                 }).eq('id', lessonId);
 
+                // 🧹 AUTO-CLEANUP: Delete source files from Storage to save space now that analysis is done!
+                const { data: sourceFiles } = await supabase
+                    .from('document_sections')
+                    .select('source_file_id')
+                    .eq('lesson_id', lessonId)
+                    .not('source_file_id', 'is', null);
+
+                if (sourceFiles && sourceFiles.length > 0) {
+                    const uniquePaths = [...new Set(sourceFiles.map((f: any) => f.source_file_id))];
+                    if (uniquePaths.length > 0) {
+                        const { error: storageErr } = await supabase.storage
+                            .from('homework-uploads')
+                            .remove(uniquePaths);
+
+                        if (storageErr) console.warn('[Cleanup] Failed to delete source files from storage:', storageErr.message);
+                        else console.log(`[Cleanup] Deleted ${uniquePaths.length} source files from storage to save space.`);
+                    }
+                }
+
                 return await setComplete();
             }
 
