@@ -155,34 +155,38 @@ export async function ingestFile(
     const filePath = await uploadFileToStorage(file, lessonId);
 
     // Step 4: Send to ingest API
-    onProgress?.('جاري تسجيل الملف للمعالجة...', 70);
-    const response = await fetch('/api/ingest-file', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            lessonId,
-            files: [{
-                fileName: file.name,
-                filePath,
-                fileType,
-                contentHash
-            }]
+    // Step 4: Insert directly into analysis_jobs to bypass Vercel Timeout limits
+    onProgress?.('جاري تسجيل الملف للمعالجة الخلفية...', 70);
+
+    const { data: jobData, error: jobError } = await supabase
+        .from('analysis_jobs')
+        .insert({
+            lesson_id: lessonId,
+            file_path: filePath,
+            file_type: fileType,
+            status: fileType === 'pdf' || fileType === 'image' || fileType === 'audio' ? 'pending' : 'completed', // Only async process heavy files
+            progress_percent: 0
         })
-    });
+        .select('id')
+        .single();
 
-    const payload = await response.json();
-
-    if (!response.ok) {
-        throw new Error(payload?.error || 'فشل استقبال الملف');
+    if (jobError || !jobData) {
+        throw new Error(`فشل التسجيل في طابور المعالجة: ${jobError?.message}`);
     }
 
-    const firstResult = payload?.results?.[0] || payload;
-    if (!firstResult || typeof firstResult !== 'object') {
-        throw new Error('فشل استقبال الملف');
-    }
+    // Trigger the webhook/edge function artificially (if you don't use DB webhooks)
+    // Here we assume Supabase Database Webhooks are configured to listen to `INSERT on analysis_jobs`
+    // and fire the respective Edge Function.
 
-    onProgress?.('تم بنجاح!', 100);
-    return firstResult as IngestResponse;
+    onProgress?.('تم بنجاح! جاري المعالجة الذكية في الخلفية...', 100);
+
+    return {
+        status: 'queued',
+        jobId: jobData.id,
+        message: 'تمت إضافته إلى طابور المعالجة',
+        filePath,
+        fileName: file.name
+    };
 }
 
 export async function triggerQueueWorker(maxJobs: number = 1): Promise<any> {
@@ -212,19 +216,38 @@ export async function triggerQueueWorker(maxJobs: number = 1): Promise<any> {
  * يجلب حالة جميع الوظائف لدرس معين.
  */
 export async function getJobStatus(lessonId: string): Promise<LessonJobsResponse> {
-    const response = await fetch(`/api/job-status?lessonId=${lessonId}&t=${Date.now()}`, {
-        headers: {
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache'
-        }
-    });
+    // Read from Supabase instead of Vercel API to get real-time Async job data
+    const { data: jobs, error: jobsError } = await supabase
+        .from('analysis_jobs')
+        .select('*')
+        .eq('lesson_id', lessonId)
+        .order('created_at', { ascending: false });
 
-    if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err.error || `فشل جلب الحالة: ${response.status}`);
+    if (jobsError) {
+        throw new Error(`فشل جلب حالة المهام من قاعدة البيانات: ${jobsError.message}`);
     }
 
-    return await response.json();
+    const { data: output, error: outputError } = await supabase
+        .from('final_lesson_output')
+        .select('massive_summary, focus_points, quiz')
+        .eq('lesson_id', lessonId)
+        .single();
+
+    // Convert to our expected return format
+    let lessonStatus = 'pending';
+    if (jobs && jobs.length > 0) {
+        const allCompleted = jobs.every(j => j.status === 'completed');
+        const anyFailed = jobs.some(j => j.status === 'failed');
+        if (anyFailed) lessonStatus = 'failed';
+        else if (allCompleted) lessonStatus = 'completed';
+        else lessonStatus = 'processing';
+    }
+
+    return {
+        jobs: jobs || [],
+        lessonStatus: lessonStatus,
+        analysisResult: output || null
+    };
 }
 
 /**
