@@ -696,8 +696,14 @@ serve(async (req) => {
 
                     console.log(`[Ingest] Coverage: ${extractedTotal} chars extracted / ~${expectedTotal} expected (${coveragePercent}%) for ${totalPages} pages`);
 
-                    if (extractedTotal < (expectedTotal * 0.3)) { // Below 30% = hard fail
-                        throw new Error(`Insufficient extracted content. OCR coverage too low: ${coveragePercent}% (${extractedTotal} chars / expected ~${expectedTotal}).`);
+                    if (extractedTotal < (expectedTotal * 0.3)) { // Below 30%
+                        // RESILIENCE: Don't throw — skip this lecture and let the pipeline continue.
+                        // The analyze phase will work with whatever lectures succeeded.
+                        console.warn(`[Ingest] ⚠️ Skipping lecture ${lecture_id} — OCR coverage too low: ${coveragePercent}% (${extractedTotal} chars / expected ~${expectedTotal}). Pipeline continues with other lectures.`);
+                        await supabase.from('processing_queue').update({
+                            error_message: `تخطي: تغطية OCR منخفضة (${coveragePercent}%). الصفحات ${lecSeg.page_from}-${lecSeg.page_to}`,
+                        }).eq('id', jobId);
+                        return await setComplete(); // Mark done, don't block pipeline
                     } else if (coveragePercent < 60) {
                         console.warn(`[Ingest] ⚠️ Low coverage (${coveragePercent}%). Analysis may be incomplete for lecture ${lecture_id}.`);
                     }
@@ -968,7 +974,13 @@ serve(async (req) => {
                         body: JSON.stringify({ model: 'text-embedding-3-small', input: texts })
                     });
 
-                    if (!res.ok) throw new Error(`OpenAI failed: ${res.statusText}`);
+                    if (!res.ok) {
+                        // RESILIENCE: Embedding failure is non-fatal. Skip and continue.
+                        // Summaries and quizzes work from text directly — embeddings are only for vector search.
+                        console.warn(`[Ingest] ⚠️ OpenAI embeddings failed (${res.statusText}). Skipping embeddings — analysis will continue without vector search.`);
+                        await checkAndSpawnAnalysis();
+                        return await setComplete();
+                    }
                     const data = await res.json();
 
                     for (let j = 0; j < data.data.length; j++) {

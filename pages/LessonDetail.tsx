@@ -29,6 +29,65 @@ const base64ToFile = (base64Data: string, mimeType: string, fileName: string): F
   return new File(byteArrays, fileName, { type: mimeType });
 };
 
+// Retry banner for partially failed analysis
+const RetryBanner: React.FC<{ lessonId: string; supabase: any; onRetry: () => void }> = ({ lessonId, supabase, onRetry }) => {
+  const [failedJobs, setFailedJobs] = useState<any[]>([]);
+  const [retrying, setRetrying] = useState(false);
+
+  useEffect(() => {
+    const check = async () => {
+      const { data } = await supabase.from('processing_queue')
+        .select('id, job_type, error_message')
+        .eq('lesson_id', lessonId)
+        .in('status', ['failed', 'dead']);
+      if (data && data.length > 0) setFailedJobs(data);
+    };
+    check();
+  }, [lessonId, supabase]);
+
+  if (failedJobs.length === 0) return null;
+
+  const handleRetry = async () => {
+    setRetrying(true);
+    try {
+      // Reset failed jobs to pending so they get re-processed
+      for (const job of failedJobs) {
+        await supabase.from('processing_queue').update({
+          status: 'pending', attempt_count: 0, error_message: null,
+          locked_by: null, locked_at: null, stage: 'pending_upload'
+        }).eq('id', job.id);
+      }
+      setFailedJobs([]);
+      onRetry(); // Re-trigger the analysis pipeline
+    } catch (e) {
+      console.error('Retry failed:', e);
+    }
+    setRetrying(false);
+  };
+
+  return (
+    <div className="bg-amber-50 p-5 rounded-[2rem] border border-amber-200 flex flex-col gap-3 text-right">
+      <div className="flex items-center gap-3 justify-end">
+        <span className="text-sm font-black text-amber-800">
+          ⚠️ لم تُحلل {failedJobs.length} أجزاء بنجاح
+        </span>
+        <AlertCircle size={20} className="text-amber-500" />
+      </div>
+      <p className="text-xs text-amber-700 font-bold">
+        بعض المحاضرات تعذرت قراءتها. يمكنك إعادة المحاولة.
+      </p>
+      <button
+        onClick={handleRetry}
+        disabled={retrying}
+        className="self-start px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold text-sm transition-all disabled:opacity-50 flex items-center gap-2"
+      >
+        {retrying ? <Loader2 size={14} className="animate-spin" /> : <span>🔄</span>}
+        إعادة تحليل الأجزاء الفاشلة
+      </button>
+    </div>
+  );
+};
+
 const LessonDetail: React.FC = () => {
   const { lessonId } = useParams<{ lessonId: string }>();
   const [searchParams] = useSearchParams();
@@ -688,6 +747,10 @@ const LessonDetail: React.FC = () => {
 
           {(transientAIResult || lesson?.aiResult) && (
             <div className="space-y-12 animate-in slide-in-from-bottom-8">
+              {/* Retry banner for partially failed analysis */}
+              {!isProcessing && supabase && lessonId && (
+                <RetryBanner lessonId={lessonId} supabase={supabase} onRetry={handleExtractMemory} />
+              )}
               {(transientAIResult?.focusPoints || lesson?.aiResult?.focusPoints) && (
                 <section className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm relative overflow-hidden">
                   <div className="absolute top-0 right-0 w-2 h-full bg-emerald-500"></div>
