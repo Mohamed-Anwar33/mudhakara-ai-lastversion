@@ -44,11 +44,19 @@ const LessonDetail: React.FC = () => {
   const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number>>({});
   const [transientAIResult, setTransientAIResult] = useState<AIResult | null>(null);
   const [progressMsg, setProgressMsg] = useState('');
+  const [elapsedTime, setElapsedTime] = useState(0);
 
   const isExtractingRef = useRef(false);
   const audioFileInputRef = useRef<HTMLInputElement>(null);
   const imageFileInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Elapsed time counter during processing
+  useEffect(() => {
+    if (!isProcessing) { setElapsedTime(0); return; }
+    const interval = setInterval(() => setElapsedTime(t => t + 1), 1000);
+    return () => clearInterval(interval);
+  }, [isProcessing]);
 
   // ─── Auto-cleanup: حذف بيانات التحليل غير المكتملة عند تحميل الصفحة لتوفير المساحة ───
   useEffect(() => {
@@ -591,7 +599,84 @@ const LessonDetail: React.FC = () => {
             </button>
 
 
-            {isProcessing && <p className="text-sm font-black text-indigo-600 animate-pulse">{progressMsg || 'جاري التجهيز...'}</p>}
+            {isProcessing && (
+              <div className="w-full max-w-lg mx-auto space-y-4 animate-in fade-in duration-500">
+                {/* Overall progress bar */}
+                <div className="bg-white p-5 rounded-[2rem] border border-indigo-100 shadow-sm">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-[11px] font-bold text-slate-400">منذ {Math.floor(elapsedTime / 60)}:{(elapsedTime % 60).toString().padStart(2, '0')}</span>
+                    <div className="flex items-center gap-2">
+                      <Loader2 size={16} className="animate-spin text-indigo-500" />
+                      <span className="text-sm font-black text-indigo-600">جاري التحليل الذكي</span>
+                    </div>
+                  </div>
+
+                  {/* Progress bar */}
+                  <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden mb-3" dir="ltr">
+                    <div
+                      className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all duration-700 ease-out"
+                      style={{
+                        width: `${Math.max(2, (() => {
+                          // Calculate progress from progressMsg
+                          const match = progressMsg.match(/الإنجاز الكلي: (\d+)%/);
+                          return match ? parseInt(match[1]) : 5;
+                        })())}%`
+                      }}
+                    ></div>
+                  </div>
+
+                  {/* Current stage text */}
+                  <p className="text-xs font-bold text-slate-600 text-right leading-relaxed">{progressMsg || 'جاري التجهيز...'}</p>
+                </div>
+
+                {/* Stage timeline */}
+                <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm">
+                  <h4 className="text-xs font-black text-slate-700 mb-4 text-right">مراحل التحليل</h4>
+                  <div className="space-y-3" dir="rtl">
+                    {[
+                      { key: 'upload', icon: '📤', label: 'رفع الملفات', match: ['Uploading', 'Queueing', 'جاري الرفع', 'الرفع'] },
+                      { key: 'ocr', icon: '🔍', label: 'استخراج النصوص (OCR)', match: ['OCR', 'الفهرس', 'تجزئة', 'مسح النصوص', 'التعرف'] },
+                      { key: 'chunk', icon: '📑', label: 'تقطيع وتنظيم المحتوى', match: ['تحليل وتجزئة', 'تحليل وقاعدة', 'chunk'] },
+                      { key: 'summary', icon: '📝', label: 'توليد الملخص التفصيلي', match: ['ملخص', 'توليد الملخص', 'summariz'] },
+                      { key: 'quiz', icon: '❓', label: 'إنشاء الأسئلة والاختبارات', match: ['النظرة العامة', 'الملخص الذكي', 'generate'] },
+                    ].map((stage) => {
+                      const isActive = stage.match.some(m => progressMsg.toLowerCase().includes(m.toLowerCase()));
+                      const stageOrder = ['upload', 'ocr', 'chunk', 'summary', 'quiz'];
+                      const currentIdx = stageOrder.findIndex(s => {
+                        const stg = [
+                          { key: 'upload', match: ['Uploading', 'Queueing', 'جاري الرفع', 'الرفع'] },
+                          { key: 'ocr', match: ['OCR', 'الفهرس', 'تجزئة', 'مسح النصوص', 'التعرف'] },
+                          { key: 'chunk', match: ['تحليل وتجزئة', 'تحليل وقاعدة', 'chunk'] },
+                          { key: 'summary', match: ['ملخص', 'توليد الملخص', 'summariz'] },
+                          { key: 'quiz', match: ['النظرة العامة', 'الملخص الذكي', 'generate'] },
+                        ].find(st => st.key === s);
+                        return stg?.match.some(m => progressMsg.toLowerCase().includes(m.toLowerCase()));
+                      });
+                      const thisIdx = stageOrder.indexOf(stage.key);
+                      const isDone = currentIdx > thisIdx;
+
+                      return (
+                        <div key={stage.key} className={`flex items-center gap-3 p-3 rounded-xl transition-all duration-300 ${isActive ? 'bg-indigo-50 border border-indigo-200' :
+                          isDone ? 'bg-emerald-50/50' : 'opacity-40'
+                          }`}>
+                          <span className="text-lg">{isDone ? '✅' : stage.icon}</span>
+                          <span className={`text-sm font-bold ${isActive ? 'text-indigo-700' : isDone ? 'text-emerald-700' : 'text-slate-500'
+                            }`}>{stage.label}</span>
+                          {isActive && <Loader2 size={14} className="animate-spin text-indigo-400 mr-auto" />}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Reassurance message for long processing */}
+                {progressMsg.includes('⏳') && (
+                  <div className="text-center p-3 bg-amber-50 rounded-2xl border border-amber-100">
+                    <p className="text-xs font-bold text-amber-700">⏳ المعالجة مستمرة بأمان — لا تغلق الصفحة</p>
+                  </div>
+                )}
+              </div>
+            )}
 
             {error && (
               <div className="mt-4 p-5 bg-red-50 border border-red-100 rounded-[1.5rem] flex items-center gap-3 text-red-600 max-w-md mx-auto">
