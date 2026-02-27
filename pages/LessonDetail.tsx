@@ -65,9 +65,19 @@ const RetryBanner: React.FC<{ lessonId: string; supabase: any; onRetry: () => vo
     try {
       // Reset failed jobs to pending so they get re-processed
       for (const job of failedJobs) {
+        let initialStage = 'pending_upload';
+        if (job.job_type === 'extract_pdf_info') initialStage = 'extracting_info';
+        if (job.job_type === 'ocr_page_batch') initialStage = 'processing_batch';
+        if (job.job_type === 'segment_lesson') initialStage = 'waiting_for_ocr';
+        if (job.job_type === 'analyze_lecture') initialStage = 'collecting_sections';
+        if (job.job_type === 'generate_quiz') initialStage = 'generating_quiz';
+        if (job.job_type === 'finalize_global_summary') initialStage = 'pending';
+        // legacy
+        if (job.job_type === 'ocr_range') initialStage = 'queued';
+
         await supabase.from('processing_queue').update({
           status: 'pending', attempt_count: 0, error_message: null,
-          locked_by: null, locked_at: null, stage: 'pending_upload'
+          locked_by: null, locked_at: null, stage: initialStage
         }).eq('id', job.id);
       }
       setFailedJobs([]);

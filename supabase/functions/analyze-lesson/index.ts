@@ -114,7 +114,17 @@ serve(async (req) => {
 
                 if (rawTextChunks.length === 0) {
                     // Empty section, skip
+                    await supabase.from('segmented_lectures').update({ status: 'quiz_done' }).eq('id', payload.lecture_id);
                     await supabase.from('processing_queue').update({ status: 'completed' }).eq('id', jobId);
+
+                    // We also need to check if this was the last lecture holding up the global aggregator!
+                    const { count: totalSegments } = await supabase.from('segmented_lectures').select('*', { count: 'exact', head: true }).eq('lesson_id', lesson_id);
+                    const { count: finishedSegments } = await supabase.from('segmented_lectures').select('*', { count: 'exact', head: true }).eq('lesson_id', lesson_id).eq('status', 'quiz_done');
+
+                    if (totalSegments && finishedSegments && totalSegments === finishedSegments) {
+                        console.log(`[analyze-lesson] All quizzes done for lesson ${lesson_id} (Skipped Empty)!`);
+                    }
+
                     return new Response(JSON.stringify({ status: 'skipped_empty' }), { headers: corsHeaders });
                 }
 
