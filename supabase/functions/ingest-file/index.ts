@@ -262,7 +262,6 @@ serve(async (req) => {
         const setFail = async (errMsg: string) => {
             await supabase.from('processing_queue').update({
                 status: 'failed',
-                stage: 'failed',
                 error_message: errMsg,
                 updated_at: new Date().toISOString()
             }).eq('id', jobId);
@@ -271,7 +270,7 @@ serve(async (req) => {
                 .update({ analysis_status: 'failed' })
                 .eq('id', lessonId);
 
-            return jsonResponse({ success: false, stage: 'failed', status: 'failed', error: errMsg });
+            return jsonResponse({ success: false, status: 'failed', error: errMsg });
         };
 
         const setComplete = async () => {

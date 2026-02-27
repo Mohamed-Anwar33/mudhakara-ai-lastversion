@@ -246,7 +246,6 @@ async function processSingleJob(supabase: any, job: any, workerId: string, supab
             console.error(`[${workerId}] Job ${job.id} has reached max attempts (5) and is FAILED.`);
             await supabase.from('processing_queue').update({
                 status: 'failed',
-                stage: 'failed',
                 error_message: processingError.message,
                 locked_by: null,
                 locked_at: null
@@ -308,7 +307,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 if (currentAttempts >= 5) {
                     // Atomic: only update if still locked (prevents race with other workers)
                     const { data: claimed } = await supabase.from('processing_queue')
-                        .update({ status: 'failed', stage: 'failed', error_message: 'Background processing timeout exceeded multiple times', locked_by: null, locked_at: null })
+                        .update({ status: 'failed', error_message: 'Background processing timeout exceeded multiple times', locked_by: null, locked_at: null })
                         .eq('id', stale.id)
                         .not('locked_by', 'is', null)
                         .select('id').maybeSingle();
@@ -345,7 +344,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 if (attempts >= 5) {
                     // Atomic: only claim if still in 'processing' status (prevents race)
                     const { data: claimed } = await supabase.from('processing_queue')
-                        .update({ status: 'failed', stage: 'failed', error_message: 'Orphaned job exceeded recovery attempts', locked_by: null, locked_at: null })
+                        .update({ status: 'failed', error_message: 'Orphaned job exceeded recovery attempts', locked_by: null, locked_at: null })
                         .eq('id', orphan.id)
                         .eq('status', 'processing')
                         .select('id').maybeSingle();

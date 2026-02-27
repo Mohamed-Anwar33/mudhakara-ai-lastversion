@@ -107,10 +107,9 @@ serve(async (req) => {
             }
 
             // 4. Save Final Global State!
-            await supabase.from('lessons')
+            const { error: updateError } = await supabase.from('lessons')
                 .update({
                     pipeline_stage: 'completed',
-                    status: 'completed',
                     analysis_status: 'completed',
                     analysis_result: {
                         summary: finalSummary,
@@ -119,6 +118,8 @@ serve(async (req) => {
                     }
                 })
                 .eq('id', lesson_id);
+
+            if (updateError) throw new Error(`Failed to update lesson analysis state: ${updateError.message}`);
 
             // 🧹 Optional: Housekeeping - Delete intermediate raw OCR chunks if free tier space is a premium constraint
             // (Leaving disabled by default to allow users to view raw OCR if debugging, but structure is here)
