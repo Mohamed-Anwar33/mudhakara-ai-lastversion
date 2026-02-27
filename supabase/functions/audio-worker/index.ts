@@ -9,8 +9,10 @@ const corsHeaders = {
 serve(async (req) => {
     if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
+    let jobId: string | undefined;
     try {
-        const { jobId } = await req.json();
+        const body = await req.json();
+        jobId = body.jobId;
         if (!jobId) throw new Error('Missing jobId');
 
         const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
@@ -123,6 +125,21 @@ serve(async (req) => {
 
     } catch (error: any) {
         console.error('[audio-worker] Error:', error);
+        if (req.method !== 'OPTIONS') {
+            try {
+                if (jobId) {
+                    const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+                    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+                    const supabase = createClient(supabaseUrl, supabaseKey);
+                    await supabase.from('processing_queue').update({
+                        status: 'failed',
+                        error_message: error.message || 'Unknown Audio Worker Error',
+                        locked_by: null,
+                        locked_at: null
+                    }).eq('id', jobId);
+                }
+            } catch (_) { }
+        }
         return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 });

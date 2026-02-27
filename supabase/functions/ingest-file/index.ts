@@ -180,11 +180,12 @@ serve(async (req) => {
         });
     }
 
+    let jobId: string | undefined;
     try {
         if (req.method !== 'POST') return errorResponse('Method Not Allowed', 405);
 
         const body = await req.json();
-        const { jobId } = body;
+        jobId = body.jobId;
 
         if (!jobId) {
             return errorResponse('Missing jobId', 400);
@@ -1046,6 +1047,21 @@ serve(async (req) => {
 
     } catch (error: any) {
         console.error('Ingest Edge Fatal Error:', error);
+        if (req.method !== 'OPTIONS') {
+            try {
+                if (jobId) {
+                    const supabaseUrl = Deno.env.get('APP_SUPABASE_URL') || Deno.env.get('SUPABASE_URL') || '';
+                    const supabaseKey = Deno.env.get('APP_SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+                    const supabase = createClient(supabaseUrl, supabaseKey);
+                    await supabase.from('processing_queue').update({
+                        status: 'failed',
+                        error_message: error.message || 'Ingest Edge Fatal Error',
+                        locked_by: null,
+                        locked_at: null
+                    }).eq('id', jobId);
+                }
+            } catch (_) { }
+        }
         return new Response(
             JSON.stringify({ error: error.message || 'Ingestion handler crashed', stack: error.stack }),
             { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

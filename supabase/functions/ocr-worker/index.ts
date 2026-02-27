@@ -64,8 +64,10 @@ async function callGemini(apiKey: string, parts: any[], maxTokens = 65536): Prom
 serve(async (req) => {
     if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
+    let jobId: string | undefined;
     try {
-        const { jobId } = await req.json();
+        const body = await req.json();
+        jobId = body.jobId;
         if (!jobId) throw new Error('Missing jobId');
 
         const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
