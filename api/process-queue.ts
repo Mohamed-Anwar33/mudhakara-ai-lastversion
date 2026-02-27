@@ -176,7 +176,10 @@ async function processSingleJob(supabase: any, job: any, workerId: string, supab
         // V2 Architecture Route Mapping
         if (['extract_pdf_info', 'ocr_page_batch'].includes(job.job_type)) {
             endpoint = 'ocr-worker';
-            await supabase.from('lessons').update({ pipeline_stage: 'extracting_text' }).eq('id', job.lesson_id);
+            // Only update stage if it's the main entry job, not batches (to prevent redundant updates)
+            if (job.job_type === 'extract_pdf_info') {
+                await supabase.from('lessons').update({ pipeline_stage: 'extracting_text' }).eq('id', job.lesson_id);
+            }
         } else if (['transcribe_audio', 'extract_audio_focus'].includes(job.job_type)) {
             endpoint = 'audio-worker';
             // Audio processing usually runs parallel to extracting_text

@@ -1,6 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createHash } from 'crypto';
 import { createClient } from '@supabase/supabase-js';
+import { GoogleGenAI } from '@google/genai';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 
 export const config = {
     maxDuration: 30
@@ -320,7 +324,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                         file_path: filePath,
                         file_name: file.fileName,
                         content_hash: contentHash,
-                        source_type: file.fileType
+                        source_type: file.fileType,
+                        ...(initialJobType === 'extract_pdf_info' ? {
+                            gemini_file_uri: await uploadToGemini(supabase, filePath),
+                            total_pages: 50 // TODO: Use PDF parser or get from Gemini metadata if possible, defaulting to 50 for safety bracket
+                        } : {})
                     },
                     status: 'pending'
                 })
@@ -400,5 +408,44 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(500).json({
             error: error.message || 'Failed to enqueue files'
         });
+    }
+}
+
+async function uploadToGemini(supabase: any, storagePath: string): Promise<string> {
+    const geminiKey = process.env.GEMINI_API_KEY;
+    if (!geminiKey) throw new Error('GEMINI_API_KEY is not set');
+
+    console.log(`[Gemini Upload] Downloading file from Supabase: ${storagePath}`);
+    // 1. Download file from Supabase Storage
+    const { data: fileBlob, error: downloadError } = await supabase.storage
+        .from('homework-uploads')
+        .download(storagePath);
+
+    if (downloadError || !fileBlob) {
+        throw new Error(`Failed to download file from Supabase: ${downloadError?.message}`);
+    }
+
+    const buffer = Buffer.from(await fileBlob.arrayBuffer());
+
+    // 2. Write to temp file
+    const tempFilePath = path.join(os.tmpdir(), `gemini_upload_${Date.now()}.pdf`);
+    fs.writeFileSync(tempFilePath, buffer);
+
+    try {
+        console.log(`[Gemini Upload] Uploading to Gemini File API...`);
+        const ai = new GoogleGenAI({ apiKey: geminiKey });
+
+        // 3. Upload to Gemini
+        const uploadResponse = await ai.files.upload({
+            file: tempFilePath,
+        });
+
+        console.log(`[Gemini Upload] Success, URI: ${uploadResponse.uri}`);
+        return uploadResponse.uri!;
+    } finally {
+        // 4. Cleanup temp file
+        if (fs.existsSync(tempFilePath)) {
+            fs.unlinkSync(tempFilePath);
+        }
     }
 }
