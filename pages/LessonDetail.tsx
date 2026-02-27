@@ -507,10 +507,10 @@ const LessonDetail: React.FC = () => {
           // Map the new atomic job types to readable stages
           const jobStageMap: Record<string, string> = {
             'extract_pdf_info': 'استخراج صفحات المستند...',
-            'ocr_page_batch': 'مسح ونقل النصوص للذاكرة...',
+            'ocr_page_batch': 'المسح البصري ونقل النصوص (OCR)...',
             'segment_lesson': 'استخراج الفهرس وتقسيم المحاضرات...',
-            'transcribe_audio': 'تفريغ وفهم التسجيل الصوتي...',
-            'analyze_lecture': 'توليد الملخص المعرفي...',
+            'transcribe_audio': 'تفريغ وفهم التسجيل الصوتي بالذكاء الاصطناعي...',
+            'analyze_lecture': 'مطابقة التركيز وتوليد الشرح المعرفي العميق...',
             'generate_quiz': 'إنشاء بنك الأسئلة والاختبارات...',
             'finalize_global_summary': 'ترتيب وتجميع الذاكرة...',
 
@@ -804,41 +804,52 @@ const LessonDetail: React.FC = () => {
 
                 {/* Stage timeline */}
                 <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm">
-                  <h4 className="text-xs font-black text-slate-700 mb-4 text-right">مراحل التحليل</h4>
+                  <h4 className="text-xs font-black text-slate-700 mb-4 text-right">مراحل التحليل الدقيق</h4>
                   <div className="space-y-3" dir="rtl">
-                    {[
-                      { key: 'upload', icon: '📤', label: 'رفع الملفات', match: ['Uploading', 'Queueing', 'جاري الرفع', 'الرفع'] },
-                      { key: 'ocr', icon: '🔍', label: 'استخراج النصوص (OCR)', match: ['OCR', 'الفهرس', 'تجزئة', 'مسح النصوص', 'التعرف'] },
-                      { key: 'chunk', icon: '📑', label: 'تقطيع وتنظيم المحتوى', match: ['تحليل وتجزئة', 'تحليل وقاعدة', 'chunk'] },
-                      { key: 'summary', icon: '📝', label: 'توليد الملخص التفصيلي', match: ['ملخص', 'توليد الملخص', 'summariz'] },
-                      { key: 'quiz', icon: '❓', label: 'إنشاء الأسئلة والاختبارات', match: ['النظرة العامة', 'الملخص الذكي', 'generate'] },
-                    ].map((stage) => {
-                      const isActive = stage.match.some(m => progressMsg.toLowerCase().includes(m.toLowerCase()));
-                      const stageOrder = ['upload', 'ocr', 'chunk', 'summary', 'quiz'];
-                      const currentIdx = stageOrder.findIndex(s => {
-                        const stg = [
-                          { key: 'upload', match: ['Uploading', 'Queueing', 'جاري الرفع', 'الرفع'] },
-                          { key: 'ocr', match: ['OCR', 'الفهرس', 'تجزئة', 'مسح النصوص', 'التعرف'] },
-                          { key: 'chunk', match: ['تحليل وتجزئة', 'تحليل وقاعدة', 'chunk'] },
-                          { key: 'summary', match: ['ملخص', 'توليد الملخص', 'summariz'] },
-                          { key: 'quiz', match: ['النظرة العامة', 'الملخص الذكي', 'generate'] },
-                        ].find(st => st.key === s);
-                        return stg?.match.some(m => progressMsg.toLowerCase().includes(m.toLowerCase()));
-                      });
-                      const thisIdx = stageOrder.indexOf(stage.key);
-                      const isDone = currentIdx > thisIdx;
+                    {(() => {
+                      const pipelineStages = [
+                        { key: 'upload', icon: '📤', label: 'رفع الملفات السحابي', match: ['Uploading', 'Queueing', 'جاري الرفع', 'الرفع'] },
+                        { key: 'audio', icon: '🎙️', label: 'تفريغ وتفسير الصوت (Whisper)', match: ['تفريغ', 'الصوتي', 'transcribe'] },
+                        { key: 'ocr', icon: '🔍', label: 'المسح العكسي للنصوص (Vision OCR)', match: ['المسح', 'صفحات', 'OCR', 'استخراج النص'] },
+                        { key: 'chunk', icon: '📑', label: 'الفهرسة وتقسيم المحاضرات', match: ['الفهرس', 'تقسيم', 'segment', 'تجزئة'] },
+                        { key: 'summary', icon: '🧠', label: 'مطابقة التركيز الصوتي والشرح العميق', match: ['مطابقة', 'توليد', 'الشرح', 'analyze'] },
+                        { key: 'quiz', icon: '❓', label: 'بناء بنك الأسئلة والاختبارات', match: ['بنك', 'الأسئلة', 'generate'] },
+                      ];
 
-                      return (
-                        <div key={stage.key} className={`flex items-center gap-3 p-3 rounded-xl transition-all duration-300 ${isActive ? 'bg-indigo-50 border border-indigo-200' :
-                          isDone ? 'bg-emerald-50/50' : 'opacity-40'
-                          }`}>
-                          <span className="text-lg">{isDone ? '✅' : stage.icon}</span>
-                          <span className={`text-sm font-bold ${isActive ? 'text-indigo-700' : isDone ? 'text-emerald-700' : 'text-slate-500'
-                            }`}>{stage.label}</span>
-                          {isActive && <Loader2 size={14} className="animate-spin text-indigo-400 mr-auto" />}
-                        </div>
-                      );
-                    })}
+                      // Find highest active index
+                      const stageOrder = pipelineStages.map(s => s.key);
+
+                      // For finding currentIdx we check matches from bottom to top to capture maximum progression 
+                      let currentIdx = -1;
+                      for (let i = pipelineStages.length - 1; i >= 0; i--) {
+                        if (pipelineStages[i].match.some(m => progressMsg.toLowerCase().includes(m.toLowerCase()))) {
+                          currentIdx = i;
+                          break;
+                        }
+                      }
+
+                      // If we are at finalizing state, set all to done
+                      if (progressMsg.includes('تجميع') || progressMsg.includes('ترتيب')) {
+                        currentIdx = 99;
+                      }
+
+                      return pipelineStages.map((stage, thisIdx) => {
+                        const isActive = currentIdx === thisIdx;
+                        // Some parallel stages (like audio and OCR) might both be 'done' if we progressed past them
+                        const isDone = currentIdx > thisIdx;
+
+                        return (
+                          <div key={stage.key} className={`flex items-center gap-3 p-3 rounded-xl transition-all duration-300 ${isActive ? 'bg-indigo-50 border border-indigo-200' :
+                            isDone ? 'bg-emerald-50/50' : 'opacity-40'
+                            }`}>
+                            <span className="text-lg">{isDone ? '✅' : stage.icon}</span>
+                            <span className={`text-sm font-bold ${isActive ? 'text-indigo-700' : isDone ? 'text-emerald-700' : 'text-slate-500'
+                              }`}>{stage.label}</span>
+                            {isActive && <Loader2 size={14} className="animate-spin text-indigo-400 mr-auto" />}
+                          </div>
+                        );
+                      });
+                    })()}
                   </div>
                 </div>
 

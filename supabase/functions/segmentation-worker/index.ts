@@ -113,42 +113,61 @@ serve(async (req) => {
                 .order('page_number', { ascending: true })
                 .limit(20); // First 20 pages usually contain the TOC
 
-            let tocContext = "";
-            for (const p of (pages || [])) {
-                if (!p.storage_path) continue;
-                const { data: textData } = await supabase.storage.from('ocr').download(p.storage_path);
-                if (textData) {
-                    tocContext += `\n\n--- Page ${p.page_number} ---\n` + await textData.text();
-                }
-                if (tocContext.length > 50000) break; // Don't overflow prompt
-            }
-
-            // 3. Intelligent LLM Segmentation
-            const prompt = `أنت خبير أكاديمي محترف في استخراج فهارس الكتب وتقسيمها إلى محاضرات (Lectures).
-            بناءً على هذا النص المستخرج من بداية الكتاب، استخرج عناوين المحاضرات أو الفصول الرئيسية مع رقم الصفحة التقريبي لبدايتها.
-            
-            يجب أن يكون الناتج JSON حصراً بالشكل التالي:
-            {
-              "lectures": [
-                { "title": "الفصل الأول: كذا", "start_page": 5 },
-                { "title": "الفصل الثاني: كذا", "start_page": 22 }
-              ]
-            }
-            
-            النص:
-            ${tocContext}`;
-
+            // ══ NEW LOGIC: Support Images and Audio correctly ══
+            // If there are no lesson_pages (because it's an Image or Audio file injected directly into document_sections)
             let parsedToc: any = { lectures: [] };
-            try {
-                if (tocContext.trim().length > 50) {
-                    parsedToc = await callGeminiJSON(prompt, geminiKey);
-                } else {
-                    // Fallback if no text found initially
-                    parsedToc.lectures.push({ title: "المحاضرة الشاملة", start_page: 1 });
+            let hasTOC = false;
+
+            if (!pages || pages.length === 0) {
+                // Check if we have image/audio content directly in sections
+                const { count: sectionCount } = await supabase.from('document_sections')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('lesson_id', lesson_id);
+
+                if (sectionCount && sectionCount > 0) {
+                    console.log(`[segmentation-worker] No PDF pages found, but ${sectionCount} sections exist (Image/Audio). Bypassing TOC extraction.`);
+                    parsedToc.lectures.push({ title: "محتوى الملف بالكامل", start_page: 1 });
+                    hasTOC = true;
                 }
-            } catch (e: any) {
-                console.warn(`[segmentation-worker] LLM TOC parsing failed, falling back to 1 chunk.`, e);
-                parsedToc.lectures.push({ title: "المحاضرة (افتراضي)", start_page: 1 });
+            }
+
+            if (!hasTOC) {
+                let tocContext = "";
+                for (const p of (pages || [])) {
+                    if (!p.storage_path) continue;
+                    const { data: textData } = await supabase.storage.from('ocr').download(p.storage_path);
+                    if (textData) {
+                        tocContext += `\n\n--- Page ${p.page_number} ---\n` + await textData.text();
+                    }
+                    if (tocContext.length > 50000) break; // Don't overflow prompt
+                }
+
+                // 3. Intelligent LLM Segmentation
+                const prompt = `أنت خبير أكاديمي محترف في استخراج فهارس الكتب وتقسيمها إلى محاضرات (Lectures).
+                بناءً على هذا النص المستخرج من بداية الكتاب، استخرج عناوين المحاضرات أو الفصول الرئيسية مع رقم الصفحة التقريبي لبدايتها.
+                
+                يجب أن يكون الناتج JSON حصراً بالشكل التالي:
+                {
+                  "lectures": [
+                    { "title": "الفصل الأول: كذا", "start_page": 5 },
+                    { "title": "الفصل الثاني: كذا", "start_page": 22 }
+                  ]
+                }
+                
+                النص:
+                ${tocContext}`;
+
+                try {
+                    if (tocContext.trim().length > 50) {
+                        parsedToc = await callGeminiJSON(prompt, geminiKey);
+                    } else {
+                        // Fallback if no text found initially
+                        parsedToc.lectures.push({ title: "المحاضرة الشاملة", start_page: 1 });
+                    }
+                } catch (e: any) {
+                    console.warn(`[segmentation-worker] LLM TOC parsing failed, falling back to 1 chunk.`, e);
+                    parsedToc.lectures.push({ title: "المحاضرة (افتراضي)", start_page: 1 });
+                }
             }
 
             if (!parsedToc?.lectures || parsedToc.lectures.length === 0) {

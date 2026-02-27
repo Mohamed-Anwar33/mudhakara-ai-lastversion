@@ -324,25 +324,27 @@ serve(async (req) => {
                 .neq('id', jobId);
 
             if (!countErr && pendingExtracts === 0) {
-                // Prevent spawning analysis if one is already pending or completed
+                // We now spawn 'segment_lesson' so images/short texts go through the same
+                // detailed 3000-char lecture splitting and quiz generation as PDFs!
                 const { data: existingAnalysis } = await supabase
                     .from('processing_queue')
                     .select('id')
                     .eq('lesson_id', lessonId)
-                    .eq('job_type', 'generate_analysis')
+                    .eq('job_type', 'segment_lesson')
                     .maybeSingle();
 
                 if (!existingAnalysis) {
                     const { error: insertErr } = await supabase.from('processing_queue').insert({
                         lesson_id: lessonId,
-                        job_type: 'generate_analysis',
-                        status: 'pending'
+                        job_type: 'segment_lesson',
+                        status: 'pending',
+                        dedupe_key: `lesson:${lessonId}:segment_lesson`
                     });
 
                     if (!insertErr || insertErr.code === '23505') {
                         await supabase.from('lessons').update({ analysis_status: 'pending' }).eq('id', lessonId);
                     } else {
-                        console.error('[Ingest] Failed to queue generate_analysis:', insertErr);
+                        console.error('[Ingest] Failed to queue segment_lesson:', insertErr);
                     }
                 }
             }
