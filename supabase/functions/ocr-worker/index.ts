@@ -22,7 +22,7 @@ async function callGemini(apiKey: string, parts: any[], maxTokens = 65536): Prom
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
         try {
             const response = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
                 {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
