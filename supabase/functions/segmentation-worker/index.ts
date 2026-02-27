@@ -61,6 +61,27 @@ serve(async (req) => {
 
             // 1. Barrier Check: Ensure OCR track is fully complete
             const { data: isOcrComplete } = await supabase.rpc('check_all_pages_completed', { p_lesson_id: lesson_id });
+
+            // 1b. Check if OCR actually failed permanently
+            const { count: failedOcrCount } = await supabase.from('processing_queue')
+                .select('*', { count: 'exact', head: true })
+                .eq('lesson_id', lesson_id)
+                .in('job_type', ['extract_pdf_info', 'ocr_page_batch', 'ocr_range', 'extract_text_range', 'chunk_lecture'])
+                .eq('status', 'failed');
+
+            if (failedOcrCount && failedOcrCount > 0) {
+                console.error(`[segmentation-worker] OCR jobs failed. Cannot proceed with segmentation.`);
+                await supabase.from('processing_queue').update({
+                    status: 'failed',
+                    error_message: 'تم إلغاء التقسيم لأن مرحلة قراءة النصوص (OCR) فشلت.',
+                    locked_by: null,
+                    locked_at: null
+                }).eq('id', jobId);
+
+                await supabase.from('lessons').update({ pipeline_stage: 'failed' }).eq('id', lesson_id);
+                return new Response(JSON.stringify({ status: 'aborted_due_to_ocr_failure' }), { headers: corsHeaders });
+            }
+
             if (!isOcrComplete) {
                 console.log(`[segmentation-worker] OCR not complete yet. Releasing lock to retry later.`);
                 // Unlock so it retries later
