@@ -203,6 +203,25 @@ serve(async (req) => {
 
     } catch (error: any) {
         console.error('[ocr-worker] Error:', error);
+
+        // Ensure to release the job lock and mark as failed if `jobId` exists
+        if (req.method !== 'OPTIONS') {
+            try {
+                const body = await req.clone().json().catch(() => null);
+                if (body?.jobId) {
+                    const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+                    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+                    const supabase = createClient(supabaseUrl, supabaseKey);
+                    await supabase.from('processing_queue').update({
+                        status: 'failed',
+                        error_message: error.message || 'Unknown OCR Error',
+                        locked_by: null,
+                        locked_at: null
+                    }).eq('id', body.jobId);
+                }
+            } catch (_) { }
+        }
+
         return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 });
