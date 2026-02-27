@@ -251,6 +251,14 @@ async function processSingleJob(supabase: any, job: any, workerId: string, supab
                 locked_by: null,
                 locked_at: null
             }).eq('id', job.id);
+
+            // Fail the entire lesson if a critical job fails permanently
+            if (['extract_pdf_info', 'transcribe_audio', 'segment_lesson', 'analyze_lecture', 'finalize_global_summary'].includes(job.job_type)) {
+                await supabase.from('lessons').update({
+                    analysis_status: 'failed',
+                    pipeline_stage: 'failed'
+                }).eq('id', job.lesson_id);
+            }
         } else {
             // Unlocking it so it can retry, we rely on attempt_count to be set properly elsewhere or above 
             await unlockJob(supabase, job.id, 'pending');

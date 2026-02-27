@@ -496,6 +496,15 @@ const LessonDetail: React.FC = () => {
 
           // Map the new atomic job types to readable stages
           const jobStageMap: Record<string, string> = {
+            'extract_pdf_info': 'استخراج صفحات المستند...',
+            'ocr_page_batch': 'مسح ونقل النصوص للذاكرة...',
+            'segment_lesson': 'استخراج الفهرس وتقسيم المحاضرات...',
+            'transcribe_audio': 'تفريغ وفهم التسجيل الصوتي...',
+            'analyze_lecture': 'توليد الملخص المعرفي...',
+            'generate_quiz': 'إنشاء بنك الأسئلة والاختبارات...',
+            'finalize_global_summary': 'ترتيب وتجميع الذاكرة...',
+
+            // Legacy fallbacks
             'ingest_upload': 'جاري الرفع...',
             'extract_toc': 'قراءة الفهرس والدروس...',
             'build_lecture_segments': 'تجزئة الكتاب إلى محاضرات...',
@@ -505,7 +514,6 @@ const LessonDetail: React.FC = () => {
             'embed_lecture': 'تحضير للبحث...',
             'ingest_extract': 'استخراج النص...',
             'ingest_chunk': 'تحليل وقاعدة البيانات...',
-            'analyze_lecture': 'توليد ملخص الدرس...',
             'generate_book_overview': 'استنتاج النظرة العامة للكتاب...',
             'generate_analysis': 'توليد الملخص الذكي...'
           };
