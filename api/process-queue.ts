@@ -115,9 +115,9 @@ async function executeEdgeFunctionStep(supabaseUrl: string, serviceKey: string, 
     console.log(`[Orchestrator] Calling ${url} for job ${jobId}`);
 
     const controller = new AbortController();
-    // Vercel Free = 10s max. Keep 2s for overhead → 8s for Edge Function call.
+    // Vercel Free = 10s max. Keep 3.5s for overhead → 6.5s for Edge Function call.
     // If Edge Function takes longer, we disconnect. It will update DB directly.
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const timeoutId = setTimeout(() => controller.abort(), 6500);
 
     try {
         const res = await fetch(url, {
@@ -295,11 +295,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         // ═══ ORPHANED JOB RECOVERY ═══
         // Jobs stuck in 'processing' with NO lock holder (locked_by IS NULL)
-        // and not updated in 3+ minutes are orphaned — Edge Function crashed/timed out
+        // and not updated in 10+ minutes are orphaned — Edge Function crashed/timed out
         // after advanceStage (which sets locked_by=null) but before completing.
-        // 5 minutes: Gemini calls can take 2-3 minutes, plus Edge Function overhead.
-        // Reduced from 8 to 5 min for faster recovery of crashed Edge Functions.
-        const orphanCutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+        // 10 minutes: Gemini 2K-word JSON calls can take 5-8 minutes easily.
+        // Increased from 5 to 10 mins to prevent false orphans during deep analysis.
+        const orphanCutoff = new Date(Date.now() - 10 * 60 * 1000).toISOString();
         const { data: orphanedJobs } = await supabase
             .from('processing_queue')
             .select('id, attempt_count')

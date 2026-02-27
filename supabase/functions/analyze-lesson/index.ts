@@ -643,6 +643,17 @@ ${concatenatedSummary.substring(0, 80000)}`;
                 for (let attempt = 0; attempt < 2; attempt++) {
                     const isRetry = attempt > 0;
                     const prompt = buildSummaryPrompt(content, batchIndex + 1, batches.length, payload.hasAudio, isRetry);
+
+                    // 💓 HEARTBEAT HOOK: Touch the DB every 3 mins during long 2000-word generation
+                    const heartbeatInterval = setInterval(() => {
+                        console.log(`[Analyze] 💓 Heartbeat: touching updated_at for ${jobId} (Batch ${batchIndex + 1}) to prevent orphan kill...`);
+                        supabase.from('processing_queue')
+                            .update({ updated_at: new Date().toISOString() })
+                            .eq('id', jobId)
+                            .then(({ error }: { error: any }) => { if (error) console.error(`[Analyze] Heartbeat failed: ${error.message}`); })
+                            .catch((e: any) => console.error(`[Analyze] Heartbeat catch error: ${e.message}`));
+                    }, 3 * 60 * 1000); // 3 minutes
+
                     try {
                         const result = await callGeminiJSON(prompt, geminiKey);
                         bestResult = result;
@@ -674,6 +685,9 @@ ${concatenatedSummary.substring(0, 80000)}`;
                             tokens: textResult.tokens
                         };
                         break;
+                    } finally {
+                        // 🧹 ALWAYS clean up the interval to avoid memory leaks (User Tip)
+                        clearInterval(heartbeatInterval);
                     }
                 }
 
