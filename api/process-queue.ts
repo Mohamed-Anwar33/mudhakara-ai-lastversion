@@ -97,11 +97,12 @@ async function acquireJobId(supabase: any, workerId: string): Promise<string | n
     return null;
 }
 
-async function unlockJob(supabase: any, jobId: string, finalStatus?: string): Promise<void> {
+async function unlockJob(supabase: any, jobId: string, finalStatus?: string, customUpdates?: any): Promise<void> {
     const updates: any = {
         locked_at: null,
         locked_by: null,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        ...(customUpdates || {})
     };
     if (finalStatus) updates.status = finalStatus;
 
@@ -171,16 +172,34 @@ async function processSingleJob(supabase: any, job: any, workerId: string, supab
     let endpoint = '';
 
     try {
-        // Map job_type to Edge Function Name or Node API
-        if (['ingest_upload', 'ingest_extract', 'ingest_chunk', 'pdf_extract', 'audio_transcribe', 'image_ocr', 'embed_sections', 'extract_toc', 'build_lecture_segments', 'ocr_range', 'chunk_lecture', 'embed_lecture'].includes(job.job_type)) {
-            endpoint = 'ingest-file';
-        } else if (['generate_analysis', 'analyze_lecture', 'generate_book_overview'].includes(job.job_type)) {
+        // V2 Architecture Route Mapping
+        if (['extract_pdf_info', 'ocr_page_batch'].includes(job.job_type)) {
+            endpoint = 'ocr-worker';
+            await supabase.from('lessons').update({ pipeline_stage: 'extracting_text' }).eq('id', job.lesson_id);
+        } else if (['transcribe_audio', 'extract_audio_focus'].includes(job.job_type)) {
+            endpoint = 'audio-worker';
+            // Audio processing usually runs parallel to extracting_text
+        } else if (['segment_lesson'].includes(job.job_type)) {
+            endpoint = 'segmentation-worker';
+            await supabase.from('lessons').update({ pipeline_stage: 'segmenting_content' }).eq('id', job.lesson_id);
+        } else if (['analyze_lecture'].includes(job.job_type)) {
             endpoint = 'analyze-lesson';
-        } else if (job.job_type === 'extract_text_range') {
+            await supabase.from('lessons').update({ pipeline_stage: 'generating_summary' }).eq('id', job.lesson_id);
+        } else if (['generate_quiz'].includes(job.job_type)) {
+            endpoint = 'quiz-generator';
+            await supabase.from('lessons').update({ pipeline_stage: 'generating_quizzes' }).eq('id', job.lesson_id);
+        } else if (['finalize_global_summary'].includes(job.job_type)) {
+            endpoint = 'global-aggregator';
+        } else if (['extract_text_range'].includes(job.job_type)) {
             endpoint = 'extract-text-node';
+        } else if (['ingest_upload', 'ingest_extract', 'ingest_chunk', 'pdf_extract', 'audio_transcribe', 'image_ocr', 'embed_sections', 'extract_toc', 'build_lecture_segments', 'ocr_range', 'chunk_lecture', 'embed_lecture'].includes(job.job_type)) {
+            // Legacy fallbacks
+            endpoint = 'ingest-file';
+        } else if (['generate_analysis', 'generate_book_overview'].includes(job.job_type)) {
+            // Legacy fallbacks
+            endpoint = 'analyze-lesson';
         } else if (job.job_type === 'book_segment') {
-            // For now book segmentation might be local or skipped
-            throw new Error('Book Segmentation not implemented in Edge Functions yet');
+            throw new Error('Book Segmentation logic moved to segment_lesson');
         } else {
             throw new Error(`Unknown job type: ${job.job_type}`);
         }
