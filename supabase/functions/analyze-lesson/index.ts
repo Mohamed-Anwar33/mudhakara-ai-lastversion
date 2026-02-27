@@ -444,25 +444,44 @@ serve(async (req) => {
                 const segIds = allSegments?.map((s: any) => s.id) || [];
 
                 const { data: analyses } = await supabase.from('lecture_analysis')
-                    .select('lecture_id, summary').in('lecture_id', segIds);
+                    .select('lecture_id, summary, quiz, key_points').in('lecture_id', segIds);
 
-                let concatenated = '';
+                let allLessons: any[] = [];
+                let allQuizzes: any[] = [];
+                let allFocusPoints: any[] = [];
+                let allEssayQuestions: any[] = [];
+                let concatenatedSummary = '';
                 let indexMap: any = { topics: [] };
 
                 for (const seg of (allSegments || [])) {
                     const an = analyses?.find((a: any) => a.lecture_id === seg.id);
-                    if (an) {
-                        concatenated += `\n\n## درس: ${seg.title} (ص ${seg.page_from})\n`;
-                        concatenated += an.summary ? an.summary.substring(0, 3000) : '';
-                        indexMap.topics.push({ title: seg.title, page: seg.page_from });
+                    if (!an) continue;
+                    indexMap.topics.push({ title: seg.title, page: seg.page_from });
+
+                    let lectureResult: any = null;
+                    try {
+                        lectureResult = typeof an.summary === 'string' ? JSON.parse(an.summary) : an.summary;
+                    } catch (e) {
+                        concatenatedSummary += `\n\n## درس: ${seg.title} (ص ${seg.page_from})\n` + (an.summary || '').substring(0, 3000);
+                        continue;
+                    }
+
+                    if (lectureResult) {
+                        if (Array.isArray(lectureResult.lessons)) allLessons.push(...lectureResult.lessons);
+                        if (Array.isArray(lectureResult.quizzes)) allQuizzes.push(...lectureResult.quizzes);
+                        if (Array.isArray(lectureResult.focusPoints)) allFocusPoints.push(...lectureResult.focusPoints);
+                        if (Array.isArray(lectureResult.essayQuestions)) allEssayQuestions.push(...lectureResult.essayQuestions);
+                        if (lectureResult.summary) concatenatedSummary += `\n\n## درس: ${seg.title} (ص ${seg.page_from})\n` + lectureResult.summary.substring(0, 3000);
                     }
                 }
 
+                console.log(`[Generate Analysis] Aggregated: ${allLessons.length} lessons, ${allQuizzes.length} quizzes, ${allFocusPoints.length} focus, ${allEssayQuestions.length} essay`);
+
                 let finalSummary = 'تعذر توليد الملخص';
-                if (concatenated.trim()) {
-                    const prompt = `أنت خبير أكاديمي. بناءً على هذه الملخصات للدروس (والتي تمثل كتاباً كاملاً)، اكتب "نظرة عامة" أو "خلاصة" قصيرة وشاملة للكتاب ككل (Book Overview) في فقرتين إلى 4 فقرات.
+                if (concatenatedSummary.trim()) {
+                    const prompt = `أنت خبير أكاديمي. بناءً على هذه الملخصات للدروس (والتي تمثل كتاباً كاملاً)، اكتب "نظرة عامة" شاملة للكتاب ككل في 3-5 فقرات.
 المحتوى:
-${concatenated.substring(0, 80000)}`;
+${concatenatedSummary.substring(0, 80000)}`;
                     const overviewResult = await callGeminiText(prompt, geminiKey);
                     finalSummary = overviewResult.text;
                 }
@@ -475,15 +494,19 @@ ${concatenated.substring(0, 80000)}`;
                     updated_at: new Date().toISOString()
                 }, { onConflict: 'lesson_id' });
 
-                // CRITICAL: Save analysis_result into lessons table!
-                // The frontend reads lessons.analysis_result — if it's null, it shows "خطأ غير معروف".
+                // CRITICAL: Save COMPLETE analysis_result with ALL aggregated data
                 const analysisResult = {
                     summary: finalSummary,
+                    lessons: allLessons,
+                    focusPoints: allFocusPoints,
+                    quizzes: allQuizzes,
+                    essayQuestions: allEssayQuestions,
                     indexMap: indexMap,
                     metadata: {
                         generatedAt: new Date().toISOString(),
-                        schemaVersion: 10,
-                        lecturesAnalyzed: allSegments?.length || 0
+                        schemaVersion: 11,
+                        lecturesAnalyzed: allSegments?.length || 0,
+                        model: 'gemini-2.5-flash'
                     }
                 };
                 await supabase.from('lessons').update({
@@ -799,7 +822,7 @@ ${quizSourceContent}`;
                 if (job.job_type === 'analyze_lecture' && payload.lecture_id) {
                     const { error: saveErr } = await supabase.from('lecture_analysis').upsert({
                         lecture_id: payload.lecture_id,
-                        summary: summary,
+                        summary: JSON.stringify(analysisResult),
                         detailed_explanation: payload.audioText || '',
                         key_points: quizParsed.focusPoints || [],
                         examples: [],
