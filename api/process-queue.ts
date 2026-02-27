@@ -39,7 +39,7 @@ async function acquireJobId(supabase: any, workerId: string): Promise<string | n
     // Enforce Concurrency Limits
     const { count: activeOcr } = await supabase.from('processing_queue')
         .select('*', { count: 'exact', head: true })
-        .in('job_type', ['ocr_range', 'image_ocr'])
+        .in('job_type', ['ocr_range', 'image_ocr', 'ocr_page_batch'])
         .not('locked_by', 'is', null);
 
     const { count: activeAnalysis } = await supabase.from('processing_queue')
@@ -48,7 +48,7 @@ async function acquireJobId(supabase: any, workerId: string): Promise<string | n
         .not('locked_by', 'is', null);
 
     const excludedTypes = [];
-    if ((activeOcr || 0) >= 3) excludedTypes.push('ocr_range', 'image_ocr');
+    if ((activeOcr || 0) >= 3) excludedTypes.push('ocr_range', 'image_ocr', 'ocr_page_batch');
     if ((activeAnalysis || 0) >= 2) excludedTypes.push('generate_analysis', 'analyze_lecture');
 
     for (let attempt = 0; attempt < 3; attempt++) {

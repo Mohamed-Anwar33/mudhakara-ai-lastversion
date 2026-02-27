@@ -22,7 +22,7 @@ async function callGemini(apiKey: string, parts: any[], maxTokens = 65536): Prom
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
         try {
             const response = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
                 {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -207,8 +207,7 @@ serve(async (req) => {
         // Ensure to release the job lock and mark as failed if `jobId` exists
         if (req.method !== 'OPTIONS') {
             try {
-                const body = await req.clone().json().catch(() => null);
-                if (body?.jobId) {
+                if (jobId) {
                     const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
                     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
                     const supabase = createClient(supabaseUrl, supabaseKey);
@@ -217,7 +216,7 @@ serve(async (req) => {
                         error_message: error.message || 'Unknown OCR Error',
                         locked_by: null,
                         locked_at: null
-                    }).eq('id', body.jobId);
+                    }).eq('id', jobId);
                 }
             } catch (_) { }
         }
