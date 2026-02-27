@@ -17,8 +17,9 @@ const getSupabaseAdmin = () => {
 
 function isMissingFunctionError(error: any, functionName: string): boolean {
     const message = `${error?.message || ''} ${error?.details || ''}`.toLowerCase();
-    return error?.code === '42883' ||
-        (message.includes(functionName.toLowerCase()) && message.includes('does not exist'));
+    // 42883 = undefined_function, PGRST203 = overloaded/ambiguous function
+    return error?.code === '42883' || error?.code === 'PGRST203' ||
+        (message.includes(functionName.toLowerCase()) && (message.includes('does not exist') || message.includes('candidate function')));
 }
 
 async function acquireJobId(supabase: any, workerId: string): Promise<string | null> {
