@@ -275,13 +275,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             for (const stale of staleJobs) {
                 const currentAttempts = Number(stale.attempt_count || 0);
                 if (currentAttempts >= 5) {
-                    await supabase.from('processing_queue')
+                    // Atomic: only update if still locked (prevents race with other workers)
+                    const { data: claimed } = await supabase.from('processing_queue')
                         .update({ status: 'failed', stage: 'failed', error_message: 'Background processing timeout exceeded multiple times', locked_by: null, locked_at: null })
-                        .eq('id', stale.id);
+                        .eq('id', stale.id)
+                        .not('locked_by', 'is', null)
+                        .select('id').maybeSingle();
+                    if (claimed) console.log(`[${workerId}] Stale job ${stale.id} marked as FAILED (${currentAttempts} attempts).`);
                 } else {
-                    await supabase.from('processing_queue')
+                    const { data: claimed } = await supabase.from('processing_queue')
                         .update({ status: 'pending', locked_by: null, locked_at: null })
-                        .eq('id', stale.id);
+                        .eq('id', stale.id)
+                        .not('locked_by', 'is', null)
+                        .select('id').maybeSingle();
+                    if (claimed) console.log(`[${workerId}] Reset stale job ${stale.id} to pending.`);
                 }
             }
         }
@@ -305,14 +312,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             for (const orphan of orphanedJobs) {
                 const attempts = Number(orphan.attempt_count || 0);
                 if (attempts >= 5) {
-                    await supabase.from('processing_queue')
+                    // Atomic: only claim if still in 'processing' status (prevents race)
+                    const { data: claimed } = await supabase.from('processing_queue')
                         .update({ status: 'failed', stage: 'failed', error_message: 'Orphaned job exceeded recovery attempts', locked_by: null, locked_at: null })
-                        .eq('id', orphan.id);
+                        .eq('id', orphan.id)
+                        .eq('status', 'processing')
+                        .select('id').maybeSingle();
+                    if (claimed) console.log(`[${workerId}] Orphaned job ${orphan.id} marked as FAILED (${attempts} attempts).`);
                 } else {
-                    await supabase.from('processing_queue')
-                        .update({ status: 'pending', locked_by: null, locked_at: null, attempt_count: attempts + 1 })
-                        .eq('id', orphan.id);
-                    console.log(`[${workerId}] Reset orphaned job ${orphan.id} to pending (attempt ${attempts + 1})`);
+                    // Atomic reset: only one worker can transition from 'processing' to 'pending'
+                    // DO NOT increment attempt_count here — orphan recovery is not a real execution.
+                    // Only real execution failures (in processSingleJob) should increment attempts.
+                    const { data: claimed } = await supabase.from('processing_queue')
+                        .update({ status: 'pending', locked_by: null, locked_at: null })
+                        .eq('id', orphan.id)
+                        .eq('status', 'processing')
+                        .select('id').maybeSingle();
+                    if (claimed) console.log(`[${workerId}] Reset orphaned job ${orphan.id} to pending (attempt_count stays at ${attempts}).`);
                 }
             }
         }

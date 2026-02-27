@@ -415,6 +415,12 @@ serve(async (req) => {
             return jsonResponse({ success: true, stage: 'completed', progress: 100, status: 'completed' });
         };
 
+        // Heartbeat: touch updated_at immediately so orphan recovery knows we're alive.
+        // Without this, long Gemini API calls (30-120s) look like orphaned jobs.
+        await supabase.from('processing_queue')
+            .update({ updated_at: new Date().toISOString() })
+            .eq('id', jobId);
+
         try {
             // ==========================================
             // ATOMIC JOB: generate_book_overview / generate_analysis
