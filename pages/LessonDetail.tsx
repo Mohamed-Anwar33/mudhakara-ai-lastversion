@@ -814,27 +814,124 @@ const LessonDetail: React.FC = () => {
                 </section>
               )}
 
-              <section className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-2 h-full bg-indigo-500"></div>
-                <h2 className="text-2xl font-black text-slate-800 mb-6 flex items-center justify-end gap-3">الملخص <Lightbulb className="text-amber-400" /></h2>
-                <div className="text-slate-700 leading-relaxed text-lg font-bold">
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={{
-                      h1: ({ node, ...props }) => <h1 className="text-2xl font-black text-indigo-700 mb-4 mt-6" {...props} />,
-                      h2: ({ node, ...props }) => <h2 className="text-xl font-black text-indigo-600 mb-3 mt-5" {...props} />,
-                      h3: ({ node, ...props }) => <h3 className="text-lg font-bold text-indigo-500 mb-2 mt-4" {...props} />,
-                      p: ({ node, ...props }) => <p className="mb-4 text-justify" {...props} />,
-                      ul: ({ node, ...props }) => <ul className="list-disc list-inside space-y-2 mb-4 pr-4" {...props} />,
-                      ol: ({ node, ...props }) => <ol className="list-decimal list-inside space-y-2 mb-4 pr-4" {...props} />,
-                      li: ({ node, ...props }) => <li className="text-slate-700" {...props} />,
-                      strong: ({ node, ...props }) => <strong className="text-indigo-700 font-black" {...props} />,
-                      blockquote: ({ node, ...props }) => <blockquote className="border-r-4 border-amber-400 pr-4 py-2 my-4 bg-amber-50 rounded-l-xl text-amber-800 italic" {...props} />,
-                    }}
-                  >
-                    {transientAIResult?.summary || lesson?.aiResult?.summary || ""}
-                  </ReactMarkdown>
-                </div>
+              <section className="space-y-6">
+                <h2 className="text-2xl font-black text-slate-800 flex items-center justify-end gap-3">الملخص التفصيلي <Lightbulb className="text-amber-400" /></h2>
+
+                {/* New structured lessons rendering */}
+                {(() => {
+                  const aiData = transientAIResult || lesson?.aiResult;
+                  const lessons = aiData?.lessons;
+
+                  // New JSON format: render each lesson as a card
+                  if (lessons && lessons.length > 0) {
+                    return lessons.map((lessonItem, idx) => (
+                      <div key={idx} className="bg-white p-8 md:p-10 rounded-[2.5rem] border border-slate-100 shadow-sm relative overflow-hidden">
+                        {/* Accent bar */}
+                        <div className="absolute top-0 right-0 w-2 h-full bg-gradient-to-b from-indigo-500 to-purple-500"></div>
+
+                        {/* Lesson number + title */}
+                        <div className="flex items-center gap-3 mb-6 justify-end">
+                          <h3 className="text-xl font-black text-slate-800">{lessonItem.lesson_title}</h3>
+                          <span className="bg-indigo-100 text-indigo-700 text-xs font-black px-3 py-1.5 rounded-full">{idx + 1}</span>
+                        </div>
+
+                        {/* Detailed explanation (Markdown) */}
+                        <div className="text-slate-700 leading-relaxed text-base font-medium mb-6">
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                            components={{
+                              h1: ({ node, ...props }) => <h1 className="text-xl font-black text-indigo-700 mb-3 mt-5" {...props} />,
+                              h2: ({ node, ...props }) => <h2 className="text-lg font-black text-indigo-600 mb-2 mt-4" {...props} />,
+                              h3: ({ node, ...props }) => <h3 className="text-base font-bold text-indigo-500 mb-2 mt-3" {...props} />,
+                              p: ({ node, ...props }) => <p className="mb-3 text-justify leading-relaxed" {...props} />,
+                              ul: ({ node, ...props }) => <ul className="list-disc list-inside space-y-1.5 mb-3 pr-4" {...props} />,
+                              ol: ({ node, ...props }) => <ol className="list-decimal list-inside space-y-1.5 mb-3 pr-4" {...props} />,
+                              li: ({ node, ...props }) => <li className="text-slate-700 leading-relaxed" {...props} />,
+                              strong: ({ node, ...props }) => <strong className="text-indigo-700 font-black" {...props} />,
+                              blockquote: ({ node, ...props }) => <blockquote className="border-r-4 border-amber-400 pr-4 py-2 my-3 bg-amber-50 rounded-l-xl text-amber-800 italic" {...props} />,
+                              table: ({ node, ...props }) => <div className="overflow-x-auto my-3"><table className="w-full border-collapse border border-slate-200 text-sm" {...props} /></div>,
+                              th: ({ node, ...props }) => <th className="border border-slate-200 bg-slate-50 px-3 py-2 text-right font-bold" {...props} />,
+                              td: ({ node, ...props }) => <td className="border border-slate-200 px-3 py-2 text-right" {...props} />,
+                            }}
+                          >
+                            {lessonItem.detailed_explanation || ''}
+                          </ReactMarkdown>
+                        </div>
+
+                        {/* Rules */}
+                        {lessonItem.rules && lessonItem.rules.length > 0 && (
+                          <div className="mb-6">
+                            <h4 className="text-sm font-black text-emerald-700 mb-3 flex items-center gap-2 justify-end">
+                              القواعد الأساسية
+                              <div className="w-6 h-6 bg-emerald-100 rounded-lg flex items-center justify-center">📋</div>
+                            </h4>
+                            <div className="space-y-2">
+                              {lessonItem.rules.map((rule, rIdx) => (
+                                <div key={rIdx} className="flex items-start gap-3 p-3 bg-emerald-50/60 rounded-xl border border-emerald-100">
+                                  <span className="text-sm text-slate-600 font-bold text-right flex-1">{rule}</span>
+                                  <span className="bg-emerald-200 text-emerald-800 text-[10px] font-black w-6 h-6 rounded-full flex items-center justify-center shrink-0">{rIdx + 1}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Examples */}
+                        {lessonItem.examples && lessonItem.examples.length > 0 && (
+                          <div>
+                            <h4 className="text-sm font-black text-amber-700 mb-3 flex items-center gap-2 justify-end">
+                              أمثلة تطبيقية
+                              <div className="w-6 h-6 bg-amber-100 rounded-lg flex items-center justify-center">💡</div>
+                            </h4>
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-sm border-collapse">
+                                <thead>
+                                  <tr className="bg-amber-50">
+                                    <th className="text-right p-3 font-black text-amber-800 border-b border-amber-200">السبب / التوضيح</th>
+                                    <th className="text-right p-3 font-black text-amber-800 border-b border-amber-200 w-32">الكلمة / المثال</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {lessonItem.examples.map((ex, eIdx) => (
+                                    <tr key={eIdx} className={eIdx % 2 === 0 ? 'bg-white' : 'bg-amber-50/30'}>
+                                      <td className="p-3 text-slate-600 font-medium border-b border-slate-100">{ex.reason}</td>
+                                      <td className="p-3 font-bold text-indigo-700 border-b border-slate-100">{ex.word}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ));
+                  }
+
+                  // Fallback: old markdown summary
+                  return (
+                    <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm relative overflow-hidden">
+                      <div className="absolute top-0 right-0 w-2 h-full bg-indigo-500"></div>
+                      <div className="text-slate-700 leading-relaxed text-lg font-bold">
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            h1: ({ node, ...props }) => <h1 className="text-2xl font-black text-indigo-700 mb-4 mt-6" {...props} />,
+                            h2: ({ node, ...props }) => <h2 className="text-xl font-black text-indigo-600 mb-3 mt-5" {...props} />,
+                            h3: ({ node, ...props }) => <h3 className="text-lg font-bold text-indigo-500 mb-2 mt-4" {...props} />,
+                            p: ({ node, ...props }) => <p className="mb-4 text-justify" {...props} />,
+                            ul: ({ node, ...props }) => <ul className="list-disc list-inside space-y-2 mb-4 pr-4" {...props} />,
+                            ol: ({ node, ...props }) => <ol className="list-decimal list-inside space-y-2 mb-4 pr-4" {...props} />,
+                            li: ({ node, ...props }) => <li className="text-slate-700" {...props} />,
+                            strong: ({ node, ...props }) => <strong className="text-indigo-700 font-black" {...props} />,
+                            blockquote: ({ node, ...props }) => <blockquote className="border-r-4 border-amber-400 pr-4 py-2 my-4 bg-amber-50 rounded-l-xl text-amber-800 italic" {...props} />,
+                          }}
+                        >
+                          {aiData?.summary || ""}
+                        </ReactMarkdown>
+                      </div>
+                    </div>
+                  );
+                })()}
               </section>
 
               {(transientAIResult?.quizzes || lesson?.aiResult?.quizzes) && (

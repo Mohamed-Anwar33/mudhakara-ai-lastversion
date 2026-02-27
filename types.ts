@@ -74,8 +74,21 @@ export interface FocusPoint {
   evidence?: { pdf_section_ids: string[]; audio_section_ids: string[] };
 }
 
+export interface LessonData {
+  lesson_title: string;
+  detailed_explanation: string;
+  rules: string[];
+  examples: { word: string; reason: string }[];
+}
+
+export interface EssayQuestion {
+  question: string;
+  idealAnswer: string;
+}
+
 export interface AIResult {
   summary: string;
+  lessons?: LessonData[];
   focusPoints?: FocusPoint[];
   examPredictions: string[];
   quizzes: Quiz[];
@@ -86,11 +99,6 @@ export interface AIResult {
     finalAnswer: string;
     contentLink?: string;
   };
-}
-
-export interface EssayQuestion {
-  question: string;
-  idealAnswer: string;
 }
 
 export interface Quiz {

@@ -115,7 +115,7 @@ async function callGeminiJSON(prompt: string, apiKey: string): Promise<{ parsed:
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         contents: [{ parts: [{ text: prompt }] }],
-                        generationConfig: { temperature: 0.2, maxOutputTokens: 16384, responseMimeType: 'application/json' }
+                        generationConfig: { temperature: 0.2, maxOutputTokens: 65536, responseMimeType: 'application/json' }
                     })
                 }
             );
@@ -220,44 +220,47 @@ function splitIntoBatches(paragraphs: string[], batchSize: number, overlapCount:
     return batches;
 }
 
-function mergeAndDedup(summaryParts: string[]): string {
-    const mergedLectures = new Map<string, { title: string; content: string[] }>();
+function mergeAndDedupLessons(batchResults: any[]): any[] {
+    const mergedMap = new Map<string, any>();
 
-    for (const chunkText of summaryParts) {
-        if (typeof chunkText !== 'string' || !chunkText.trim()) continue;
+    for (const batch of batchResults) {
+        if (!batch || typeof batch !== 'object') continue;
+        const lessons = Array.isArray(batch.lessons) ? batch.lessons : (Array.isArray(batch) ? batch : []);
 
-        const lines = chunkText.split('\n');
-        let currentTitle = '';
+        for (const lesson of lessons) {
+            if (!lesson || !lesson.lesson_title) continue;
+            const key = lesson.lesson_title.trim();
 
-        for (let line of lines) {
-            line = line.trimEnd();
-            if (!line.trim()) continue;
-
-            if (line.trim().startsWith('## ')) {
-                const rawTitle = line.trim().substring(3).trim();
-                if (rawTitle.length < 2) continue;
-                currentTitle = rawTitle.replace(/^[\d\.\-\s]+/, '').trim();
-                if (!mergedLectures.has(currentTitle)) {
-                    mergedLectures.set(currentTitle, { title: currentTitle, content: [] });
+            if (!mergedMap.has(key)) {
+                mergedMap.set(key, {
+                    lesson_title: key,
+                    detailed_explanation: lesson.detailed_explanation || '',
+                    rules: [...(lesson.rules || [])],
+                    examples: [...(lesson.examples || [])]
+                });
+            } else {
+                const existing = mergedMap.get(key)!;
+                // Append content if longer
+                if ((lesson.detailed_explanation || '').length > existing.detailed_explanation.length) {
+                    existing.detailed_explanation = lesson.detailed_explanation;
                 }
-            } else if (currentTitle && line.trim().length > 5) {
-                const contentArr = mergedLectures.get(currentTitle)!.content;
-                const trimmed = line.trim();
-                if (!contentArr.some(existing => existing.trim() === trimmed)) {
-                    contentArr.push(line);
+                // Merge rules (dedup)
+                for (const r of (lesson.rules || [])) {
+                    if (!existing.rules.includes(r)) existing.rules.push(r);
+                }
+                // Merge examples (dedup by word)
+                const existingWords = new Set(existing.examples.map((e: any) => e.word));
+                for (const ex of (lesson.examples || [])) {
+                    if (ex.word && !existingWords.has(ex.word)) {
+                        existing.examples.push(ex);
+                        existingWords.add(ex.word);
+                    }
                 }
             }
         }
     }
 
-    const finalParts: string[] = [];
-    for (const [_, lecture] of mergedLectures) {
-        if (lecture.content.length === 0) continue;
-        let md = `## ${lecture.title}\n\n${lecture.content.join('\n')}`;
-        finalParts.push(md);
-    }
-
-    return finalParts.join('\n\n---\n\n');
+    return Array.from(mergedMap.values());
 }
 
 function normalizeQuizResponse(parsed: any): any {
@@ -282,33 +285,41 @@ function normalizeQuizResponse(parsed: any): any {
 
 function buildSummaryPrompt(content: string, batchNum: number, totalBatches: number, hasAudio: boolean, isRetry: boolean = false): string {
     const batchInfo = totalBatches > 1 ? ` (الجزء ${batchNum} من ${totalBatches})` : '';
-    const audioNote = hasAudio ? '\n- **الأجزاء المميزة بـ ⭐ ركّز عليها المعلم في شرحه الصوتي** — أعطها اهتماماً إضافياً.' : '';
-    const retryWarning = isRetry ? '\n\n🚨🚨🚨 تحذير: الإجابة السابقة كانت مختصرة جداً وغير مقبولة! هذه المرة يجب أن تكتب شرحاً مفصلاً جداً لكل درس (500+ كلمة لكل درس). الاختصار = فشل.\n' : '';
+    const audioNote = hasAudio ? '\n- **الأجزاء المميزة بـ ⭐ ركّز عليها المعلم في شرحه الصوتي** — أعطها اهتماماً إضافياً في الشرح وأضف ملاحظة عنها.' : '';
+    const retryWarning = isRetry ? '\n\n🚨🚨🚨 تحذير: الإجابة السابقة كانت مختصرة جداً! يجب أن يكون detailed_explanation لكل درس 2000+ كلمة على الأقل. الاختصار = فشل.\n' : '';
 
-    return `أنت الخبير الأكاديمي المسؤول عن استخراج القواعد والدروس من هذا الجزء${batchInfo} من الكتاب/الملزمة.${retryWarning}
+    return `أنت خبير أكاديمي متخصص. مهمتك استخراج كل الدروس والقواعد من هذا الجزء${batchInfo} وتحويلها إلى JSON مهيكل.${retryWarning}
 
-⚠️⚠️⚠️ قواعد حاسمة وصارمة (عدم الالتزام = فشل كامل):
+⚠️⚠️⚠️ قواعد صارمة (عدم الالتزام = فشل كامل):
 
-1. **استخرج كل درس/محاضرة/فصل/قاعدة** موجود في هذا النص بدون استثناء.
-2. **العمق والتفصيل الشديد (أهم قاعدة على الإطلاق)**:
-   - إياك أن تختصر شرح أي درس! اكتب كل نقطة، كل تعريف، كل شرط، كل استثناء، وكل مثال.
-   - كل درس يجب أن يشمل: التعريف + القاعدة + الشروط/الاستثناءات + الأمثلة + الملاحظات.
-   - الشرح السطحي ممنوع قطعاً. إذا كان الدرس يمتد في الكتاب لصفحتين، يجب أن يمتد في ملخصك لعشرات الأسطر.
-3. **لا تتجاهل أي درس أبداً** — حتى لو بدا قصيراً أو بسيطاً. استخرجه وفصّله.
-4. **لا تدمج دروساً مستقلة معاً** — كل درس له عنوان ## منفصل.
-5. **حافظ على الترتيب** الموجود في الكتاب الأصلي.
-6. إذا انقطعت محاضرة في آخر النص، لخّص الموجود فقط ولا تختلق باقيه.
-7. **لا تكتب مقدمات أو استنتاجات**. ادخل في سرد الدروس وقواعدها مباشرة.
-8. **لا تتوقف قبل النهاية** — تأكد من استخراج وتلخيص الدروس الموجودة في آخر سطر من هذا الجزء.${audioNote}
+1. **استخرج كل درس/قاعدة/مفهوم** بدون استثناء — لا تتجاهل أي شيء.
+2. **العمق الشديد في detailed_explanation**:
+   - كل درس يجب أن يحتوي على شرح مفصل جداً (2000+ كلمة) يشمل:
+     * التعريف الكامل والدقيق
+     * القاعدة الأساسية والقواعد الفرعية
+     * جميع الشروط والاستثناءات والحالات الشاذة
+     * أمثلة تطبيقية مع شرح كل مثال
+     * ملاحظات وتنبيهات هامة
+   - استخدم Markdown (عناوين ### ونقاط - وترقيم 1. وجداول | وتمييز **نص**)
+   - الشرح السطحي = فشل تام. اكتب كأنك تشرح للطالب بدون الكتاب.
+   - **كل المعلومات يجب أن تكون من النص المعطى فقط — لا تختلق معلومات غير موجودة في الكتاب.**
+3. **rules[]** — كل قاعدة فرعية في سطر مستقل، مختصرة وواضحة.
+4. **examples[]** — كل مثال بـ word + reason. **استخرج الأمثلة من الكتاب نفسه.**
+5. **لا تدمج دروساً مستقلة** — كل درس في object منفصل.
+6. **حافظ على ترتيب الكتاب الأصلي**.${audioNote}
 
-المخرجات المطلوبة (نص Markdown منسق بدقة وبأقصى تفصيل):
-- استخدم عنوان من المستوى الثاني (\`##\`) لكل درس جديد.
-- تحت كل عنوان درس: القواعد والمفاهيم والشرح بالتفصيل الممل في شكل:
-  - نقاط (\`- \`) للقواعد والشروط
-  - فقرات للشرح والتفصيل
-  - أمثلة مُرقَّمة
-  - جداول إن لزم الأمر
-- لا تترك أي تفصيلة علمية أو لغوية أو إملائية إلا وذكرتها.
+المخرج المطلوب (JSON فقط):
+{
+  "module_title": "عنوان الفصل أو الباب",
+  "lessons": [
+    {
+      "lesson_title": "عنوان الدرس",
+      "detailed_explanation": "شرح تفصيلي جداً بصيغة Markdown — 2000+ كلمة — يغطي كل التعريفات والقواعد والشروط والاستثناءات والأمثلة والملاحظات — من محتوى الكتاب فقط",
+      "rules": ["القاعدة 1", "القاعدة 2"],
+      "examples": [{"word": "كلمة", "reason": "السبب"}]
+    }
+  ]
+}
 
 --- محتوى الجزء${batchInfo} ---
 
@@ -600,32 +611,51 @@ ${concatenated.substring(0, 80000)}`;
 
                 const content = batches[batchIndex];
                 const contentChars = content.length;
-                // Expect at least 15% of input length as output (minimum depth)
-                const minExpectedOutput = Math.max(500, Math.round(contentChars * 0.15));
+                // For JSON output, check lesson count instead of character length
+                const minExpectedLessons = 1;
 
-                console.log(`[Analyze] Summarizing batch ${batchIndex + 1}/${batches.length} (${contentChars} chars, min output: ${minExpectedOutput})...`);
+                console.log(`[Analyze] Summarizing batch ${batchIndex + 1}/${batches.length} (${contentChars} chars) via JSON...`);
 
-                let bestResult = { text: '', tokens: 0 };
+                let bestResult: { parsed: any; tokens: number } = { parsed: null, tokens: 0 };
                 for (let attempt = 0; attempt < 2; attempt++) {
                     const isRetry = attempt > 0;
                     const prompt = buildSummaryPrompt(content, batchIndex + 1, batches.length, payload.hasAudio, isRetry);
-                    const result = await callGeminiText(prompt, geminiKey);
-                    bestResult = result;
+                    try {
+                        const result = await callGeminiJSON(prompt, geminiKey);
+                        bestResult = result;
 
-                    if (result.text.length >= minExpectedOutput) {
-                        console.log(`[Analyze] ✅ Batch ${batchIndex + 1}: ${result.text.length} chars (meets ${minExpectedOutput} min)`);
+                        const lessons = result.parsed?.lessons || [];
+                        if (lessons.length >= minExpectedLessons) {
+                            const totalExplanation = lessons.reduce((s: number, l: any) => s + (l.detailed_explanation?.length || 0), 0);
+                            console.log(`[Analyze] ✅ Batch ${batchIndex + 1}: ${lessons.length} lessons, ${totalExplanation} explanation chars`);
+                            break;
+                        }
+
+                        if (attempt === 0) {
+                            console.warn(`[Analyze] ⚠️ Batch ${batchIndex + 1}: too few lessons (${lessons.length}). Retrying...`);
+                        }
+                    } catch (jsonErr: any) {
+                        console.warn(`[Analyze] ⚠️ Batch ${batchIndex + 1} JSON failed: ${jsonErr.message}. Falling back to text...`);
+                        // Fallback: use callGeminiText and wrap in a simple lesson object
+                        const textResult = await callGeminiText(prompt, geminiKey);
+                        bestResult = {
+                            parsed: {
+                                module_title: `الجزء ${batchIndex + 1}`,
+                                lessons: [{
+                                    lesson_title: `محتوى الجزء ${batchIndex + 1}`,
+                                    detailed_explanation: textResult.text,
+                                    rules: [],
+                                    examples: []
+                                }]
+                            },
+                            tokens: textResult.tokens
+                        };
                         break;
-                    }
-
-                    if (attempt === 0) {
-                        console.warn(`[Analyze] ⚠️ Batch ${batchIndex + 1}: output too short (${result.text.length} < ${minExpectedOutput}). Retrying with stronger prompt...`);
-                    } else {
-                        console.warn(`[Analyze] ⚠️ Batch ${batchIndex + 1}: retry still short (${result.text.length}). Using best attempt.`);
                     }
                 }
 
                 if (!payload.summaryParts) payload.summaryParts = [];
-                payload.summaryParts[batchIndex] = bestResult.text;
+                payload.summaryParts[batchIndex] = bestResult.parsed;
                 payload.totalTokens = (payload.totalTokens || 0) + bestResult.tokens;
 
                 const nextCursor = batchIndex + 1;
@@ -639,17 +669,29 @@ ${concatenated.substring(0, 80000)}`;
             // STAGE 3: merging_summaries
             // ==========================================
             if (stage === 'merging_summaries') {
-                console.log(`[Analyze] Merging summaries...`);
-                const validParts = (payload.summaryParts || []).filter((p: string) => p && p.length > 50);
-                let merged = mergeAndDedup(validParts);
+                console.log(`[Analyze] Merging lesson data...`);
+                const validParts = (payload.summaryParts || []).filter((p: any) => p && typeof p === 'object');
+                const mergedLessons = mergeAndDedupLessons(validParts);
 
-                // Enforce max 100,000 character limit (user requirement)
+                console.log(`[Analyze] Merged into ${mergedLessons.length} unique lessons.`);
+
+                // Build markdown summary from lessons (backwards compat for quiz generation)
+                let markdownSummary = mergedLessons.map((lesson: any) => {
+                    let md = `## ${lesson.lesson_title}\n\n${lesson.detailed_explanation || ''}`;
+                    if (lesson.rules && lesson.rules.length > 0) {
+                        md += '\n\n### القواعد:\n' + lesson.rules.map((r: string) => `- ${r}`).join('\n');
+                    }
+                    return md;
+                }).join('\n\n---\n\n');
+
+                // Enforce max limit
                 const MAX_SUMMARY_CHARS = 100000;
-                if (merged.length > MAX_SUMMARY_CHARS) {
-                    console.warn(`[Analyze] Summary too long (${merged.length} chars). Truncating to ${MAX_SUMMARY_CHARS}.`);
-                    merged = merged.substring(0, MAX_SUMMARY_CHARS) + '\n\n---\n⚠️ تم اقتطاع الملخص (تجاوز الحد الأقصى 100,000 حرف)';
+                if (markdownSummary.length > MAX_SUMMARY_CHARS) {
+                    markdownSummary = markdownSummary.substring(0, MAX_SUMMARY_CHARS) + '\n\n---\n⚠️ تم اقتطاع الملخص';
                 }
-                payload.summary = merged;
+
+                payload.summary = markdownSummary;
+                payload.lessons = mergedLessons;
 
                 return await advanceStage('generating_quiz_focus', 60, { payload });
             }
@@ -741,6 +783,7 @@ ${quizSourceContent}`;
 
                 const analysisResult = {
                     summary,
+                    lessons: payload.lessons || [],
                     focusPoints: quizParsed.focusPoints || [],
                     quizzes: quizParsed.quizzes || [],
                     essayQuestions: quizParsed.essayQuestions || [],
@@ -749,7 +792,7 @@ ${quizSourceContent}`;
                         totalTokens: payload.totalTokens || 0,
                         lecturesDetected: payload.lectureCount || 0,
                         generatedAt: new Date().toISOString(),
-                        schemaVersion: 10
+                        schemaVersion: 11
                     }
                 };
 
