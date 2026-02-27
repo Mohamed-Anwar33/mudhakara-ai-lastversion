@@ -52,8 +52,8 @@ function repairTruncatedJSON(raw: string): any | null {
     try { return JSON.parse(fixed); } catch { return null; }
 }
 
-async function callGeminiText(prompt: string, apiKey: string): Promise<{ text: string; tokens: number }> {
-    const maxAttempts = 4;
+async function callGeminiText(prompt: string, apiKey: string, signal?: AbortSignal): Promise<{ text: string; tokens: number }> {
+    const maxAttempts = 2; // Reduced from 4
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
         try {
             const response = await fetch(
@@ -64,7 +64,8 @@ async function callGeminiText(prompt: string, apiKey: string): Promise<{ text: s
                     body: JSON.stringify({
                         contents: [{ parts: [{ text: prompt }] }],
                         generationConfig: { temperature: 0.2, maxOutputTokens: 65536 }
-                    })
+                    }),
+                    signal
                 }
             );
 
@@ -73,7 +74,7 @@ async function callGeminiText(prompt: string, apiKey: string): Promise<{ text: s
             if (!response.ok) {
                 if (response.status === 429 || response.status >= 500) {
                     if (attempt < maxAttempts - 1) {
-                        const delay = Math.min(Math.pow(2, attempt) * 2000, 20000);
+                        const delay = Math.min(Math.pow(2, attempt) * 2000, 10000);
                         console.warn(`[Gemini Text] ${response.status} Error. Retrying in ${delay / 1000}s...`);
                         await new Promise(res => setTimeout(res, delay));
                         continue;
@@ -87,13 +88,16 @@ async function callGeminiText(prompt: string, apiKey: string): Promise<{ text: s
             const tokens = data.usageMetadata?.totalTokenCount || 0;
             return { text, tokens };
         } catch (error: any) {
+            if (error.name === 'AbortError') {
+                throw new Error('Timeout');
+            }
             if (attempt < maxAttempts - 1 && (
                 error.message.includes('fetch') ||
                 error.message.includes('network') ||
                 error.message.includes('429') ||
                 error.message.includes('503')
             )) {
-                const delay = Math.min(Math.pow(2, attempt) * 2000, 20000);
+                const delay = Math.min(Math.pow(2, attempt) * 2000, 10000);
                 console.warn(`[Gemini Text] Retry ${attempt + 1}: ${(delay / 1000).toFixed(1)}s...`);
                 await new Promise(res => setTimeout(res, delay));
                 continue;
@@ -104,8 +108,8 @@ async function callGeminiText(prompt: string, apiKey: string): Promise<{ text: s
     throw new Error('callGeminiText failed after max retries');
 }
 
-async function callGeminiJSON(prompt: string, apiKey: string): Promise<{ parsed: any; tokens: number }> {
-    const maxAttempts = 4;
+async function callGeminiJSON(prompt: string, apiKey: string, signal?: AbortSignal): Promise<{ parsed: any; tokens: number }> {
+    const maxAttempts = 2; // Reduced internal attempts to prevent hanging
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
         try {
             const response = await fetch(
@@ -116,7 +120,8 @@ async function callGeminiJSON(prompt: string, apiKey: string): Promise<{ parsed:
                     body: JSON.stringify({
                         contents: [{ parts: [{ text: prompt }] }],
                         generationConfig: { temperature: 0.2, maxOutputTokens: 65536, responseMimeType: 'application/json' }
-                    })
+                    }),
+                    signal
                 }
             );
 
@@ -125,7 +130,7 @@ async function callGeminiJSON(prompt: string, apiKey: string): Promise<{ parsed:
             if (!response.ok) {
                 if (response.status === 429 || response.status >= 500) {
                     if (attempt < maxAttempts - 1) {
-                        const delay = Math.min(Math.pow(2, attempt) * 2000, 30000);
+                        const delay = Math.min(Math.pow(2, attempt) * 2000, 10000);
                         console.warn(`[Gemini JSON] ${response.status} Error. Retrying in ${delay / 1000}s...`);
                         await new Promise(res => setTimeout(res, delay));
                         continue;
@@ -144,13 +149,16 @@ async function callGeminiJSON(prompt: string, apiKey: string): Promise<{ parsed:
             const tokens = data.usageMetadata?.totalTokenCount || 0;
             return { parsed, tokens };
         } catch (error: any) {
+            if (error.name === 'AbortError') {
+                throw new Error('Timeout');
+            }
             if (attempt < maxAttempts - 1 && (
                 error.message.includes('fetch') ||
                 error.message.includes('network') ||
                 error.message.includes('429') ||
                 error.message.includes('503')
             )) {
-                const delay = Math.min(Math.pow(2, attempt) * 2000, 20000);
+                const delay = Math.min(Math.pow(2, attempt) * 2000, 10000);
                 console.warn(`[Gemini JSON] Retry ${attempt + 1}: ${(delay / 1000).toFixed(1)}s...`);
                 await new Promise(res => setTimeout(res, delay));
                 continue;
@@ -482,8 +490,16 @@ serve(async (req) => {
                     const prompt = `أنت خبير أكاديمي. بناءً على هذه الملخصات للدروس (والتي تمثل كتاباً كاملاً)، اكتب "نظرة عامة" شاملة للكتاب ككل في 3-5 فقرات.
 المحتوى:
 ${concatenatedSummary.substring(0, 80000)}`;
-                    const overviewResult = await callGeminiText(prompt, geminiKey);
-                    finalSummary = overviewResult.text;
+                    const ac = new AbortController();
+                    const timeoutId = setTimeout(() => ac.abort(), 120000); // 2 minutes max for overview
+                    try {
+                        const overviewResult = await callGeminiText(prompt, geminiKey, ac.signal);
+                        finalSummary = overviewResult.text;
+                    } catch (e: any) {
+                        console.warn(`[Analyze] Overview generation failed/timed out: ${e.message}`);
+                    } finally {
+                        clearTimeout(timeoutId);
+                    }
                 }
 
                 await supabase.from('book_analysis').upsert({
@@ -640,6 +656,11 @@ ${concatenatedSummary.substring(0, 80000)}`;
                 console.log(`[Analyze] Summarizing batch ${batchIndex + 1}/${batches.length} (${contentChars} chars) via JSON...`);
 
                 let bestResult: { parsed: any; tokens: number } = { parsed: null, tokens: 0 };
+
+                // Calculate safe time remaining for Gemini fetch (leave 15s buffer for DB updates)
+                const timeRemaining = Math.max(10000, EDGE_TIMEOUT_MS - (Date.now() - edgeFunctionStartTime));
+                const safeTimeout = timeRemaining - 15000 > 0 ? timeRemaining - 15000 : 30000;
+
                 for (let attempt = 0; attempt < 2; attempt++) {
                     const isRetry = attempt > 0;
                     const prompt = buildSummaryPrompt(content, batchIndex + 1, batches.length, payload.hasAudio, isRetry);
@@ -654,8 +675,11 @@ ${concatenatedSummary.substring(0, 80000)}`;
                             .catch((e: any) => console.error(`[Analyze] Heartbeat catch error: ${e.message}`));
                     }, 3 * 60 * 1000); // 3 minutes
 
+                    const ac = new AbortController();
+                    const timeoutId = setTimeout(() => ac.abort(), safeTimeout);
+
                     try {
-                        const result = await callGeminiJSON(prompt, geminiKey);
+                        const result = await callGeminiJSON(prompt, geminiKey, ac.signal);
                         bestResult = result;
 
                         const lessons = result.parsed?.lessons || [];
@@ -669,23 +693,36 @@ ${concatenatedSummary.substring(0, 80000)}`;
                             console.warn(`[Analyze] ⚠️ Batch ${batchIndex + 1}: too few lessons (${lessons.length}). Retrying...`);
                         }
                     } catch (jsonErr: any) {
+                        if (jsonErr.message === 'Timeout' || jsonErr.name === 'AbortError') {
+                            console.warn(`[Analyze] ⏰ Gemini call timed out (took too long). Saving progress and exiting to await next orchestrator dispatch.`);
+                            return await advanceStage('summarizing_batch_i', progress, { payload, extraction_cursor: batchIndex });
+                        }
                         console.warn(`[Analyze] ⚠️ Batch ${batchIndex + 1} JSON failed: ${jsonErr.message}. Falling back to text...`);
                         // Fallback: use callGeminiText and wrap in a simple lesson object
-                        const textResult = await callGeminiText(prompt, geminiKey);
-                        bestResult = {
-                            parsed: {
-                                module_title: `الجزء ${batchIndex + 1}`,
-                                lessons: [{
-                                    lesson_title: `محتوى الجزء ${batchIndex + 1}`,
-                                    detailed_explanation: textResult.text,
-                                    rules: [],
-                                    examples: []
-                                }]
-                            },
-                            tokens: textResult.tokens
-                        };
+                        try {
+                            const textResult = await callGeminiText(prompt, geminiKey, ac.signal);
+                            bestResult = {
+                                parsed: {
+                                    module_title: `الجزء ${batchIndex + 1}`,
+                                    lessons: [{
+                                        lesson_title: `محتوى الجزء ${batchIndex + 1}`,
+                                        detailed_explanation: textResult.text,
+                                        rules: [],
+                                        examples: []
+                                    }]
+                                },
+                                tokens: textResult.tokens
+                            };
+                        } catch (textErr: any) {
+                            if (textErr.message === 'Timeout' || textErr.name === 'AbortError') {
+                                console.warn(`[Analyze] ⏰ Gemini fallback text call timed out. Saving progress and exiting.`);
+                                return await advanceStage('summarizing_batch_i', progress, { payload, extraction_cursor: batchIndex });
+                            }
+                            throw textErr; // rethrow if network issue
+                        }
                         break;
                     } finally {
+                        clearTimeout(timeoutId);
                         // 🧹 ALWAYS clean up the interval to avoid memory leaks (User Tip)
                         clearInterval(heartbeatInterval);
                     }
@@ -792,15 +829,36 @@ ${quizSourceContent}`;
 
                 const retryText = quizSourceContent.substring(0, 60000); // For failure retry
                 let parsed: any;
+
+                // Calculate safe time remaining for Gemini fetch (leave 15s buffer for DB updates)
+                const timeRemaining = Math.max(10000, EDGE_TIMEOUT_MS - (Date.now() - edgeFunctionStartTime));
+                const safeTimeout = timeRemaining - 15000 > 0 ? timeRemaining - 15000 : 30000;
+                const ac = new AbortController();
+                const timeoutId = setTimeout(() => ac.abort(), safeTimeout);
+
                 try {
-                    const quizResult = await callGeminiJSON(quizPrompt, geminiKey);
+                    const quizResult = await callGeminiJSON(quizPrompt, geminiKey, ac.signal);
                     parsed = normalizeQuizResponse(quizResult.parsed);
                     payload.totalTokens = (payload.totalTokens || 0) + quizResult.tokens;
                 } catch (e: any) {
+                    if (e.message === 'Timeout' || e.name === 'AbortError') {
+                        console.warn(`[Analyze] ⏰ Quiz generation timed out. Saving progress and exiting.`);
+                        return await advanceStage('generating_quiz_focus', progress, { payload });
+                    }
                     console.warn(`[Analyze] Quiz full failed: ${e.message}. Retrying truncated...`);
-                    const fall = await callGeminiJSON(quizPrompt.replace(quizSourceContent, retryText), geminiKey);
-                    parsed = normalizeQuizResponse(fall.parsed);
-                    payload.totalTokens = (payload.totalTokens || 0) + fall.tokens;
+                    try {
+                        const fall = await callGeminiJSON(quizPrompt.replace(quizSourceContent, retryText), geminiKey, ac.signal);
+                        parsed = normalizeQuizResponse(fall.parsed);
+                        payload.totalTokens = (payload.totalTokens || 0) + fall.tokens;
+                    } catch (fallErr: any) {
+                        if (fallErr.message === 'Timeout' || fallErr.name === 'AbortError') {
+                            console.warn(`[Analyze] ⏰ Quiz generation fallback timed out. Saving progress and exiting.`);
+                            return await advanceStage('generating_quiz_focus', progress, { payload });
+                        }
+                        throw fallErr; // Let the global error handler log it as failed
+                    }
+                } finally {
+                    clearTimeout(timeoutId);
                 }
 
                 payload.quizParsed = parsed;
