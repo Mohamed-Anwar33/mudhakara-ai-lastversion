@@ -72,31 +72,39 @@ serve(async (req) => {
 
             const lectureContent = String(analysisData.explanation_notes || '').substring(0, 150000); // Guard big notes
 
-            const prompt = `بناءً على هذا الملخص التعليمي، صمم اختباراً شاملاً للدرس.
-            يجب أن يركز الاختبار على النقاط التي وُضِعت تحت علامة "TEACHER FOCUS" (إن وجدت).
+            const prompt = `استناداً إلى الملخص التعليمي التفصيلي التالي، صمم بنك أسئلة شامل للدرس للطلاب.
+            يجب أن يركز الاختبار بشدة على النقاط التي وُضِعت تحت علامة "TEACHER FOCUS" (إن وجدت).
 
-            المطلوب إخراج JSON بالشكل التالي حصراً:
+            المطلوب إخراج JSON بالشكل التالي حصراً واختبارات قوية وليست سطحية:
             {
-               "focus_points": [ {"title": "كذا", "details": "كذا"} ],
                "quizzes": [
                   {
                     "question": "نص السؤال",
                     "type": "mcq",
-                    "options": ["أ", "ب", "ج", "د"],
+                    "options": ["خيار 1", "خيار 2", "خيار 3", "خيار 4"],
                     "correctAnswer": 0,
-                    "explanation": "شرح الإجابة"
+                    "explanation": "شرح الإجابة ولماذا هي صحيحة"
+                  },
+                  {
+                    "question": "نص سؤال صح أو خطأ",
+                    "type": "tf",
+                    "options": ["صح", "خطأ"],
+                    "correctAnswer": 1,
+                    "explanation": "لماذا العبارة خاطئة أو صحيحة"
                   }
                ],
-               "essay_questions": [
-                  { "question": "", "idealAnswer": "" }
+               "essayQuestions": [
+                  { "question": "السؤال المقالي العميق", "idealAnswer": "الإجابة النموذجية المرجعية" }
                ]
             }
 
-            قواعد: 
-            - 10-15 سؤال اختياري
-            - 3-5 أسئلة مقالية
-            - 5 أهداف تركيز (focus_points)
-            - Options مصفوفة من 4. correctAnswer هو المؤشر 0، 1، 2، أو 3.
+            قواعد صارمة جداً: 
+            - يجب أن تولّد من 10 إلى 15 سؤال موضوعي (quizzes) مقسمة بين اختياري (mcq) وصح/خطأ (tf).
+            - يجب أن تولّد من 3 إلى 5 أسئلة مقالية (essayQuestions) تقيس الفهم العميق.
+            - بالنسبة لأسئلة الاختياري (mcq)، يجب أن تكون مجموعة (options) تحتوي على 4 نصوص.
+            - بالنسبة لأسئلة الصح/الخطأ (tf)، يجب أن تكون مجموعة (options) تحتوي على نصين فقط: ["صح", "خطأ"].
+            - قيمة correctAnswer هي دائماً رقم (Index) (0, 1, 2, 3).
+            - لا تقم بإنشاء أي مفاتيح أخرى.
 
             النص:
             ${lectureContent}`;
@@ -105,8 +113,7 @@ serve(async (req) => {
 
             // Merge Quiz deeply with existing Note JSON inside storage
             analysisData.quizzes = quizJson.quizzes || [];
-            analysisData.focusPoints = quizJson.focus_points || [];
-            analysisData.essayQuestions = quizJson.essay_questions || [];
+            analysisData.essayQuestions = quizJson.essayQuestions || [];
 
             // Overwrite JSON in Storage
             const { error: storageErr } = await supabase.storage.from('analysis')

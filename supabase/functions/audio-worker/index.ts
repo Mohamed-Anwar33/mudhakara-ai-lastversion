@@ -68,57 +68,19 @@ serve(async (req) => {
             const storagePath = `audio_transcripts/${lesson_id}/raw_transcript.txt`;
             await supabase.storage.from('audio_transcripts').upload(storagePath, fullTranscript, { upsert: true, contentType: 'text/plain;charset=UTF-8' });
 
-            // Chunk & Embed to Vector DB
-            // Normally, calling text-embedding-ada-002 here for each segment. Simulated insert:
-            const insertPayloads = segments.map((seg: any, index: number) => ({
-                lesson_id: lesson_id,
-                chunk_index: index,
-                start_time: seg.start,
-                end_time: seg.end,
-                storage_path: storagePath,
-                // embedding: would go here 
-            }));
+            // Since analyze-lesson now uses the LLM Semantic Matcher to dynamically read 
+            // this raw_transcript.txt file from the bucket, we do not need to generate
+            // vector embeddings or run the cosine similarity RPC anymore.
 
-            await supabase.from('audio_transcripts').insert(insertPayloads);
+            console.log(`[audio-worker] Successfully transcribed and saved audio for lesson ${lesson_id}.`);
 
             // Audio complete, mark done.
             await supabase.from('processing_queue').update({ status: 'completed' }).eq('id', jobId);
 
-            // Important: Queue Focus extraction if OCR is done
-            const { data: pendingOcr } = await supabase.from('processing_queue')
-                .select('id').eq('lesson_id', lesson_id).eq('job_type', 'ocr_page_batch').in('status', ['pending', 'processing']);
-
-            if (!pendingOcr || pendingOcr.length === 0) {
-                // If OCR is finished, we can run intersection!
-                await supabase.from('processing_queue').insert({
-                    lesson_id: lesson_id,
-                    job_type: 'extract_audio_focus',
-                    status: 'pending'
-                });
-            }
+            // We no longer trigger 'extract_audio_focus'
+            // The pipeline will naturally proceed to segment_lesson and analyze_lecture
 
             return new Response(JSON.stringify({ status: 'completed', chunk_count: segments.length }), { headers: corsHeaders });
-        }
-
-
-        // 2. Focus Extraction (Cross-referencing Audio X Text)
-        if (job_type === 'extract_audio_focus') {
-            // Call the RPC that calculates Cosine Similarity!
-            console.log(`[audio-worker] Running match_focus_points RPC for lesson ${lesson_id}...`);
-            const { error: rpcErr } = await supabase.rpc('match_focus_points', { p_lesson_id: lesson_id, p_similarity_threshold: 0.78 });
-
-            if (rpcErr) throw new Error(`Focus Matching RPC Failed: ${rpcErr.message}`);
-
-            // Queue Segmenter now that Focus is ready
-            await supabase.from('processing_queue').insert({
-                lesson_id: lesson_id,
-                job_type: 'segment_lesson',
-                status: 'pending',
-                dedupe_key: `lesson:${lesson_id}:segment_lesson`
-            });
-
-            await supabase.from('processing_queue').update({ status: 'completed' }).eq('id', jobId);
-            return new Response(JSON.stringify({ status: 'completed' }), { headers: corsHeaders });
         }
 
         throw new Error(`Unhandled job type: ${job_type}`);

@@ -112,6 +112,22 @@ serve(async (req) => {
                     }
                 }
 
+                // --- NEW LOGIC: Intelligent LLM Audio Matcher ---
+                let audioContext = "";
+                try {
+                    const audioPath = `audio_transcripts/${lesson_id}/raw_transcript.txt`;
+                    const { data: audioBlob } = await supabase.storage.from('audio_transcripts').download(audioPath);
+                    if (audioBlob) {
+                        audioContext = await audioBlob.text();
+                        console.log(`[analyze-lesson] Found Audio Transcript (${audioContext.length} chars). Injecting for Semantic Focus Matching.`);
+                    }
+                } catch (e) {
+                    // It's perfectly fine if there is no audio file uploaded for this lesson.
+                    console.log(`[analyze-lesson] No Audio Transcript found for lesson ${lesson_id}. Proceeding as Text-Only.`);
+                }
+                payload.audio_context = audioContext; // Save into payload to pass it to the Map stage
+                // ------------------------------------------------
+
                 if (rawTextChunks.length === 0) {
                     // Empty section, skip
                     await supabase.from('segmented_lectures').update({ status: 'quiz_done' }).eq('id', payload.lecture_id);
@@ -163,21 +179,37 @@ serve(async (req) => {
                 }
 
                 const content = batches[cursor];
+                const audioContext = payload.audio_context || "";
 
-                const prompt = `You are a University Professor compiling notes. You have the textbook text covering a chunk of the lesson.
-                 Crucially, text segments highlighted with [TEACHER FOCUS] represent parts mathematically proven to have high vector similarity with the teacher's verbal emphasis.
+                let focusPromptInjection = "";
+                if (audioContext.length > 50) {
+                    focusPromptInjection = `\n--- الشرح الصوتي للمعلم (Transcript) ---\n${audioContext}\n
+                    عليك كأستاذ تحليل هذا النص الصوتي. كلما رأيت أن المعلم ركز على نقطة معينة في صوته وموجودة أيضاً في "نص المحاضرة" (الكتاب)،
+                    قم باستخراج هذه النقطة بدقة وضعها داخل المصفوفة \`focusPoints\`. اشرح في \`details\` لماذا ركز عليها المعلم وكيف ترتبط بالكتاب.`;
+                }
+
+                const prompt = `أنت أستاذ جامعي ومحلل أكاديمي خبير. لديك الان جزء من كتاب دراسي (محاضرة).
+                 ملاحظة هامة جداً: النصوص المظللة بعلامة [TEACHER FOCUS] تمثل مقاطع قرر المعلم التركيز عليها بشدة أثناء شرحه الصوتي (تم إثبات ذلك رياضياً).
+                 ${focusPromptInjection}
                  
-                 1. Write an exhaustive explanatory Markdown notes integrating both book info and teacher's focus. 
-                 2. Distinctly highlight the 'TEACHER FOCUS' topics explicitly.
-                 3. Extract minimum 1500 words for this specific part, detailing all rules, facts, definitions.
+                 المطلوب منك كتابة شرح تفصيلي وعميق جداً لهذا الجزء، مع دمج معلومات الكتاب مع تركيز المعلم.
+                 
+                 قواعد صارمة جداً (سيتم رفض إجابتك إن لم تتبعها):
+                 1. *الطول*: يجب ألا يقل الشرح (explanation_notes) بأي حال من الأحوال عن 3000 حرف. اشرح كل مفهوم، كل معادلة، كل تعريف بالتفصيل الممل كما لو كنت تشرح لطالب مبتدئ. استخدم الأمثلة.
+                 2. *التركيز*: يجب أن تبرز بوضوح المواضيع التي ركز عليها المعلم (سواء من علامة TEACHER FOCUS أو من تحليل النص الصوتي المرفق إن وجد) داخل الشرح.
+                 3. *إخراج الكتروني*: يجب أن يكون الشرح بصيغة Markdown منسقة (عناوين، قوائم، نصوص غامقة).
 
-                 Output strictly JSON:
+                 يجب أن يكون المخرج النهائي بصيغة JSON فقط، بالضبط هكذا:
                  {
-                   "explanation_notes": "Detailed markdown explanation here...",
-                   "key_definitions": ["def1", "def2"]
+                   "explanation_notes": "الشرح التفصيلي العميق جداً هنا بصيغة ماركداون (لا يقل أبداً عن 3000 حرف)...",
+                   "key_definitions": ["تعريف 1 تفصيلي", "تعريف 2 تفصيلي", "..."],
+                   "focusPoints": [
+                      {"title": "عنوان لنقطة التركيز 1", "details": "شرح مفصل لهذه النقطة التي ركز عليها المعلم"},
+                      {"title": "عنوان لنقطة التركيز 2", "details": "شرح مفصل للنقطة الثانية"}
+                   ]
                  }
                  
-                 --- Lesson Chunk ---
+                 --- نص المحاضرة ---
                  ${content}`;
 
                 console.log(`[analyze-lesson] Map Phase: Processing batch ${cursor + 1}/${batches.length}...`);
