@@ -306,12 +306,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 throw hashError;
             }
 
-            // New atomic pipeline: Always start with ingest_upload
+            let initialJobType = 'extract_pdf_info';
+            if (file.fileType === 'audio') initialJobType = 'transcribe_audio';
+            if (file.fileType === 'image') initialJobType = 'image_ocr';
+
+            // V2 Architecture: Direct to specialized extraction workers
             const { data: job, error: queueError } = await supabase
                 .from('processing_queue')
                 .insert({
                     lesson_id: lessonId,
-                    job_type: 'ingest_upload',
+                    job_type: initialJobType,
                     payload: {
                         file_path: filePath,
                         file_name: file.fileName,
@@ -357,14 +361,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 .from('processing_queue')
                 .select('*', { count: 'exact', head: true })
                 .eq('lesson_id', lessonId)
-                .in('job_type', ['ingest_upload', 'ingest_extract', 'ingest_chunk', 'pdf_extract', 'audio_transcribe', 'image_ocr'])
+                .in('job_type', ['extract_pdf_info', 'transcribe_audio', 'image_ocr', 'ocr_page_batch'])
                 .in('status', ['pending', 'processing']);
 
             if (!countErr && pendingExtracts === 0) {
-                // No extractions pending, safe to queue analysis
+                // No extractions pending, safe to queue segmentation (V2)
                 await supabase.from('processing_queue').insert({
                     lesson_id: lessonId,
-                    job_type: 'generate_analysis',
+                    job_type: 'segment_lesson',
                     status: 'pending'
                 });
                 await supabase
