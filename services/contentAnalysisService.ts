@@ -80,6 +80,13 @@ export async function uploadFileToStorage(
         throw new Error('Supabase غير متصل');
     }
 
+    // Force refresh the session to prevent "exp claim timestamp check failed" (403 Error)
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session) {
+        console.warn("No active session or session error, attempting to refresh...");
+        await supabase.auth.refreshSession();
+    }
+
     const timestamp = Date.now();
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
     const filePath = `${lessonId}/${timestamp}_${safeName}`;

@@ -192,6 +192,15 @@ const sanitizeFileName = (name: string) => {
 
 export const uploadHomeworkFile = async (file: File): Promise<string> => {
   try {
+    if (!supabase) throw new Error("Supabase is not initialized");
+
+    // Force refresh the session to prevent "exp claim timestamp check failed" (403 Error)
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session) {
+      console.warn("No active session or session error, attempting to refresh...");
+      await supabase.auth.refreshSession();
+    }
+
     const fileExt = file.name.split('.').pop();
     const fileName = `${Date.now()}_${sanitizeFileName(file.name)}`;
     const filePath = `${fileName}`;
