@@ -98,44 +98,97 @@ serve(async (req) => {
             }
 
             const prompt = `[تعليمات النظام — ممنوع تجاوزها]
-أنت مصمم اختبارات أكاديمية متخصص. مهمتك تصميم بنك أسئلة بناءً على الملخص التعليمي المقدم فقط.
+أنت خبير تصميم اختبارات أكاديمية جامعية. صمم بنك أسئلة ذكي ومتنوع بناءً على المحتوى التعليمي المقدم فقط.
 
-⛔ حدود صارمة مطلقة:
-1. كل سؤال يجب أن يكون مبنياً حصرياً على معلومة واردة في النص أدناه. ممنوع الاختراع.
-2. ممنوع السؤال عن عبارات تقنية أو رسائل أخطاء (مثل "No extraction possible" أو "Error" أو أي رسالة نظام).
-3. ممنوع السؤال عن مواضيع غير موجودة في النص (علم البيئة، الاحتباس الحراري، التنوع البيولوجي، إلخ).
-4. ممنوع كتابة "سؤال وهمي" أو أي عبارة placeholder.
-5. إذا لم يكن في النص محتوى كافٍ لتوليد أسئلة، أرجع: {"quizzes": [], "essayQuestions": []}
+⛔ قيود صارمة لا يمكن تجاوزها:
+1. كل سؤال يجب أن يكون مبنياً على معلومة واردة حرفياً في النص المقدم. ممنوع الاختراع أو الإضافة.
+2. ممنوع السؤال عن: "No extraction possible"، "Error"، رسائل نظام، أو أي موضوع خارج النص.
+3. كل سؤال يجب أن يكون مختلفاً تماماً عن باقي الأسئلة — ممنوع التكرار أو إعادة الصياغة.
+4. الإجابة النموذجية لكل سؤال يجب أن تكون موجودة في النص المقدم.
+5. إذا لم يكن هناك محتوى كافٍ، أرجع أقساماً فارغة.
 
-ركّز بشدة على النقاط تحت علامة "🎤 ما ذكره المعلم" (إن وجدت).
+📋 المطلوب - 3 أقسام منفصلة:
 
-المطلوب إخراج JSON بالشكل التالي حصراً:
+القسم 1: أسئلة اختيار من متعدد (MCQ) - 4 إلى 6 أسئلة (لأن هذا قسم واحد من كتاب كبير)
+- 4 خيارات لكل سؤال
+- خيار واحد صحيح فقط
+- الخيارات الخاطئة يجب أن تكون منطقية ومقنعة
+- غطّي أهم المفاهيم والتعريفات في هذا القسم
+- اسأل عن: تعريفات، مقارنات، تصنيفات، أمثلة، تطبيقات عملية
+
+القسم 2: أسئلة صح وخطأ (TF) - 2 إلى 3 أسئلة
+- عبارات تقريرية واضحة ودقيقة
+- بعضها صحيح وبعضها خاطئ
+- ركّز على: حقائق دقيقة، تفاصيل مهمة، مفاهيم سهلة الخلط
+
+القسم 3: أسئلة مقالية (Essay) - 1 إلى 2 سؤال
+- أسئلة ذكية تحتاج تفكير عميق
+- اطلب: مقارنة بين مفهومين، تحليل، شرح مفصل، ربط بين مفاهيم
+- الإجابة النموذجية تكون شاملة ومفصلة (200+ كلمة)
+
+⚠️ مهم: هذا القسم جزء من كتاب كبير — ركّز على أهم النقاط الفريدة في هذا القسم بالذات
+
+المخرج: JSON بالضبط هكذا:
 {
-   "quizzes": [
-      {"question": "نص السؤال", "type": "mcq", "options": ["خيار 1", "خيار 2", "خيار 3", "خيار 4"], "correctAnswer": 0, "explanation": "شرح الإجابة"},
-      {"question": "نص سؤال صح أو خطأ", "type": "tf", "options": ["صح", "خطأ"], "correctAnswer": 1, "explanation": "لماذا"}
+   "mcqQuestions": [
+      {"question": "سؤال", "options": ["أ", "ب", "ج", "د"], "correctAnswer": 0, "explanation": "شرح"}
+   ],
+   "tfQuestions": [
+      {"statement": "عبارة تقريرية", "isTrue": true, "explanation": "لماذا صح أو خطأ"}
    ],
    "essayQuestions": [
-      {"question": "السؤال المقالي", "idealAnswer": "الإجابة النموذجية"}
+      {"question": "السؤال المقالي", "idealAnswer": "الإجابة النموذجية الشاملة"}
    ]
 }
 
-قواعد الجودة:
-- 10-15 سؤال موضوعي (quizzes) مقسمة بين mcq و tf.
-- 3-5 أسئلة مقالية (essayQuestions) تقيس الفهم العميق.
-- أسئلة mcq: options = 4 نصوص دائماً.
-- أسئلة tf: options = ["صح", "خطأ"] فقط.
-- correctAnswer = رقم (0,1,2,3) دائماً.
-- الأسئلة أكاديمية وتختبر فهم المفاهيم العلمية الواردة في النص فقط.
-
-النص:
+النص التعليمي:
 ${lectureContent}`;
 
             const quizJson = await callGeminiJSON(prompt, geminiKey);
 
-            // Merge Quiz deeply with existing Note JSON inside storage
-            analysisData.quizzes = quizJson.quizzes || [];
-            analysisData.essayQuestions = quizJson.essayQuestions || [];
+            // Post-processing: Deduplicate questions using Set
+            const seenMcq = new Set<string>();
+            const uniqueMcq = (quizJson.mcqQuestions || []).filter((q: any) => {
+                const key = (q.question || '').trim().substring(0, 80);
+                if (!key || seenMcq.has(key)) return false;
+                seenMcq.add(key);
+                return true;
+            });
+
+            const seenTf = new Set<string>();
+            const uniqueTf = (quizJson.tfQuestions || []).filter((q: any) => {
+                const key = (q.statement || '').trim().substring(0, 80);
+                if (!key || seenTf.has(key)) return false;
+                seenTf.add(key);
+                return true;
+            });
+
+            const seenEssay = new Set<string>();
+            const uniqueEssay = (quizJson.essayQuestions || []).filter((q: any) => {
+                const key = (q.question || '').trim().substring(0, 80);
+                if (!key || seenEssay.has(key)) return false;
+                seenEssay.add(key);
+                return true;
+            });
+
+            // Convert to the storage format used by the frontend
+            // MCQ: type="mcq", TF: type="tf" 
+            const allQuizzes = [
+                ...uniqueMcq.map((q: any) => ({ ...q, type: 'mcq' })),
+                ...uniqueTf.map((q: any) => ({
+                    question: q.statement,
+                    type: 'tf',
+                    options: ['صح', 'خطأ'],
+                    correctAnswer: q.isTrue ? 0 : 1,
+                    explanation: q.explanation
+                }))
+            ];
+
+            // Merge Quiz with existing Note JSON inside storage
+            analysisData.quizzes = allQuizzes;
+            analysisData.essayQuestions = uniqueEssay;
+
+            console.log(`[quiz-generator] Generated: ${uniqueMcq.length} MCQ, ${uniqueTf.length} TF, ${uniqueEssay.length} Essay for lecture ${lecture_id}`);
 
             // Overwrite JSON in Storage
             const { error: storageErr } = await supabase.storage.from('analysis')
@@ -161,7 +214,6 @@ ${lectureContent}`;
             console.log(`[quiz-generator] Lecture ${lecture_id} Quizzes Done. Progress: ${finishedSegments}/${totalSegments}`);
 
             if (totalSegments && finishedSegments && totalSegments === finishedSegments) {
-                // If everything is done, the global aggregator (already waiting) will succeed on next lock
                 console.log(`[quiz-generator] All quizzes done for lesson ${lesson_id}!`);
             }
 

@@ -6,6 +6,26 @@ const corsHeaders = {
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// ─── Sanitization: Remove garbage text patterns ───
+function sanitizeText(text: string): string {
+    if (!text) return '';
+    // Remove known garbage patterns
+    return text
+        .replace(/No extraction possible[.\s]*/gi, '')
+        .replace(/Error:?\s*[^\n]*/gi, '')
+        .replace(/فشل التحليل[^\n]*/gi, '')
+        .replace(/خطأ غير معروف[^\n]*/gi, '')
+        .trim();
+}
+
+function isGarbageContent(text: string): boolean {
+    if (!text || text.trim().length < 50) return true;
+    const lower = text.toLowerCase().trim();
+    if (lower.includes('no extraction possible') && lower.length < 200) return true;
+    if (lower.startsWith('error') && lower.length < 100) return true;
+    return false;
+}
+
 async function callGeminiText(prompt: string, apiKey: string): Promise<string> {
     const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
@@ -54,8 +74,6 @@ serve(async (req) => {
             console.log(`[global-aggregator] Checking global status for lesson ${lesson_id}...`);
 
             // 0. SELF-HEALING: Reset any analysis/quiz jobs stuck in 'processing' for > 2 min
-            //    These are orphans from Edge Functions that crashed after orchestrator disconnected.
-            //    Instead of waiting for orphan recovery, we fix them directly.
             const stuckCutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString();
             const { data: stuckJobs } = await supabase.from('processing_queue')
                 .select('id, job_type, attempt_count')
@@ -75,7 +93,7 @@ serve(async (req) => {
                 }
             }
 
-            // Also fix any segmented_lectures stuck in 'pending' (their analyze_lecture job already completed)
+            // Also fix any segmented_lectures stuck in 'pending'
             const { data: stuckLectures } = await supabase.from('segmented_lectures')
                 .select('id')
                 .eq('lesson_id', lesson_id)
@@ -89,8 +107,6 @@ serve(async (req) => {
             }
 
             // 1. BARRIER CHECK: Are ALL analysis and quiz JOBS finished?
-            //    We check the processing_queue directly instead of segmented_lectures status
-            //    to avoid deadlock if quiz jobs fail or skip.
             const { count: pendingAnalysisOrQuiz } = await supabase.from('processing_queue')
                 .select('*', { count: 'exact', head: true })
                 .eq('lesson_id', lesson_id)
@@ -101,7 +117,6 @@ serve(async (req) => {
                 .select('*', { count: 'exact', head: true })
                 .eq('lesson_id', lesson_id);
 
-            // Also count how many are done (quiz_done OR summary_done with no quiz job pending)
             const { count: finishedSegments } = await supabase.from('segmented_lectures')
                 .select('*', { count: 'exact', head: true })
                 .eq('lesson_id', lesson_id)
@@ -121,7 +136,7 @@ serve(async (req) => {
 
             console.log(`[global-aggregator] All jobs done! ${finishedSegments}/${totalSegments} segments. Proceeding to aggregate.`);
 
-            // 2. We are clear! Pull ALL lecture data for full aggregation
+            // 2. Pull ALL lecture data for full aggregation
             const { data: lectures } = await supabase.from('segmented_lectures')
                 .select('title, summary_storage_path, start_page')
                 .eq('lesson_id', lesson_id)
@@ -133,6 +148,10 @@ serve(async (req) => {
             const allQuizzes: any[] = [];
             const allFocusPoints: any[] = [];
             const allEssayQuestions: any[] = [];
+            // Deduplication sets to prevent duplicate content
+            const seenQuizQuestions = new Set<string>();
+            const seenFocusTitles = new Set<string>();
+            const seenEssayTitles = new Set<string>();
 
             for (const lec of (lectures || [])) {
                 indexMap.topics.push({ title: lec.title });
@@ -144,21 +163,58 @@ serve(async (req) => {
                         const text = await fileData.text();
                         const json = JSON.parse(text);
 
-                        // Aggregate for Gemini overview prompt (truncated)
-                        megaContext += `\n--- Lecture: ${lec.title} ---\n` + (json.explanation_notes || '').substring(0, 3000);
+                        // SANITIZE: Clean garbage text before aggregation
+                        const cleanExplanation = sanitizeText(json.explanation_notes || '');
 
-                        // Aggregate full lesson data for analysis_result
-                        if (json.explanation_notes) {
-                            allLessons.push({
-                                lesson_title: json.title || lec.title || 'محاضرة',
-                                detailed_explanation: json.explanation_notes,
-                                rules: json.key_definitions || [],
-                                examples: []
-                            });
+                        // Skip garbage content entirely
+                        if (isGarbageContent(cleanExplanation)) {
+                            console.warn(`[global-aggregator] Skipping lecture "${lec.title}" — garbage/empty content.`);
+                            continue;
                         }
-                        if (json.quizzes) allQuizzes.push(...json.quizzes);
-                        if (json.focusPoints) allFocusPoints.push(...json.focusPoints);
-                        if (json.essayQuestions) allEssayQuestions.push(...json.essayQuestions);
+
+                        // Aggregate for Gemini overview prompt (truncated)
+                        megaContext += `\n--- Lecture: ${lec.title} ---\n` + cleanExplanation.substring(0, 3000);
+
+                        // Aggregate full lesson data — NO DUPLICATES
+                        allLessons.push({
+                            lesson_title: json.title || lec.title || 'محاضرة',
+                            detailed_explanation: cleanExplanation,
+                            rules: json.key_definitions || [],
+                            examples: []
+                        });
+
+                        // Deduplicate quizzes
+                        if (json.quizzes) {
+                            for (const q of json.quizzes) {
+                                const key = (q.question || q.text || '').trim().substring(0, 80);
+                                if (key && !seenQuizQuestions.has(key)) {
+                                    seenQuizQuestions.add(key);
+                                    allQuizzes.push(q);
+                                }
+                            }
+                        }
+
+                        // Deduplicate focus points
+                        if (json.focusPoints) {
+                            for (const fp of json.focusPoints) {
+                                const key = (fp.title || '').trim();
+                                if (key && !seenFocusTitles.has(key)) {
+                                    seenFocusTitles.add(key);
+                                    allFocusPoints.push(fp);
+                                }
+                            }
+                        }
+
+                        // Deduplicate essay questions
+                        if (json.essayQuestions) {
+                            for (const eq of json.essayQuestions) {
+                                const key = (eq.question || eq.title || '').trim().substring(0, 80);
+                                if (key && !seenEssayTitles.has(key)) {
+                                    seenEssayTitles.add(key);
+                                    allEssayQuestions.push(eq);
+                                }
+                            }
+                        }
                     }
                 } catch (e: any) {
                     console.warn(`[global-aggregator] Failed to parse lecture data for ${lec.title}: ${e.message}`);
@@ -186,11 +242,12 @@ serve(async (req) => {
                 metadata: { generatedAt: new Date().toISOString() }
             };
 
-            // Include aggregated per-lecture data so the frontend has everything
             if (allLessons.length > 0) analysisResult.lessons = allLessons;
             if (allQuizzes.length > 0) analysisResult.quizzes = allQuizzes;
             if (allFocusPoints.length > 0) analysisResult.focusPoints = allFocusPoints;
             if (allEssayQuestions.length > 0) analysisResult.essayQuestions = allEssayQuestions;
+
+            console.log(`[global-aggregator] Final result: ${allLessons.length} lessons, ${allQuizzes.length} unique quizzes, ${allFocusPoints.length} focus points, ${allEssayQuestions.length} essay questions`);
 
             const { error: updateError } = await supabase.from('lessons')
                 .update({

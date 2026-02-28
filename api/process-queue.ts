@@ -118,7 +118,6 @@ async function executeEdgeFunctionStep(supabaseUrl: string, serviceKey: string, 
 
     const controller = new AbortController();
     // Vercel Free = 10s max. Keep 3.5s for overhead → 6.5s for Edge Function call.
-    // If Edge Function takes longer, we disconnect. It will update DB directly.
     const timeoutId = setTimeout(() => controller.abort(), 6500);
 
     try {
@@ -139,7 +138,6 @@ async function executeEdgeFunctionStep(supabaseUrl: string, serviceKey: string, 
             throw new Error(`Edge Function returned ${res.status}: ${errorText}`);
         }
 
-        // Attempt to parse JSON response
         let data;
         try {
             data = await res.json();
@@ -153,11 +151,6 @@ async function executeEdgeFunctionStep(supabaseUrl: string, serviceKey: string, 
         clearTimeout(timeoutId);
 
         if (error.name === 'AbortError') {
-            // Fire-and-forget: Edge Function is still running in the background.
-            // It will update the DB directly when done. This is expected on Free plan.
-            // CRITICAL FIX: Release the lock immediately so the job isn't stuck for 8 minutes.
-            // Keep status='processing' so no other worker claims it — the Edge Function
-            // will call advanceStage() which sets status='pending' when the stage completes.
             console.log(`[Orchestrator] Edge Function still running (>8s). Disconnecting gracefully. Releasing lock.`);
             return { status: 'dispatched', message: 'Edge function triggered but still running', unlockNeeded: true };
         }
@@ -176,13 +169,11 @@ async function processSingleJob(supabase: any, job: any, workerId: string, supab
         // V2 Architecture Route Mapping
         if (['extract_pdf_info', 'ocr_page_batch'].includes(job.job_type)) {
             endpoint = 'ocr-worker';
-            // Only update stage if it's the main entry job, not batches (to prevent redundant updates)
             if (job.job_type === 'extract_pdf_info') {
                 await supabase.from('lessons').update({ pipeline_stage: 'extracting_text' }).eq('id', job.lesson_id);
             }
         } else if (['transcribe_audio', 'extract_audio_focus'].includes(job.job_type)) {
             endpoint = 'audio-worker';
-            // Audio processing usually runs parallel to extracting_text
         } else if (['segment_lesson'].includes(job.job_type)) {
             endpoint = 'segmentation-worker';
             await supabase.from('lessons').update({ pipeline_stage: 'segmenting_content' }).eq('id', job.lesson_id);
@@ -197,10 +188,8 @@ async function processSingleJob(supabase: any, job: any, workerId: string, supab
         } else if (['extract_text_range'].includes(job.job_type)) {
             endpoint = 'extract-text-node';
         } else if (['ingest_upload', 'ingest_extract', 'ingest_chunk', 'pdf_extract', 'audio_transcribe', 'image_ocr', 'embed_sections', 'extract_toc', 'build_lecture_segments', 'ocr_range', 'chunk_lecture', 'embed_lecture'].includes(job.job_type)) {
-            // Legacy fallbacks
             endpoint = 'ingest-file';
         } else if (['generate_analysis', 'generate_book_overview'].includes(job.job_type)) {
-            // Legacy fallbacks
             endpoint = 'analyze-lesson';
         } else if (job.job_type === 'book_segment') {
             throw new Error('Book Segmentation logic moved to segment_lesson');
@@ -216,16 +205,12 @@ async function processSingleJob(supabase: any, job: any, workerId: string, supab
             result = await executeEdgeFunctionStep(supabaseUrl, serviceKey, endpoint, job.id);
         }
 
-        // If the Edge Function was dispatched (fire-and-forget due to >8s timeout),
-        // release the lock but keep status='processing' so no other worker claims it.
-        // The Edge Function will call advanceStage() → status='pending' when done.
-        // This prevents the job from being stuck as locked for 8+ minutes.
+        // If dispatched (fire-and-forget), release lock but keep processing
         if (result?.status === 'dispatched' && result?.unlockNeeded) {
             await supabase.from('processing_queue').update({
                 locked_by: null,
                 locked_at: null,
                 updated_at: new Date().toISOString()
-                // status stays 'processing' — Edge Function is still working on it
             }).eq('id', job.id);
         } else if (result?.status !== 'dispatched') {
             await unlockJob(supabase, job.id);
@@ -251,7 +236,6 @@ async function processSingleJob(supabase: any, job: any, workerId: string, supab
                 locked_at: null
             }).eq('id', job.id);
 
-            // Fail the entire lesson if a critical job fails permanently
             if (['extract_pdf_info', 'transcribe_audio', 'segment_lesson', 'analyze_lecture', 'finalize_global_summary'].includes(job.job_type)) {
                 await supabase.from('lessons').update({
                     analysis_status: 'failed',
@@ -259,7 +243,6 @@ async function processSingleJob(supabase: any, job: any, workerId: string, supab
                 }).eq('id', job.lesson_id);
             }
         } else {
-            // Unlocking it so it can retry, we rely on attempt_count to be set properly elsewhere or above 
             await unlockJob(supabase, job.id, 'pending');
         }
 
@@ -286,12 +269,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
         const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
-        // Enforce maxJobs = 1 so the orchestration is extremely lightweight
         const maxJobs = 1;
 
-        // Fallback cleanup for locked jobs older than 3 minutes.
-        // Reduced from 8 to 3 min: since we now release locks on disconnect,
-        // any job still locked after 3 min is truly stuck (Edge Function crashed).
+        // Fallback cleanup for locked jobs older than 3 minutes
         const staleLockCutoff = new Date(Date.now() - 3 * 60 * 1000).toISOString();
         const { data: staleJobs } = await supabase
             .from('processing_queue')
@@ -305,7 +285,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             for (const stale of staleJobs) {
                 const currentAttempts = Number(stale.attempt_count || 0);
                 if (currentAttempts >= 5) {
-                    // Atomic: only update if still locked (prevents race with other workers)
                     const { data: claimed } = await supabase.from('processing_queue')
                         .update({ status: 'failed', error_message: 'Background processing timeout exceeded multiple times', locked_by: null, locked_at: null })
                         .eq('id', stale.id)
@@ -324,10 +303,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         // ═══ ORPHANED JOB RECOVERY ═══
-        // Jobs stuck in 'processing' with NO lock holder (locked_by IS NULL)
-        // and not updated in 3+ minutes are orphaned — Edge Function crashed/timed out.
-        // Reduced from 10 → 3 min: Most Gemini calls finish in 30-90s.
-        // Keeping it at 3 min to be safe while preventing long barrier waits.
+        // Jobs stuck in 'processing' with NO lock and not updated in 3+ minutes
         const orphanCutoff = new Date(Date.now() - 3 * 60 * 1000).toISOString();
         const { data: orphanedJobs } = await supabase
             .from('processing_queue')
@@ -341,7 +317,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             for (const orphan of orphanedJobs) {
                 const attempts = Number(orphan.attempt_count || 0);
                 if (attempts >= 5) {
-                    // Atomic: only claim if still in 'processing' status (prevents race)
                     const { data: claimed } = await supabase.from('processing_queue')
                         .update({ status: 'failed', error_message: 'Orphaned job exceeded recovery attempts', locked_by: null, locked_at: null })
                         .eq('id', orphan.id)
@@ -349,9 +324,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                         .select('id').maybeSingle();
                     if (claimed) console.log(`[${workerId}] Orphaned job ${orphan.id} marked as FAILED (${attempts} attempts).`);
                 } else {
-                    // Atomic reset: only one worker can transition from 'processing' to 'pending'
-                    // DO NOT increment attempt_count here — orphan recovery is not a real execution.
-                    // Only real execution failures (in processSingleJob) should increment attempts.
                     const { data: claimed } = await supabase.from('processing_queue')
                         .update({ status: 'pending', locked_by: null, locked_at: null })
                         .eq('id', orphan.id)
@@ -365,7 +337,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const startedAt = Date.now();
         const processedJobs: Array<Record<string, any>> = [];
 
-        // 2. Loop and claim just 1 job (maxJobs=1 enforces fast exit)
         for (let i = 0; i < maxJobs; i++) {
             const jobId = await acquireJobId(supabase, workerId);
             if (!jobId) {
@@ -385,8 +356,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             }
 
             console.log(`[${workerId}] Orchestrating ${job.job_type} (${job.id})`);
-
-            // This is the core handoff. processSingleJob awaits the quick Edge Function response (max 20s)
             processedJobs.push(await processSingleJob(supabase, job, workerId, supabaseUrl, serviceKey));
         }
 

@@ -43,30 +43,48 @@ const GARBAGE_PATTERNS = [
 function sanitizeOcrText(text: string): string | null {
     if (!text || typeof text !== 'string') return null;
 
-    const trimmed = text.trim();
+    let cleaned = text.trim();
 
     // Too short = no useful content
-    if (trimmed.length < 50) {
-        console.log(`[sanitize] Skipping chunk: too short (${trimmed.length} chars)`);
+    if (cleaned.length < 50) {
+        console.log(`[sanitize] Skipping chunk: too short (${cleaned.length} chars)`);
         return null;
     }
 
-    // Check for garbage patterns
+    // STRIP garbage patterns from WITHIN the text (not just reject the whole chunk)
+    // This handles the case where 1 garbage page is merged into a batch of 5-10 valid pages
     for (const pattern of GARBAGE_PATTERNS) {
-        if (pattern.test(trimmed)) {
-            console.log(`[sanitize] Skipping chunk: matches garbage pattern ${pattern}`);
-            return null;
-        }
+        // Use global replacement to remove ALL occurrences
+        cleaned = cleaned.replace(new RegExp(pattern.source, pattern.flags.includes('i') ? 'gi' : 'g'), '');
+    }
+
+    // Also remove full lines that are mostly garbage
+    cleaned = cleaned.split('\n').filter(line => {
+        const trimLine = line.trim().toLowerCase();
+        if (!trimLine) return true; // keep empty lines for formatting
+        if (trimLine === 'no extraction possible') return false;
+        if (trimLine.startsWith('error:') && trimLine.length < 100) return false;
+        if (trimLine.includes('no extraction possible') && trimLine.length < 200) return false;
+        return true;
+    }).join('\n');
+
+    // Clean up extra whitespace left after removal
+    cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim();
+
+    // After cleanup, check if there's still meaningful content
+    if (cleaned.length < 50) {
+        console.log(`[sanitize] Skipping chunk after cleanup: too short (${cleaned.length} chars)`);
+        return null;
     }
 
     // Count meaningful words (not just symbols/numbers)
-    const words = trimmed.split(/\s+/).filter(w => w.length > 1);
+    const words = cleaned.split(/\s+/).filter(w => w.length > 1);
     if (words.length < 15) {
         console.log(`[sanitize] Skipping chunk: too few words (${words.length})`);
         return null;
     }
 
-    return trimmed;
+    return cleaned;
 }
 
 // Split into Map-Reduce batches safely (with deduplication)
