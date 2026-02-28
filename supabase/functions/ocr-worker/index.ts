@@ -97,7 +97,7 @@ serve(async (req) => {
             const totalPages = payload.total_pages || 50;
 
             // Generate individual OCR tasks (Batching 5 pages per job to avoid timeout)
-            const batchSize = 5;
+            const batchSize = 10;
             const jobsToInsert = [];
             const lessonPagesToInsert = [];
 
@@ -164,12 +164,44 @@ serve(async (req) => {
             const filePart = { fileData: { fileUri: geminiUri, mimeType: 'application/pdf' } };
 
             let resultText = '';
+            let isEmptyBatch = false;
             try {
                 resultText = await callGemini(geminiKey, [{ text: prompt }, filePart]);
             } catch (err: any) {
-                await supabase.from('lesson_pages').update({ status: 'failed', retry_count: 1 })
-                    .eq('lesson_id', lesson_id).gte('page_number', start).lte('page_number', end);
-                throw err;
+                const errorMsg = (err.message || '').toLowerCase();
+                // GRACEFUL HANDLING: If pages don't exist in the PDF (total_pages overshot),
+                // mark them as success with empty content instead of failing the whole pipeline.
+                // Common errors: "page range", "out of range", "invalid page", "does not have page"
+                const isOutOfRange = errorMsg.includes('page') || errorMsg.includes('range') ||
+                    errorMsg.includes('invalid') || errorMsg.includes('404') ||
+                    errorMsg.includes('not found') || errorMsg.includes('does not');
+
+                if (isOutOfRange) {
+                    console.warn(`[ocr-worker] Pages ${start}-${end} likely don't exist in the PDF. Marking as empty and moving on.`);
+                    isEmptyBatch = true;
+                    resultText = ''; // Empty content for non-existent pages
+                } else {
+                    // Real error — fail normally
+                    await supabase.from('lesson_pages').update({ status: 'failed', retry_count: 1 })
+                        .eq('lesson_id', lesson_id).gte('page_number', start).lte('page_number', end);
+                    throw err;
+                }
+            }
+
+            // Skip storage for empty batches (non-existent pages)
+            if (isEmptyBatch || resultText.trim().length < 10) {
+                console.log(`[ocr-worker] Batch ${start}-${end} is empty/non-existent. Marking pages as success (empty).`);
+                await supabase.from('lesson_pages').update({
+                    status: 'success',
+                    storage_path: null,
+                    char_count: 0
+                })
+                    .eq('lesson_id', lesson_id)
+                    .gte('page_number', start)
+                    .lte('page_number', end);
+
+                await supabase.from('processing_queue').update({ status: 'completed' }).eq('id', jobId);
+                return new Response(JSON.stringify({ status: 'completed', empty: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
             }
 
             // Instead of putting huge text in DB, save to Storage

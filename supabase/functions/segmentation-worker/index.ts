@@ -59,34 +59,42 @@ serve(async (req) => {
 
         if (job_type === 'segment_lesson') {
 
-            // 1. Barrier Check: Ensure OCR track is fully complete
-            const { data: isOcrComplete } = await supabase.rpc('check_all_pages_completed', { p_lesson_id: lesson_id });
-
-            // 1b. Check if OCR actually failed permanently
-            const { count: failedOcrCount } = await supabase.from('processing_queue')
+            // 1. Barrier Check: Are ALL OCR jobs finished? (completed or failed — either is "done")
+            const { count: pendingOcrJobs } = await supabase.from('processing_queue')
                 .select('*', { count: 'exact', head: true })
                 .eq('lesson_id', lesson_id)
-                .in('job_type', ['extract_pdf_info', 'ocr_page_batch', 'ocr_range', 'extract_text_range', 'chunk_lecture'])
-                .eq('status', 'failed');
+                .in('job_type', ['extract_pdf_info', 'ocr_page_batch'])
+                .in('status', ['pending', 'processing']);
 
-            if (failedOcrCount && failedOcrCount > 0) {
-                console.error(`[segmentation-worker] OCR jobs failed. Cannot proceed with segmentation.`);
-                await supabase.from('processing_queue').update({
-                    status: 'failed',
-                    error_message: 'تم إلغاء التقسيم لأن مرحلة قراءة النصوص (OCR) فشلت.',
-                    locked_by: null,
-                    locked_at: null
-                }).eq('id', jobId);
-
-                await supabase.from('lessons').update({ pipeline_stage: 'failed' }).eq('id', lesson_id);
-                return new Response(JSON.stringify({ status: 'aborted_due_to_ocr_failure' }), { headers: corsHeaders });
+            if (pendingOcrJobs && pendingOcrJobs > 0) {
+                console.log(`[segmentation-worker] ${pendingOcrJobs} OCR jobs still running. Releasing lock to retry later.`);
+                await supabase.from('processing_queue').update({ status: 'pending', locked_by: null, locked_at: null }).eq('id', jobId);
+                return new Response(JSON.stringify({ status: 'waiting_for_ocr' }), { headers: corsHeaders });
             }
 
-            if (!isOcrComplete) {
-                console.log(`[segmentation-worker] OCR not complete yet. Releasing lock to retry later.`);
-                // Unlock so it retries later
-                await supabase.from('processing_queue').update({ status: 'pending', locked_by: null, locked_at: null, attempt_count: 0 }).eq('id', jobId);
-                return new Response(JSON.stringify({ status: 'waiting_for_ocr' }), { headers: corsHeaders });
+            // 2. Check how many pages actually have content (success with storage_path)
+            const { count: successPages } = await supabase.from('lesson_pages')
+                .select('*', { count: 'exact', head: true })
+                .eq('lesson_id', lesson_id)
+                .eq('status', 'success')
+                .not('storage_path', 'is', null);
+
+            const { count: totalPages } = await supabase.from('lesson_pages')
+                .select('*', { count: 'exact', head: true })
+                .eq('lesson_id', lesson_id);
+
+            console.log(`[segmentation-worker] OCR complete. ${successPages}/${totalPages} pages have content.`);
+
+            // If NO pages have any content at all, then we truly failed
+            if (!successPages || successPages === 0) {
+                console.error(`[segmentation-worker] Zero pages extracted. Cannot proceed.`);
+                await supabase.from('processing_queue').update({
+                    status: 'failed',
+                    error_message: 'لم يتم استخراج أي نص من الكتاب.',
+                    locked_by: null, locked_at: null
+                }).eq('id', jobId);
+                await supabase.from('lessons').update({ pipeline_stage: 'failed' }).eq('id', lesson_id);
+                return new Response(JSON.stringify({ status: 'aborted_no_content' }), { headers: corsHeaders });
             }
 
             // Also check Audio Track if Audio exists

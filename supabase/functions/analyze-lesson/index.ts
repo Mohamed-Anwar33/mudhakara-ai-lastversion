@@ -215,7 +215,7 @@ serve(async (req) => {
                     return new Response(JSON.stringify({ status: 'skipped_empty' }), { headers: corsHeaders });
                 }
 
-                const batches = splitIntoBatches(rawTextChunks, 35000);
+                const batches = splitIntoBatches(rawTextChunks, 60000);
                 payload.batches = batches;
                 payload.summaries = [];
 
@@ -308,12 +308,66 @@ ${content}`;
                 if (!payload.summaries) payload.summaries = [];
                 payload.summaries.push(jsonResult);
 
-                // Advance cursor and unlock
+                const nextCursor = cursor + 1;
+
+                // SPEED OPTIMIZATION: Process up to 3 batches per invocation
+                // Supabase Edge Functions have 150s timeout — plenty for multiple Gemini calls
+                if (nextCursor < batches.length && (nextCursor - (job.extraction_cursor || 0)) < 3) {
+                    // Process next batch immediately in same invocation
+                    const nextContent = batches[nextCursor];
+                    const nextPrompt = prompt.replace(content, nextContent);
+                    console.log(`[analyze-lesson] Map Phase: Processing batch ${nextCursor + 1}/${batches.length} (same invocation)...`);
+                    let nextResult: any = { explanation_notes: '', key_definitions: [] };
+                    try {
+                        nextResult = await callGeminiJSON(nextPrompt, geminiKey);
+                    } catch (e: any) {
+                        console.warn(`[analyze-lesson] Batch ${nextCursor + 1} JSON parsing failed: ${e.message}`);
+                    }
+                    payload.summaries.push(nextResult);
+
+                    const thirdCursor = nextCursor + 1;
+                    if (thirdCursor < batches.length && (thirdCursor - (job.extraction_cursor || 0)) < 3) {
+                        const thirdContent = batches[thirdCursor];
+                        const thirdPrompt = prompt.replace(content, thirdContent);
+                        console.log(`[analyze-lesson] Map Phase: Processing batch ${thirdCursor + 1}/${batches.length} (same invocation)...`);
+                        let thirdResult: any = { explanation_notes: '', key_definitions: [] };
+                        try {
+                            thirdResult = await callGeminiJSON(thirdPrompt, geminiKey);
+                        } catch (e: any) {
+                            console.warn(`[analyze-lesson] Batch ${thirdCursor + 1} JSON parsing failed: ${e.message}`);
+                        }
+                        payload.summaries.push(thirdResult);
+
+                        // Advance cursor by 3
+                        await supabase.from('processing_queue')
+                            .update({
+                                stage: 'summarizing_batches',
+                                payload,
+                                extraction_cursor: thirdCursor + 1,
+                                status: 'pending', locked_by: null, locked_at: null
+                            })
+                            .eq('id', jobId);
+                        return new Response(JSON.stringify({ status: 'advancing_batch', cursor: thirdCursor + 1 }), { headers: corsHeaders });
+                    }
+
+                    // Advance cursor by 2
+                    await supabase.from('processing_queue')
+                        .update({
+                            stage: 'summarizing_batches',
+                            payload,
+                            extraction_cursor: nextCursor + 1,
+                            status: 'pending', locked_by: null, locked_at: null
+                        })
+                        .eq('id', jobId);
+                    return new Response(JSON.stringify({ status: 'advancing_batch', cursor: nextCursor + 1 }), { headers: corsHeaders });
+                }
+
+                // Advance cursor by 1 (last batch or single)
                 await supabase.from('processing_queue')
                     .update({
                         stage: 'summarizing_batches',
                         payload,
-                        extraction_cursor: cursor + 1,
+                        extraction_cursor: nextCursor,
                         status: 'pending', locked_by: null, locked_at: null
                     })
                     .eq('id', jobId);
