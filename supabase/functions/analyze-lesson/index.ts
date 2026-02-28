@@ -263,7 +263,7 @@ serve(async (req) => {
                 };
 
                 // CRITICAL: Prevent DB blowout, SAVE TO STORAGE!
-                const storagePath = `analysis/${lesson_id}/lecture_${lecture_id}.json`;
+                const storagePath = `${lesson_id}/lecture_${lecture_id}.json`;
 
                 const { error: storageErr } = await supabase.storage.from('analysis')
                     .upload(storagePath, JSON.stringify(finalJsonStruct, null, 2), { upsert: true, contentType: 'application/json' });

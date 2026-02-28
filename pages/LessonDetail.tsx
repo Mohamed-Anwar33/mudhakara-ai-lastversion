@@ -596,7 +596,7 @@ const LessonDetail: React.FC = () => {
         throw new Error('Timed out waiting for analysis result');
       }
 
-      // --- NEW LOGIC: Fetch and Merge Segmented Lectures ---
+      // --- Fetch and Merge Segmented Lectures (secondary enrichment — primary data now comes from analysis_result) ---
       try {
         setProgressMsg('تجميع الملفات التفصيلية...');
         const { data: segments } = await supabase.from('segmented_lectures')
@@ -613,10 +613,14 @@ const LessonDetail: React.FC = () => {
 
           for (const seg of segments) {
             const path = seg.summary_storage_path;
-            const { data: fileBlob } = await supabase.storage.from('analysis').download(path);
-            if (fileBlob) {
-              const text = await fileBlob.text();
-              try {
+            try {
+              const { data: fileBlob, error: dlError } = await supabase.storage.from('analysis').download(path);
+              if (dlError) {
+                console.warn(`[Segment Download] Failed to download ${path}: ${dlError.message}`);
+                continue;
+              }
+              if (fileBlob) {
+                const text = await fileBlob.text();
                 const parsed = JSON.parse(text);
                 if (parsed.explanation_notes) {
                   mergedLessons.push({
@@ -629,22 +633,22 @@ const LessonDetail: React.FC = () => {
                 if (parsed.quizzes) mergedQuizzes.push(...parsed.quizzes);
                 if (parsed.focusPoints) mergedFocus.push(...parsed.focusPoints);
                 if (parsed.essayQuestions) mergedEssays.push(...parsed.essayQuestions);
-              } catch (e) {
-                console.warn('Failed to parse a segment JSON', e);
               }
+            } catch (e) {
+              console.warn(`[Segment Download] Error processing segment ${path}:`, e);
             }
           }
 
-          // Override globals with granular data if any exists
+          // Override globals with granular data if any exists (enrichment from storage)
           if (mergedLessons.length > 0) result.lessons = mergedLessons;
           if (mergedQuizzes.length > 0) result.quizzes = mergedQuizzes;
           if (mergedFocus.length > 0) result.focusPoints = mergedFocus;
           if (mergedEssays.length > 0) result.essayQuestions = mergedEssays;
         }
       } catch (err) {
-        console.warn('Silent fail downloading granular segments', err);
+        console.warn('[Segment Download] Skipped granular segment merging:', err);
+        // Not critical — analysis_result from global-aggregator already has the full data
       }
-      // -----------------------------------------------------
 
       const updatedLesson = { ...lesson, aiResult: result };
       await updateLesson(updatedLesson);

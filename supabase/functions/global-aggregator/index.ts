@@ -65,30 +65,59 @@ serve(async (req) => {
 
             if (!totalSegments || finishedSegments !== totalSegments) {
                 console.log(`[global-aggregator] Waiting on lectures... ${finishedSegments}/${totalSegments} done. Releasing lock.`);
-                // Unlock so it retries later
-                await supabase.from('processing_queue').update({ status: 'pending', locked_by: null, locked_at: null, attempt_count: 0 }).eq('id', jobId);
+                // FIX: Do NOT reset attempt_count to 0. Keep current value to prevent infinite retry loop.
+                // Use next_retry_at to space out barrier checks every 15 seconds instead of hammering every 3s.
+                const nextRetry = new Date(Date.now() + 15000).toISOString();
+                await supabase.from('processing_queue').update({
+                    status: 'pending',
+                    locked_by: null,
+                    locked_at: null,
+                    next_retry_at: nextRetry
+                }).eq('id', jobId);
                 return new Response(JSON.stringify({ status: 'waiting_for_lectures' }), { headers: corsHeaders });
             }
 
-            // 2. We are clear! Pull all summaries for the Global Overview
+            // 2. We are clear! Pull ALL lecture data for full aggregation
             const { data: lectures } = await supabase.from('segmented_lectures')
-                .select('title, summary_storage_path')
-                .eq('lesson_id', lesson_id);
+                .select('title, summary_storage_path, start_page')
+                .eq('lesson_id', lesson_id)
+                .order('start_page', { ascending: true });
 
             let megaContext = "";
-            let indexMap: any = { topics: [] };
+            const indexMap: any = { topics: [] };
+            const allLessons: any[] = [];
+            const allQuizzes: any[] = [];
+            const allFocusPoints: any[] = [];
+            const allEssayQuestions: any[] = [];
 
             for (const lec of (lectures || [])) {
                 indexMap.topics.push({ title: lec.title });
                 if (!lec.summary_storage_path) continue;
 
-                const { data: fileData } = await supabase.storage.from('analysis').download(lec.summary_storage_path);
-                if (fileData) {
-                    const text = await fileData.text();
-                    try {
+                try {
+                    const { data: fileData } = await supabase.storage.from('analysis').download(lec.summary_storage_path);
+                    if (fileData) {
+                        const text = await fileData.text();
                         const json = JSON.parse(text);
-                        megaContext += `\n--- Lecture: ${lec.title} ---\n` + (json.explanation_notes || '').substring(0, 3000); // Take snippets to avoid token overflow
-                    } catch (e) { }
+
+                        // Aggregate for Gemini overview prompt (truncated)
+                        megaContext += `\n--- Lecture: ${lec.title} ---\n` + (json.explanation_notes || '').substring(0, 3000);
+
+                        // Aggregate full lesson data for analysis_result
+                        if (json.explanation_notes) {
+                            allLessons.push({
+                                lesson_title: json.title || lec.title || 'محاضرة',
+                                detailed_explanation: json.explanation_notes,
+                                rules: json.key_definitions || [],
+                                examples: []
+                            });
+                        }
+                        if (json.quizzes) allQuizzes.push(...json.quizzes);
+                        if (json.focusPoints) allFocusPoints.push(...json.focusPoints);
+                        if (json.essayQuestions) allEssayQuestions.push(...json.essayQuestions);
+                    }
+                } catch (e: any) {
+                    console.warn(`[global-aggregator] Failed to parse lecture data for ${lec.title}: ${e.message}`);
                 }
             }
 
@@ -106,31 +135,31 @@ serve(async (req) => {
                 console.warn(`[global-aggregator] Text Overview failed: ${e.message}`);
             }
 
-            // 4. Save Final Global State!
+            // 4. Save Final Global State with FULL aggregated data!
+            const analysisResult: any = {
+                summary: finalSummary,
+                indexMap: indexMap,
+                metadata: { generatedAt: new Date().toISOString() }
+            };
+
+            // Include aggregated per-lecture data so the frontend has everything
+            if (allLessons.length > 0) analysisResult.lessons = allLessons;
+            if (allQuizzes.length > 0) analysisResult.quizzes = allQuizzes;
+            if (allFocusPoints.length > 0) analysisResult.focusPoints = allFocusPoints;
+            if (allEssayQuestions.length > 0) analysisResult.essayQuestions = allEssayQuestions;
+
             const { error: updateError } = await supabase.from('lessons')
                 .update({
                     pipeline_stage: 'completed',
                     analysis_status: 'completed',
-                    analysis_result: {
-                        summary: finalSummary,
-                        indexMap: indexMap,
-                        metadata: { generatedAt: new Date().toISOString() }
-                    }
+                    analysis_result: analysisResult
                 })
                 .eq('id', lesson_id);
 
             if (updateError) throw new Error(`Failed to update lesson analysis state: ${updateError.message}`);
 
-            // 🧹 Optional: Housekeeping - Delete intermediate raw OCR chunks if free tier space is a premium constraint
-            // (Leaving disabled by default to allow users to view raw OCR if debugging, but structure is here)
-            /*
-            const { data: oldPages } = await supabase.from('lesson_pages').select('storage_path').eq('lesson_id', lesson_id);
-            const toDelete = (oldPages || []).map(p => p.storage_path).filter(Boolean);
-            if (toDelete.length > 0) await supabase.storage.from('ocr').remove(toDelete);
-            */
-
             await supabase.from('processing_queue').update({ status: 'completed' }).eq('id', jobId);
-            console.log(`[global-aggregator] Lesson ${lesson_id} is 100% COMPLETE! 🎉`);
+            console.log(`[global-aggregator] Lesson ${lesson_id} is 100% COMPLETE! 🎉 (${allLessons.length} lessons, ${allQuizzes.length} quizzes, ${allFocusPoints.length} focus points)`);
             return new Response(JSON.stringify({ status: 'completed' }), { headers: corsHeaders });
         }
 
