@@ -603,7 +603,7 @@ const LessonDetail: React.FC = () => {
           .select('summary_storage_path')
           .eq('lesson_id', lesson.id)
           .not('summary_storage_path', 'is', null)
-          .order('part_index', { ascending: true });
+          .order('start_page', { ascending: true });
 
         if (segments && segments.length > 0) {
           const mergedLessons: any[] = [];
