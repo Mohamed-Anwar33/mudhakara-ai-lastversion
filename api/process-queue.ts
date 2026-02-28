@@ -37,19 +37,28 @@ async function acquireJobId(supabase: any, workerId: string): Promise<string | n
     console.warn(`[${workerId}] acquire_job RPC missing. Using SQL fallback lock flow.`);
 
     // Enforce Concurrency Limits
+    // FIX: Count ALL 'processing' jobs (not just locked ones)
+    // After 6.5s timeout, lock is released but Edge Function still runs.
+    // Old check (.not('locked_by', 'is', null)) always returned 0!
     const { count: activeOcr } = await supabase.from('processing_queue')
         .select('*', { count: 'exact', head: true })
         .in('job_type', ['ocr_range', 'image_ocr', 'ocr_page_batch'])
-        .not('locked_by', 'is', null);
+        .eq('status', 'processing');
 
     const { count: activeAnalysis } = await supabase.from('processing_queue')
         .select('*', { count: 'exact', head: true })
         .in('job_type', ['generate_analysis', 'analyze_lecture'])
-        .not('locked_by', 'is', null);
+        .eq('status', 'processing');
 
-    const excludedTypes = [];
-    if ((activeOcr || 0) >= 3) excludedTypes.push('ocr_range', 'image_ocr', 'ocr_page_batch');
-    if ((activeAnalysis || 0) >= 2) excludedTypes.push('generate_analysis', 'analyze_lecture');
+    const { count: activeQuiz } = await supabase.from('processing_queue')
+        .select('*', { count: 'exact', head: true })
+        .eq('job_type', 'generate_quiz')
+        .eq('status', 'processing');
+
+    const excludedTypes: string[] = [];
+    if ((activeOcr || 0) >= 5) excludedTypes.push('ocr_range', 'image_ocr', 'ocr_page_batch');
+    if ((activeAnalysis || 0) >= 4) excludedTypes.push('generate_analysis', 'analyze_lecture');
+    if ((activeQuiz || 0) >= 4) excludedTypes.push('generate_quiz');
 
     for (let attempt = 0; attempt < 3; attempt++) {
         let query = supabase
