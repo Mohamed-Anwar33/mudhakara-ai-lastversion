@@ -72,8 +72,19 @@ serve(async (req) => {
 
             const lectureContent = String(analysisData.explanation_notes || '').substring(0, 150000); // Guard big notes
 
+            // VALIDATION: Skip quiz generation for insufficient or placeholder content
+            if (lectureContent.length < 1000) {
+                console.warn(`[quiz-generator] Lecture ${lecture_id} has insufficient content (${lectureContent.length} chars). Skipping quiz generation.`);
+                // Mark as quiz_done without generating garbage quizzes
+                await supabase.from('segmented_lectures')
+                    .update({ status: 'quiz_done' })
+                    .eq('id', lecture_id);
+                await supabase.from('processing_queue').update({ status: 'completed' }).eq('id', jobId);
+                return new Response(JSON.stringify({ status: 'skipped_insufficient_content' }), { headers: corsHeaders });
+            }
+
             const prompt = `استناداً إلى الملخص التعليمي التفصيلي التالي، صمم بنك أسئلة شامل للدرس للطلاب.
-            يجب أن يركز الاختبار بشدة على النقاط التي وُضِعت تحت علامة "TEACHER FOCUS" (إن وجدت).
+            يجب أن يركز الاختبار بشدة على النقاط التي وُضِعت تحت علامة "🎤 ما ذكره المعلم" (إن وجدت).
 
             المطلوب إخراج JSON بالشكل التالي حصراً واختبارات قوية وليست سطحية:
             {
@@ -105,6 +116,9 @@ serve(async (req) => {
             - بالنسبة لأسئلة الصح/الخطأ (tf)، يجب أن تكون مجموعة (options) تحتوي على نصين فقط: ["صح", "خطأ"].
             - قيمة correctAnswer هي دائماً رقم (Index) (0, 1, 2, 3).
             - لا تقم بإنشاء أي مفاتيح أخرى.
+            - ⚠️ ممنوع منعاً باتاً اختلاق أسئلة من خارج النص المقدم. كل سؤال يجب أن يكون مبنياً حصرياً على معلومة واردة في النص أدناه.
+            - ⚠️ لا تسأل أبداً عن عبارات تقنية أو أخطاء أو ملاحظات نظام (مثل "No extraction possible" أو أي نص لا يمت للمادة بصلة).
+            - يجب أن تكون الأسئلة أكاديمية وتختبر فهم الطالب للمفاهيم العلمية الواردة في النص فقط.
 
             النص:
             ${lectureContent}`;

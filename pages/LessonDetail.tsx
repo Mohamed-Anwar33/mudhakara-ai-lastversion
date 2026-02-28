@@ -931,7 +931,19 @@ const LessonDetail: React.FC = () => {
                               ol: ({ node, ...props }) => <ol className="list-decimal list-inside space-y-1.5 mb-3 pr-4" {...props} />,
                               li: ({ node, ...props }) => <li className="text-slate-700 leading-relaxed" {...props} />,
                               strong: ({ node, ...props }) => <strong className="text-indigo-700 font-black" {...props} />,
-                              blockquote: ({ node, ...props }) => <blockquote className="border-r-4 border-amber-400 pr-4 py-2 my-3 bg-amber-50 rounded-l-xl text-amber-800 italic" {...props} />,
+                              blockquote: ({ node, children, ...props }) => {
+                                // Check if the blockquote contains teacher focus content (🎤 emoji)
+                                const text = String(children);
+                                const isTeacherFocus = text.includes('🎤');
+                                if (isTeacherFocus) {
+                                  return (
+                                    <blockquote className="border-r-4 border-yellow-500 pr-4 py-3 my-4 bg-yellow-50 rounded-l-xl text-yellow-900 font-bold shadow-sm" {...props}>
+                                      {children}
+                                    </blockquote>
+                                  );
+                                }
+                                return <blockquote className="border-r-4 border-amber-400 pr-4 py-2 my-3 bg-amber-50 rounded-l-xl text-amber-800 italic" {...props}>{children}</blockquote>;
+                              },
                               table: ({ node, ...props }) => <div className="overflow-x-auto my-3"><table className="w-full border-collapse border border-slate-200 text-sm" {...props} /></div>,
                               th: ({ node, ...props }) => <th className="border border-slate-200 bg-slate-50 px-3 py-2 text-right font-bold" {...props} />,
                               td: ({ node, ...props }) => <td className="border border-slate-200 px-3 py-2 text-right" {...props} />,
@@ -1006,7 +1018,18 @@ const LessonDetail: React.FC = () => {
                             ol: ({ node, ...props }) => <ol className="list-decimal list-inside space-y-2 mb-4 pr-4" {...props} />,
                             li: ({ node, ...props }) => <li className="text-slate-700" {...props} />,
                             strong: ({ node, ...props }) => <strong className="text-indigo-700 font-black" {...props} />,
-                            blockquote: ({ node, ...props }) => <blockquote className="border-r-4 border-amber-400 pr-4 py-2 my-4 bg-amber-50 rounded-l-xl text-amber-800 italic" {...props} />,
+                            blockquote: ({ node, children, ...props }) => {
+                              const text = String(children);
+                              const isTeacherFocus = text.includes('🎤');
+                              if (isTeacherFocus) {
+                                return (
+                                  <blockquote className="border-r-4 border-yellow-500 pr-4 py-3 my-4 bg-yellow-50 rounded-l-xl text-yellow-900 font-bold shadow-sm" {...props}>
+                                    {children}
+                                  </blockquote>
+                                );
+                              }
+                              return <blockquote className="border-r-4 border-amber-400 pr-4 py-2 my-4 bg-amber-50 rounded-l-xl text-amber-800 italic" {...props}>{children}</blockquote>;
+                            },
                           }}
                         >
                           {aiData?.summary || ""}
