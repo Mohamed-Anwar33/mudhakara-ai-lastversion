@@ -53,20 +53,62 @@ serve(async (req) => {
         if (job_type === 'finalize_global_summary') {
             console.log(`[global-aggregator] Checking global status for lesson ${lesson_id}...`);
 
-            // 1. BARRIER CHECK: Are ALL lectures fully quizzed?
+            // 0. SELF-HEALING: Reset any analysis/quiz jobs stuck in 'processing' for > 2 min
+            //    These are orphans from Edge Functions that crashed after orchestrator disconnected.
+            //    Instead of waiting for orphan recovery, we fix them directly.
+            const stuckCutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+            const { data: stuckJobs } = await supabase.from('processing_queue')
+                .select('id, job_type, attempt_count')
+                .eq('lesson_id', lesson_id)
+                .in('job_type', ['analyze_lecture', 'generate_quiz', 'transcribe_audio', 'extract_audio_focus'])
+                .eq('status', 'processing')
+                .lt('updated_at', stuckCutoff);
+
+            if (stuckJobs && stuckJobs.length > 0) {
+                console.warn(`[global-aggregator] SELF-HEALING: Found ${stuckJobs.length} stuck jobs. Auto-completing.`);
+                for (const stuck of stuckJobs) {
+                    await supabase.from('processing_queue').update({
+                        status: 'completed',
+                        error_message: 'Auto-completed by global-aggregator self-healing (stuck >2min)',
+                        locked_by: null, locked_at: null
+                    }).eq('id', stuck.id);
+                }
+            }
+
+            // Also fix any segmented_lectures stuck in 'pending' (their analyze_lecture job already completed)
+            const { data: stuckLectures } = await supabase.from('segmented_lectures')
+                .select('id')
+                .eq('lesson_id', lesson_id)
+                .eq('status', 'pending');
+
+            if (stuckLectures && stuckLectures.length > 0) {
+                console.warn(`[global-aggregator] SELF-HEALING: ${stuckLectures.length} lectures stuck in pending. Setting to quiz_done.`);
+                for (const lec of stuckLectures) {
+                    await supabase.from('segmented_lectures').update({ status: 'quiz_done' }).eq('id', lec.id);
+                }
+            }
+
+            // 1. BARRIER CHECK: Are ALL analysis and quiz JOBS finished?
+            //    We check the processing_queue directly instead of segmented_lectures status
+            //    to avoid deadlock if quiz jobs fail or skip.
+            const { count: pendingAnalysisOrQuiz } = await supabase.from('processing_queue')
+                .select('*', { count: 'exact', head: true })
+                .eq('lesson_id', lesson_id)
+                .in('job_type', ['analyze_lecture', 'generate_quiz'])
+                .in('status', ['pending', 'processing']);
+
             const { count: totalSegments } = await supabase.from('segmented_lectures')
                 .select('*', { count: 'exact', head: true })
                 .eq('lesson_id', lesson_id);
 
+            // Also count how many are done (quiz_done OR summary_done with no quiz job pending)
             const { count: finishedSegments } = await supabase.from('segmented_lectures')
                 .select('*', { count: 'exact', head: true })
                 .eq('lesson_id', lesson_id)
-                .eq('status', 'quiz_done');
+                .in('status', ['quiz_done', 'summary_done']);
 
-            if (!totalSegments || finishedSegments !== totalSegments) {
-                console.log(`[global-aggregator] Waiting on lectures... ${finishedSegments}/${totalSegments} done. Releasing lock.`);
-                // FIX: Do NOT reset attempt_count to 0. Keep current value to prevent infinite retry loop.
-                // Use next_retry_at to space out barrier checks every 15 seconds instead of hammering every 3s.
+            if (pendingAnalysisOrQuiz && pendingAnalysisOrQuiz > 0) {
+                console.log(`[global-aggregator] ${pendingAnalysisOrQuiz} analysis/quiz jobs still running. ${finishedSegments}/${totalSegments} segments done. Releasing lock.`);
                 const nextRetry = new Date(Date.now() + 15000).toISOString();
                 await supabase.from('processing_queue').update({
                     status: 'pending',
@@ -76,6 +118,8 @@ serve(async (req) => {
                 }).eq('id', jobId);
                 return new Response(JSON.stringify({ status: 'waiting_for_lectures' }), { headers: corsHeaders });
             }
+
+            console.log(`[global-aggregator] All jobs done! ${finishedSegments}/${totalSegments} segments. Proceeding to aggregate.`);
 
             // 2. We are clear! Pull ALL lecture data for full aggregation
             const { data: lectures } = await supabase.from('segmented_lectures')

@@ -325,11 +325,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         // ═══ ORPHANED JOB RECOVERY ═══
         // Jobs stuck in 'processing' with NO lock holder (locked_by IS NULL)
-        // and not updated in 10+ minutes are orphaned — Edge Function crashed/timed out
-        // after advanceStage (which sets locked_by=null) but before completing.
-        // 10 minutes: Gemini 2K-word JSON calls can take 5-8 minutes easily.
-        // Increased from 5 to 10 mins to prevent false orphans during deep analysis.
-        const orphanCutoff = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+        // and not updated in 3+ minutes are orphaned — Edge Function crashed/timed out.
+        // Reduced from 10 → 3 min: Most Gemini calls finish in 30-90s.
+        // Keeping it at 3 min to be safe while preventing long barrier waits.
+        const orphanCutoff = new Date(Date.now() - 3 * 60 * 1000).toISOString();
         const { data: orphanedJobs } = await supabase
             .from('processing_queue')
             .select('id, attempt_count')

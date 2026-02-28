@@ -59,7 +59,29 @@ serve(async (req) => {
 
         if (job_type === 'segment_lesson') {
 
-            // 1. Barrier Check: Are ALL OCR jobs finished? (completed or failed — either is "done")
+            // 1. SELF-HEALING: Reset any OCR jobs stuck in 'processing' for > 2 min
+            //    These are orphans from Edge Functions that crashed after orchestrator disconnected.
+            //    Instead of waiting 3+ min for orphan recovery in process-queue, we fix them HERE.
+            const stuckCutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+            const { data: stuckJobs } = await supabase.from('processing_queue')
+                .select('id, attempt_count')
+                .eq('lesson_id', lesson_id)
+                .in('job_type', ['extract_pdf_info', 'ocr_page_batch'])
+                .eq('status', 'processing')
+                .lt('updated_at', stuckCutoff);
+
+            if (stuckJobs && stuckJobs.length > 0) {
+                console.warn(`[segmentation-worker] SELF-HEALING: Found ${stuckJobs.length} stuck OCR jobs. Resetting to completed.`);
+                for (const stuck of stuckJobs) {
+                    await supabase.from('processing_queue').update({
+                        status: 'completed',
+                        error_message: 'Auto-completed by barrier self-healing (stuck >2min)',
+                        locked_by: null, locked_at: null
+                    }).eq('id', stuck.id);
+                }
+            }
+
+            // 2. Barrier Check: Are ALL OCR jobs finished? (completed or failed — either is "done")
             const { count: pendingOcrJobs } = await supabase.from('processing_queue')
                 .select('*', { count: 'exact', head: true })
                 .eq('lesson_id', lesson_id)
