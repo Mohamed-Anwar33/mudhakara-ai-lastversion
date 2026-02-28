@@ -978,8 +978,24 @@ const LessonDetail: React.FC = () => {
                                 const isTeacherFocus = text.includes('🎤');
                                 if (isTeacherFocus) {
                                   return (
-                                    <blockquote className="border-r-4 border-yellow-500 pr-4 py-3 my-4 bg-yellow-50 rounded-l-xl text-yellow-900 font-bold shadow-sm" {...props}>
-                                      {children}
+                                    <blockquote
+                                      className="relative my-6 rounded-2xl overflow-hidden shadow-md"
+                                      style={{ backgroundColor: '#FEF9C3', border: '1px solid #FDE68A' }}
+                                      {...props}
+                                    >
+                                      {/* Yellow accent bar on the right */}
+                                      <div className="absolute top-0 right-0 w-1.5 h-full" style={{ backgroundColor: '#F59E0B' }} />
+                                      <div className="pr-6 pl-5 py-4">
+                                        {/* Header with mic icon */}
+                                        <div className="flex items-center gap-2 mb-2 justify-end">
+                                          <span className="text-sm font-black" style={{ color: '#6D28D9' }}>ما ذكره المعلم:</span>
+                                          <span className="text-lg">🎤</span>
+                                        </div>
+                                        {/* Content */}
+                                        <div className="text-base font-bold leading-relaxed" style={{ color: '#78350F' }}>
+                                          {children}
+                                        </div>
+                                      </div>
                                     </blockquote>
                                   );
                                 }
@@ -1064,8 +1080,24 @@ const LessonDetail: React.FC = () => {
                               const isTeacherFocus = text.includes('🎤');
                               if (isTeacherFocus) {
                                 return (
-                                  <blockquote className="border-r-4 border-yellow-500 pr-4 py-3 my-4 bg-yellow-50 rounded-l-xl text-yellow-900 font-bold shadow-sm" {...props}>
-                                    {children}
+                                  <blockquote
+                                    className="relative my-6 rounded-2xl overflow-hidden shadow-md"
+                                    style={{ backgroundColor: '#FEF9C3', border: '1px solid #FDE68A' }}
+                                    {...props}
+                                  >
+                                    {/* Yellow accent bar on the right */}
+                                    <div className="absolute top-0 right-0 w-1.5 h-full" style={{ backgroundColor: '#F59E0B' }} />
+                                    <div className="pr-6 pl-5 py-4">
+                                      {/* Header with mic icon */}
+                                      <div className="flex items-center gap-2 mb-2 justify-end">
+                                        <span className="text-sm font-black" style={{ color: '#6D28D9' }}>ما ذكره المعلم:</span>
+                                        <span className="text-lg">🎤</span>
+                                      </div>
+                                      {/* Content */}
+                                      <div className="text-base font-bold leading-relaxed" style={{ color: '#78350F' }}>
+                                        {children}
+                                      </div>
+                                    </div>
                                   </blockquote>
                                 );
                               }

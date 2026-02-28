@@ -325,10 +325,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                         file_name: file.fileName,
                         content_hash: contentHash,
                         source_type: file.fileType,
-                        ...(initialJobType === 'extract_pdf_info' ? {
-                            gemini_file_uri: await uploadToGemini(supabase, filePath),
-                            total_pages: 50 // TODO: Use PDF parser or get from Gemini metadata if possible, defaulting to 50 for safety bracket
-                        } : {})
+                        ...(initialJobType === 'extract_pdf_info' ? await (async () => {
+                            const geminiResult = await uploadToGemini(supabase, filePath);
+                            console.log(`[Ingest] Gemini upload complete. URI: ${geminiResult.uri}, Pages: ${geminiResult.pageCount}`);
+                            return {
+                                gemini_file_uri: geminiResult.uri,
+                                total_pages: geminiResult.pageCount
+                            };
+                        })() : {})
                     },
                     status: 'pending'
                 })
@@ -411,7 +415,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 }
 
-async function uploadToGemini(supabase: any, storagePath: string): Promise<string> {
+async function uploadToGemini(supabase: any, storagePath: string): Promise<{ uri: string; pageCount: number }> {
     const geminiKey = process.env.GEMINI_API_KEY;
     if (!geminiKey) throw new Error('GEMINI_API_KEY is not set');
 
@@ -441,9 +445,35 @@ async function uploadToGemini(supabase: any, storagePath: string): Promise<strin
         });
 
         console.log(`[Gemini Upload] Success, URI: ${uploadResponse.uri}`);
-        return uploadResponse.uri!;
+
+        // 4. Try to get actual page count from Gemini file metadata
+        let pageCount = 200; // Safe default for Arabic textbooks (covers up to 200 pages)
+        try {
+            if (uploadResponse.name) {
+                const fileInfo = await ai.files.get({ name: uploadResponse.name });
+                // Gemini File API may expose page count in metadata
+                const metaPages = (fileInfo as any).pageCount || (fileInfo as any).metadata?.pageCount;
+                if (metaPages && metaPages > 0) {
+                    pageCount = metaPages;
+                    console.log(`[Gemini Upload] Detected ${pageCount} pages from Gemini metadata.`);
+                } else {
+                    // Fallback: estimate from file size (avg ~5KB per page for Arabic PDF)
+                    const estimatedPages = Math.ceil(buffer.length / 5000);
+                    if (estimatedPages > 10 && estimatedPages < 500) {
+                        pageCount = estimatedPages;
+                        console.log(`[Gemini Upload] Estimated ${pageCount} pages from file size (${buffer.length} bytes).`);
+                    } else {
+                        console.log(`[Gemini Upload] Using safe default: ${pageCount} pages.`);
+                    }
+                }
+            }
+        } catch (metaErr: any) {
+            console.warn(`[Gemini Upload] Could not get page count from metadata: ${metaErr.message}. Using default ${pageCount}.`);
+        }
+
+        return { uri: uploadResponse.uri!, pageCount };
     } finally {
-        // 4. Cleanup temp file
+        // 5. Cleanup temp file
         if (fs.existsSync(tempFilePath)) {
             fs.unlinkSync(tempFilePath);
         }

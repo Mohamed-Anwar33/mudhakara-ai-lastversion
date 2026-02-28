@@ -26,12 +26,64 @@ async function callGeminiJSON(prompt: string, apiKey: string): Promise<any> {
     return JSON.parse(text);
 }
 
-// Split into Map-Reduce batches safely
+// ─── Data Sanitization ────────────────────────────────────
+// Filters out garbage OCR text BEFORE it reaches the AI model.
+// This is the primary defense against hallucination from bad input.
+const GARBAGE_PATTERNS = [
+    /no extraction possible/i,
+    /extraction failed/i,
+    /unable to extract/i,
+    /error reading/i,
+    /could not process/i,
+    /failed to parse/i,
+    /سؤال وهمي/,
+    /^\s*\[?page\s*\d+\]?\s*$/i,
+];
+
+function sanitizeOcrText(text: string): string | null {
+    if (!text || typeof text !== 'string') return null;
+
+    const trimmed = text.trim();
+
+    // Too short = no useful content
+    if (trimmed.length < 50) {
+        console.log(`[sanitize] Skipping chunk: too short (${trimmed.length} chars)`);
+        return null;
+    }
+
+    // Check for garbage patterns
+    for (const pattern of GARBAGE_PATTERNS) {
+        if (pattern.test(trimmed)) {
+            console.log(`[sanitize] Skipping chunk: matches garbage pattern ${pattern}`);
+            return null;
+        }
+    }
+
+    // Count meaningful words (not just symbols/numbers)
+    const words = trimmed.split(/\s+/).filter(w => w.length > 1);
+    if (words.length < 15) {
+        console.log(`[sanitize] Skipping chunk: too few words (${words.length})`);
+        return null;
+    }
+
+    return trimmed;
+}
+
+// Split into Map-Reduce batches safely (with deduplication)
 function splitIntoBatches(textChunks: string[], batchSizeChars = 30000): string[] {
     const batches: string[] = [];
     let currentBatch = "";
+    const seenFingerprints = new Set<string>();
 
     for (const chunk of textChunks) {
+        // Deduplication: skip chunks we've already seen
+        const fingerprint = chunk.trim().substring(0, 100).replace(/\s+/g, ' ');
+        if (seenFingerprints.has(fingerprint)) {
+            console.log(`[splitIntoBatches] Skipping duplicate chunk: "${fingerprint.substring(0, 50)}..."`);
+            continue;
+        }
+        seenFingerprints.add(fingerprint);
+
         if (currentBatch.length + chunk.length > batchSizeChars && currentBatch.length > 0) {
             batches.push(currentBatch);
             currentBatch = chunk;
@@ -84,6 +136,8 @@ serve(async (req) => {
             if (stage === 'collecting_sections' || stage === 'pending_upload' || stage === 'queued') {
 
                 // 1. Fetch ALL text for these pages from Storage
+                //    CRITICAL FIX: Track already-read storage paths to prevent
+                //    duplicate reads (multiple pages share the same batch file)
                 const { data: pages } = await supabase.from('lesson_pages')
                     .select('page_number, storage_path')
                     .eq('lesson_id', lesson_id)
@@ -91,8 +145,18 @@ serve(async (req) => {
                     .lte('page_number', end_page);
 
                 let rawTextChunks: string[] = [];
+                const alreadyReadPaths = new Set<string>(); // Prevents reading same batch file multiple times
+
                 for (const p of (pages || [])) {
                     if (!p.storage_path) continue;
+
+                    // DEDUP: Skip if we already read this storage path
+                    // (OCR batches cover 5 pages but share 1 storage_path)
+                    if (alreadyReadPaths.has(p.storage_path)) {
+                        console.log(`[analyze-lesson] Skipping duplicate storage path: ${p.storage_path}`);
+                        continue;
+                    }
+                    alreadyReadPaths.add(p.storage_path);
 
                     // Look for Focus points matching this page in the DB
                     const { data: focusPoints } = await supabase.from('document_embeddings')
@@ -108,7 +172,14 @@ serve(async (req) => {
 
                     const { data: textData } = await supabase.storage.from('ocr').download(p.storage_path);
                     if (textData) {
-                        rawTextChunks.push(prefix + await textData.text());
+                        const rawText = await textData.text();
+                        // SANITIZATION: Filter garbage before it reaches the AI
+                        const cleanText = sanitizeOcrText(rawText);
+                        if (cleanText) {
+                            rawTextChunks.push(prefix + cleanText);
+                        } else {
+                            console.warn(`[analyze-lesson] Filtered out garbage OCR for path ${p.storage_path}`);
+                        }
                     }
                 }
 
@@ -188,31 +259,41 @@ serve(async (req) => {
                     قم باستخراج هذه النقطة بدقة وضعها داخل المصفوفة \`focusPoints\`. اشرح في \`details\` لماذا ركز عليها المعلم وكيف ترتبط بالكتاب.`;
                 }
 
-                const prompt = `أنت أستاذ جامعي ومحلل أكاديمي خبير. لديك الان جزء من كتاب دراسي (محاضرة).
-                 ملاحظة هامة جداً: النصوص المظللة بعلامة [🎤 ما ذكره المعلم في التسجيل] تمثل مقاطع ذكرها المعلم وركّز عليها في تسجيله الصوتي.
-                 ${focusPromptInjection}
-                 
-                 المطلوب منك كتابة شرح تفصيلي وعميق جداً لهذا الجزء، مع دمج معلومات الكتاب مع ما ذكره المعلم.
-                 
-                 قواعد صارمة جداً (سيتم رفض إجابتك إن لم تتبعها):
-                 1. *الطول*: يجب ألا يقل الشرح (explanation_notes) بأي حال من الأحوال عن 3000 حرف. اشرح كل مفهوم، كل معادلة، كل تعريف بالتفصيل الممل كما لو كنت تشرح لطالب مبتدئ. استخدم الأمثلة.
-                 2. *تمييز ما ذكره المعلم*: كلما ذكرت نقطة ركّز عليها المعلم في التسجيل، يجب أن تضعها داخل blockquote ماركداون بهذا الشكل:
-                    > 🎤 **ما ذكره المعلم:** النقطة التي ركّز عليها المعلم هنا مع الشرح
-                    هذا سيميزها بصرياً عن باقي النص بخلفية صفراء.
-                 3. *إخراج الكتروني*: يجب أن يكون الشرح بصيغة Markdown منسقة (عناوين، قوائم، نصوص غامقة).
+                const prompt = `[تعليمات النظام — ممنوع تجاوزها]
+أنت أستاذ جامعي متخصص في تحليل الكتب الدراسية الجامعية العربية.
+أنت الآن تحلل جزءاً من كتاب دراسي أكاديمي.
 
-                 يجب أن يكون المخرج النهائي بصيغة JSON فقط، بالضبط هكذا:
-                 {
-                   "explanation_notes": "الشرح التفصيلي العميق جداً هنا بصيغة ماركداون (لا يقل أبداً عن 3000 حرف)...",
-                   "key_definitions": ["تعريف 1 تفصيلي", "تعريف 2 تفصيلي", "..."],
-                   "focusPoints": [
-                      {"title": "عنوان لنقطة التركيز 1", "details": "شرح مفصل لهذه النقطة التي ذكرها المعلم"},
-                      {"title": "عنوان لنقطة التركيز 2", "details": "شرح مفصل للنقطة الثانية"}
-                   ]
-                 }
-                 
-                 --- نص المحاضرة ---
-                 ${content}`;
+⛔ حدود صارمة مطلقة (انتهاكها = رفض فوري):
+1. استخدم المحتوى المقدم لك فقط. لا تؤلف، لا تخترع، لا تضف أي معلومة غير موجودة حرفياً في النص.
+2. إذا كان النص المقدم فارغاً أو غير مفهوم أو لا يحتوي على محتوى أكاديمي حقيقي، أرجع JSON فارغ هكذا بالضبط:
+   {"explanation_notes": "", "key_definitions": [], "focusPoints": []}
+3. ممنوع منعاً باتاً الحديث عن مواضيع غير موجودة في النص (مثل: علم البيئة، الاحتباس الحراري، التنوع البيولوجي، الفيزياء، أو أي موضوع خارجي).
+4. ممنوع كتابة "سؤال وهمي" أو أي عبارة تشير لعدم وجود محتوى.
+5. إذا رأيت عبارات مثل "No extraction possible" أو "Error" أو رسائل نظام، تجاهلها تماماً ولا تذكرها.
+6. لا تكرر نفس المحتوى أكثر من مرة.
+
+ملاحظة: النصوص المظللة بعلامة [🎤 ما ذكره المعلم في التسجيل] تمثل مقاطع ركّز عليها المعلم في تسجيله الصوتي.
+${focusPromptInjection}
+
+المطلوب: شرح تفصيلي وعميق جداً لهذا الجزء بصيغة Markdown، مع دمج الكتاب وشرح المعلم.
+
+قواعد الجودة:
+1. الطول: يجب ألا يقل الشرح (explanation_notes) عن 3000 حرف. اشرح كل مفهوم وكل تعريف بالتفصيل.
+2. تمييز ما ذكره المعلم: ضعه داخل blockquote:
+   > 🎤 **ما ذكره المعلم:** النقطة هنا
+3. إخراج بصيغة Markdown منسقة (عناوين، قوائم، نصوص غامقة).
+
+المخرج: JSON فقط بالضبط هكذا:
+{
+  "explanation_notes": "الشرح التفصيلي العميق هنا بصيغة ماركداون (لا يقل عن 3000 حرف)...",
+  "key_definitions": ["تعريف 1", "تعريف 2"],
+  "focusPoints": [
+     {"title": "عنوان نقطة التركيز", "details": "شرح مفصل"}
+  ]
+}
+
+--- نص المحاضرة ---
+${content}`;
 
                 console.log(`[analyze-lesson] Map Phase: Processing batch ${cursor + 1}/${batches.length}...`);
 
