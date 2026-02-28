@@ -13,6 +13,7 @@ import { saveFile, deleteFile, getFile } from '../services/storage';
 import { uploadHomeworkFile, deleteHomeworkFile, supabase, upsertLesson } from '../services/supabaseService';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import toast from 'react-hot-toast';
 
 const base64ToFile = (base64Data: string, mimeType: string, fileName: string): File => {
   const byteCharacters = atob(base64Data);
@@ -674,6 +675,31 @@ const LessonDetail: React.FC = () => {
     }
   };
 
+  const handleClearAnalysis = async () => {
+    if (!lessonId || !supabase) return;
+
+    // Optimistic UI update
+    setTransientAIResult(null);
+    if (lesson) {
+      const updatedLesson = { ...lesson, aiResult: undefined };
+      await updateLesson(updatedLesson);
+    }
+
+    // Backend update
+    try {
+      await supabase.from('lessons').update({
+        analysis_status: null,
+        analysis_result: null
+      }).eq('id', lessonId);
+
+      toast.success('تم مسح نتائج التحليل السابقة 🧹 يمكنك استخراج البيانات مجدداً');
+    } catch (e) {
+      console.error('Failed to clear analysis:', e);
+      toast.error('حدث مشكلة في مسح البيانات القديمة!');
+    }
+  };
+
+
   if (loading) return (
     <div className="flex flex-col items-center justify-center min-h-screen text-indigo-600 bg-white">
       <Loader2 size={48} className="animate-spin mb-4" />
@@ -794,9 +820,12 @@ const LessonDetail: React.FC = () => {
                       className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all duration-700 ease-out"
                       style={{
                         width: `${Math.max(2, (() => {
-                          // Calculate progress from progressMsg
-                          const match = progressMsg.match(/الإنجاز الكلي: (\d+)%/);
-                          return match ? parseInt(match[1]) : 5;
+                          try {
+                            const match = progressMsg.match(/الإنجاز الكلي: (\d+)%/);
+                            return match ? parseInt(match[1]) : 5;
+                          } catch (e) {
+                            return 5;
+                          }
                         })())}%`
                       }}
                     ></div>
@@ -878,6 +907,18 @@ const LessonDetail: React.FC = () => {
 
           {(transientAIResult || lesson?.aiResult) && (
             <div className="space-y-12 animate-in slide-in-from-bottom-8">
+
+              <div className="flex justify-end mb-4">
+                <button
+                  onClick={handleClearAnalysis}
+                  className="flex items-center gap-2 p-3 bg-red-50 text-red-600 hover:bg-red-100 rounded-2xl font-bold transition-all border border-red-100/50 shadow-sm"
+                  title="مسح التحليل لبدء استخراج جديد"
+                >
+                  <Trash2 size={16} />
+                  <span className="text-sm">مسح التحليل وإعادة البدء</span>
+                </button>
+              </div>
+
               {/* Retry banner for partially failed analysis */}
               {!isProcessing && supabase && lessonId && (
                 <RetryBanner lessonId={lessonId} supabase={supabase} onRetry={handleExtractMemory} />
