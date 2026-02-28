@@ -1074,11 +1074,11 @@ const LessonDetail: React.FC = () => {
                     <div key={i} className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
                       <p className="font-black text-lg text-slate-800 mb-4">{eq.question}</p>
                       <details className="group">
-                        <summary className="cursor-pointer flex items-center gap-2 text-purple-600 font-bold text-sm hover:text-purple-700 transition-colors">
+                        <summary className="cursor-pointer flex items-center gap-2 text-emerald-600 font-bold text-sm hover:text-emerald-700 transition-colors">
                           <ChevronDown size={16} className="group-open:rotate-180 transition-transform" />
                           عرض الإجابة النموذجية
                         </summary>
-                        <div className="mt-4 p-4 bg-purple-50 rounded-xl text-sm text-purple-800 leading-relaxed font-medium">{eq.idealAnswer}</div>
+                        <div className="mt-4 p-4 bg-emerald-50 border border-emerald-100/50 rounded-xl text-sm text-emerald-800 leading-relaxed font-bold">{eq.idealAnswer}</div>
                       </details>
                     </div>
                   ))}
