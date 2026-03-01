@@ -896,9 +896,19 @@ const LessonDetail: React.FC = () => {
             )}
 
             {error && (
-              <div className="mt-4 p-5 bg-red-50 border border-red-100 rounded-[1.5rem] flex items-center gap-3 text-red-600 max-w-md mx-auto">
-                <AlertCircle size={24} className="shrink-0" />
-                <p className="text-xs font-black">{error}</p>
+              <div className="mt-4 flex flex-col items-center gap-3">
+                <div className="p-5 bg-red-50 border border-red-100 rounded-[1.5rem] flex items-center gap-3 text-red-600 max-w-md w-full">
+                  <AlertCircle size={24} className="shrink-0" />
+                  <p className="text-xs font-black">{error}</p>
+                </div>
+                {!isProcessing && error.includes('فشل') && (
+                  <button
+                    onClick={handleRetryFailed}
+                    className="px-6 py-2.5 bg-red-600 text-white rounded-full font-bold text-sm hover:bg-red-700 transition"
+                  >
+                    إعادة المحاضرات الفاشلة فقط 🔄
+                  </button>
+                )}
               </div>
             )}
           </div>
