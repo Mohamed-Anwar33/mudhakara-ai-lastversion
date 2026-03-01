@@ -216,16 +216,53 @@ const LessonDetail: React.FC = () => {
     } catch (err) { console.error(err); }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'audio' | 'image' | 'document') => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'audio' | 'image' | 'document') => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // Smart File Size Validation
+    const MAX_FILE_SIZE_MB = 50;
+    const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
+      toast.error(`عذراً، حجم الملف (${fileSizeMB} ميجابايت) يتجاوز الحد المسموح وهو ${MAX_FILE_SIZE_MB} ميجابايت.\nيرجى ضغط الملف قبل رفعه لتجنب مشاكل المعالجة.`, {
+        duration: 8000,
+        icon: '⚠️',
+        style: { maxWidth: '500px', textAlign: 'right', direction: 'rtl', fontWeight: 'bold' }
+      });
+      e.target.value = '';
+      return;
+    }
 
     if (type === 'document') {
       const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
       if (!isPdf) {
-        setError('الملفات المدعومة للمستندات حاليًا: PDF فقط.');
+        toast.error('الملفات المدعومة للمستندات حاليًا: PDF فقط.');
         e.target.value = '';
         return;
+      }
+    }
+
+    let finalFile = file;
+
+    // Image Compression
+    if (type === 'image') {
+      try {
+        const toastId = toast.loading('جاري ضغط الصورة الذكي...');
+        // We import it dynamically if you don't want it breaking server-side build, but direct import is fine
+        const imageCompression = (await import('browser-image-compression')).default;
+        const options = {
+          maxSizeMB: 1, // Compress to 1MB max
+          maxWidthOrHeight: 1920, // Standard HD
+          useWebWorker: true
+        };
+        const compressedFile = await imageCompression(file, options);
+        finalFile = new File([compressedFile], file.name, { type: compressedFile.type });
+        toast.success(`تم ضغط الصورة 🪄`, { id: toastId });
+      } catch (error) {
+        console.error("Compression err:", error);
+        toast.dismiss();
       }
     }
 
@@ -234,11 +271,11 @@ const LessonDetail: React.FC = () => {
     reader.onloadend = async () => {
       const content = reader.result as string;
       const fileId = `${sourceType}_${lessonId}_${Date.now()}`;
-      await saveFile(fileId, content, file.name);
-      const newSource: Source = { id: fileId, type: sourceType, name: file.name, content: "[Stored]" };
+      await saveFile(fileId, content, finalFile.name);
+      const newSource: Source = { id: fileId, type: sourceType, name: finalFile.name, content: "[Stored]" };
       if (lesson) updateLesson({ ...lesson, sources: [...lesson.sources, newSource] });
     };
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(finalFile);
   };
 
   const handleAddYoutube = () => {
@@ -891,23 +928,6 @@ const LessonDetail: React.FC = () => {
                   <div className="text-center p-3 bg-amber-50 rounded-2xl border border-amber-100">
                     <p className="text-xs font-bold text-amber-700">⏳ المعالجة مستمرة بأمان — لا تغلق الصفحة</p>
                   </div>
-                )}
-              </div>
-            )}
-
-            {error && (
-              <div className="mt-4 flex flex-col items-center gap-3">
-                <div className="p-5 bg-red-50 border border-red-100 rounded-[1.5rem] flex items-center gap-3 text-red-600 max-w-md w-full">
-                  <AlertCircle size={24} className="shrink-0" />
-                  <p className="text-xs font-black">{error}</p>
-                </div>
-                {!isProcessing && error.includes('فشل') && (
-                  <button
-                    onClick={handleRetryFailed}
-                    className="px-6 py-2.5 bg-red-600 text-white rounded-full font-bold text-sm hover:bg-red-700 transition"
-                  >
-                    إعادة المحاضرات الفاشلة فقط 🔄
-                  </button>
                 )}
               </div>
             )}

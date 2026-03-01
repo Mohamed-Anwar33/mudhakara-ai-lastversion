@@ -848,14 +848,30 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
                         <span className="font-bold text-xs">اضغط لرفع صورة المسألة</span>
                       </div>
                     )}
-                    <input type="file" className="hidden" accept="image/*" onChange={(e) => {
+                    <input type="file" className="hidden" accept="image/*" onChange={async (e) => {
                       const file = e.target.files?.[0];
                       if (file) {
-                        const reader = new FileReader();
-                        reader.onloadend = () => {
-                          setHwFile({ name: file.name, content: reader.result as string, type: 'image' });
-                        };
-                        reader.readAsDataURL(file);
+                        try {
+                          const toastId = toast.loading('جاري ضغط الصورة الذكي...');
+                          const imageCompression = (await import('browser-image-compression')).default;
+                          const options = { maxSizeMB: 1, maxWidthOrHeight: 1920, useWebWorker: true };
+                          const compressedFile = await imageCompression(file, options);
+
+                          const reader = new FileReader();
+                          reader.onloadend = () => {
+                            setHwFile({ name: file.name, content: reader.result as string, type: 'image' });
+                            toast.success(`تم ضغط الصورة 🪄`, { id: toastId });
+                          };
+                          reader.readAsDataURL(compressedFile);
+                        } catch (error) {
+                          console.error("Compression err:", error);
+                          // Fallback to original if compression fails
+                          const reader = new FileReader();
+                          reader.onloadend = () => {
+                            setHwFile({ name: file.name, content: reader.result as string, type: 'image' });
+                          };
+                          reader.readAsDataURL(file);
+                        }
                       }
                     }} />
                   </label>
@@ -888,8 +904,16 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
                           return;
                         }
 
-                        if (file.size > 100 * 1024 * 1024) {
-                          toast.error("عذراً، حجم التسجيل كبير جداً (أكثر من 100 ميجا). يرجى ضغط الملف.");
+                        // Smart File Size Validation
+                        const MAX_FILE_SIZE_MB = 50;
+                        const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+                        if (file.size > MAX_FILE_SIZE_BYTES) {
+                          const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
+                          toast.error(`عذراً، حجم الملف (${fileSizeMB} ميجابايت) يتجاوز الحد المسموح وهو ${MAX_FILE_SIZE_MB} ميجابايت.\nيرجى ضغط الملف قبل رفعه لتجنب مشاكل المعالجة.`, {
+                            duration: 8000,
+                            icon: '⚠️',
+                            style: { maxWidth: '500px', textAlign: 'right', direction: 'rtl', fontWeight: 'bold' }
+                          });
                           return;
                         }
 
