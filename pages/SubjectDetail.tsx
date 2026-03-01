@@ -167,8 +167,18 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
         return;
       }
 
-      if (file.size > 10 * 1024 * 1024) { // 10MB limit
-        toast.error("الملف كبير جداً! الحد الأقصى 10MB — حاول ضغطه أولاً");
+      // Smart File Size Validation
+      const MAX_FILE_SIZE_MB = 50;
+      const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+
+      if (file.size > MAX_FILE_SIZE_BYTES) {
+        const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
+        toast.error(`عذراً، حجم الملف (${fileSizeMB} ميجابايت) يتجاوز الحد المسموح وهو ${MAX_FILE_SIZE_MB} ميجابايت.\nيرجى ضغط الملف قبل رفعه لتجنب مشاكل المعالجة.`, {
+          duration: 8000,
+          icon: '⚠️',
+          style: { maxWidth: '500px', textAlign: 'right', direction: 'rtl', fontWeight: 'bold' }
+        });
+        e.target.value = '';
         return;
       }
 
