@@ -14,6 +14,9 @@ export interface Subject {
   university: string;
   description?: string;
   mainSourceId?: string;
+  subjectSources?: Source[];            // الملفات المرفوعة على مستوى المادة
+  analyzedLessons?: AnalyzedLesson[];   // الدروس المحللة تلقائياً
+  analysisStatus?: 'idle' | 'processing' | 'completed' | 'error';
 }
 
 export interface Lesson {
@@ -109,6 +112,16 @@ export interface Quiz {
   correctAnswer: number;
   explanation: string;
   evidence?: string;
+}
+
+export interface AnalyzedLesson {
+  id: string;
+  lessonTitle: string;           // عنوان الدرس (يحدده الـ AI)
+  summary: string;               // الملخص الذكي
+  focusPoints: FocusPoint[];     // نقاط التركيز
+  quizzes: Quiz[];               // أسئلة (صح/خطأ + اختياري)
+  essayQuestions: EssayQuestion[];// أسئلة مقالية
+  detailedExplanation?: string;  // الشرح التفصيلي بالـ Markdown
 }
 
 export interface UserPreferences {

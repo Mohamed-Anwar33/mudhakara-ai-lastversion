@@ -1,0 +1,174 @@
+{
+  "latestJobs": [
+    {
+      "id": "7337f658-50b8-4c66-b4f2-89e7ca98bc35",
+      "lesson_id": "a0cc6dda-6a80-4982-9eac-3aa5b3b5acc4",
+      "job_type": "finalize_global_summary",
+      "status": "completed",
+      "error_message": null,
+      "updated_at": "2026-03-03T03:07:10.639593+00:00"
+    },
+    {
+      "id": "0c005dea-9d7a-4c20-b33d-466581b8d79e",
+      "lesson_id": "a0cc6dda-6a80-4982-9eac-3aa5b3b5acc4",
+      "job_type": "generate_quiz",
+      "status": "completed",
+      "error_message": null,
+      "updated_at": "2026-03-03T03:06:36.512196+00:00"
+    },
+    {
+      "id": "840313e9-1884-4aca-a147-4afaa4691f82",
+      "lesson_id": "a0cc6dda-6a80-4982-9eac-3aa5b3b5acc4",
+      "job_type": "generate_quiz",
+      "status": "completed",
+      "error_message": null,
+      "updated_at": "2026-03-03T03:06:16.114839+00:00"
+    },
+    {
+      "id": "db7d53bd-4bb8-4cf1-a7cc-933589fe2041",
+      "lesson_id": "a0cc6dda-6a80-4982-9eac-3aa5b3b5acc4",
+      "job_type": "generate_quiz",
+      "status": "completed",
+      "error_message": null,
+      "updated_at": "2026-03-03T03:06:15.21708+00:00"
+    },
+    {
+      "id": "b3ced764-5349-4168-a9de-7ec43805b13d",
+      "lesson_id": "a0cc6dda-6a80-4982-9eac-3aa5b3b5acc4",
+      "job_type": "generate_quiz",
+      "status": "completed",
+      "error_message": null,
+      "updated_at": "2026-03-03T03:06:06.833643+00:00"
+    },
+    {
+      "id": "3e4450e4-9bb8-43f6-9bc8-92939e97b0a9",
+      "lesson_id": "a0cc6dda-6a80-4982-9eac-3aa5b3b5acc4",
+      "job_type": "generate_quiz",
+      "status": "completed",
+      "error_message": null,
+      "updated_at": "2026-03-03T03:06:04.801262+00:00"
+    },
+    {
+      "id": "328fed32-b182-4e6a-82f4-0156af9b11a6",
+      "lesson_id": "a0cc6dda-6a80-4982-9eac-3aa5b3b5acc4",
+      "job_type": "generate_quiz",
+      "status": "completed",
+      "error_message": null,
+      "updated_at": "2026-03-03T03:05:50.106849+00:00"
+    },
+    {
+      "id": "b2b16806-bcc6-46f9-a5a9-83015025ded2",
+      "lesson_id": "a0cc6dda-6a80-4982-9eac-3aa5b3b5acc4",
+      "job_type": "generate_quiz",
+      "status": "completed",
+      "error_message": null,
+      "updated_at": "2026-03-03T03:05:48.809856+00:00"
+    },
+    {
+      "id": "d6a505d3-c01d-458d-ba78-c14e8ed2f13b",
+      "lesson_id": "a0cc6dda-6a80-4982-9eac-3aa5b3b5acc4",
+      "job_type": "analyze_lecture",
+      "status": "completed",
+      "error_message": "Auto-completed by global-aggregator self-healing (stuck >2min)",
+      "updated_at": "2026-03-03T03:05:47.476022+00:00"
+    },
+    {
+      "id": "4331cfe7-5246-480b-b77e-119dc6403bf6",
+      "lesson_id": "a0cc6dda-6a80-4982-9eac-3aa5b3b5acc4",
+      "job_type": "generate_quiz",
+      "status": "completed",
+      "error_message": null,
+      "updated_at": "2026-03-03T03:05:36.985499+00:00"
+    },
+    {
+      "id": "4028cbac-5e97-408d-86ee-bf29e0558e74",
+      "lesson_id": "a0cc6dda-6a80-4982-9eac-3aa5b3b5acc4",
+      "job_type": "generate_quiz",
+      "status": "completed",
+      "error_message": null,
+      "updated_at": "2026-03-03T03:05:36.387998+00:00"
+    },
+    {
+      "id": "7d54dcd6-62c8-40ec-8112-f1ea8eb0aba5",
+      "lesson_id": "a0cc6dda-6a80-4982-9eac-3aa5b3b5acc4",
+      "job_type": "generate_quiz",
+      "status": "completed",
+      "error_message": null,
+      "updated_at": "2026-03-03T03:05:34.013705+00:00"
+    },
+    {
+      "id": "3ccac088-817e-45af-bd30-3378abfe0bc7",
+      "lesson_id": "a0cc6dda-6a80-4982-9eac-3aa5b3b5acc4",
+      "job_type": "generate_quiz",
+      "status": "completed",
+      "error_message": null,
+      "updated_at": "2026-03-03T03:05:33.377963+00:00"
+    },
+    {
+      "id": "bfbaff52-c2ba-46bc-ae17-22fd593f67aa",
+      "lesson_id": "a0cc6dda-6a80-4982-9eac-3aa5b3b5acc4",
+      "job_type": "generate_quiz",
+      "status": "completed",
+      "error_message": null,
+      "updated_at": "2026-03-03T03:05:17.21481+00:00"
+    },
+    {
+      "id": "17791917-f27f-46e8-9038-800590f4d6e8",
+      "lesson_id": "a0cc6dda-6a80-4982-9eac-3aa5b3b5acc4",
+      "job_type": "generate_quiz",
+      "status": "completed",
+      "error_message": null,
+      "updated_at": "2026-03-03T03:05:16.168911+00:00"
+    },
+    {
+      "id": "fe574de1-5a48-451d-b42d-5fedbd8d62df",
+      "lesson_id": "a0cc6dda-6a80-4982-9eac-3aa5b3b5acc4",
+      "job_type": "generate_quiz",
+      "status": "completed",
+      "error_message": null,
+      "updated_at": "2026-03-03T03:05:11.763982+00:00"
+    },
+    {
+      "id": "4745db67-6883-49bc-816e-97b829a63ca1",
+      "lesson_id": "a0cc6dda-6a80-4982-9eac-3aa5b3b5acc4",
+      "job_type": "generate_quiz",
+      "status": "completed",
+      "error_message": null,
+      "updated_at": "2026-03-03T03:05:10.905576+00:00"
+    },
+    {
+      "id": "ddf4faea-ea66-4038-bb43-213b0c00f431",
+      "lesson_id": "a0cc6dda-6a80-4982-9eac-3aa5b3b5acc4",
+      "job_type": "generate_quiz",
+      "status": "completed",
+      "error_message": null,
+      "updated_at": "2026-03-03T03:05:05.599331+00:00"
+    },
+    {
+      "id": "1fe10b0b-233f-43b7-b929-a8ac94a389e2",
+      "lesson_id": "a0cc6dda-6a80-4982-9eac-3aa5b3b5acc4",
+      "job_type": "analyze_lecture",
+      "status": "completed",
+      "error_message": null,
+      "updated_at": "2026-03-03T03:05:04.80585+00:00"
+    },
+    {
+      "id": "55ed1e0d-f33d-4866-8194-d1dca0510b16",
+      "lesson_id": "a0cc6dda-6a80-4982-9eac-3aa5b3b5acc4",
+      "job_type": "generate_quiz",
+      "status": "completed",
+      "error_message": null,
+      "updated_at": "2026-03-03T03:05:03.874449+00:00"
+    }
+  ],
+  "failedJobs": [
+    {
+      "id": "d683e481-b464-40f2-ae6d-4f66ed32b828",
+      "lesson_id": "f192f80e-b7c6-41bc-92db-a5b2a51c0000",
+      "job_type": "analyze_lecture",
+      "status": "failed",
+      "error_message": "Edge Function returned 500: {\"error\":\"def.trim is not a function\"}",
+      "updated_at": "2026-03-02T21:44:52.753232+00:00"
+    }
+  ]
+}

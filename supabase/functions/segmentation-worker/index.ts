@@ -141,7 +141,7 @@ serve(async (req) => {
                 .select('page_number, storage_path')
                 .eq('lesson_id', lesson_id)
                 .order('page_number', { ascending: true })
-                .limit(20); // First 20 pages usually contain the TOC
+                .limit(30); // First 30 pages to capture full TOC
 
             // ══ NEW LOGIC: Support Images and Audio correctly ══
             // If there are no lesson_pages (because it's an Image or Audio file injected directly into document_sections)
@@ -173,20 +173,26 @@ serve(async (req) => {
                 }
 
                 // 3. Intelligent LLM Segmentation
-                const prompt = `أنت خبير أكاديمي محترف في استخراج فهارس الكتب وتقسيمها إلى محاضرات (Lectures).
-                بناءً على هذا النص المستخرج من بداية الكتاب، استخرج عناوين المحاضرات أو الفصول الرئيسية مع رقم الصفحة التقريبي لبدايتها.
-                
-                يجب أن يكون الناتج JSON حصراً بالشكل التالي:
-                {
-                  "lectures": [
-                    { "title": "الفصل الأول: كذا", "start_page": 5 },
-                    { "title": "الفصل الثاني: كذا", "start_page": 22 }
-                  ]
-                }
-                
-                النص:
-                ${tocContext}`;
+                const prompt = `[تعليمات صارمة — ممنوع تجاوزها]
 
+أنت خبير أكاديمي في استخراج فهارس الكتب. مهمتك استخراج جميع عناوين المحاضرات/الفصول من النص التالي.
+
+⛔ قواعد لا يمكن كسرها:
+1. يجب استخراج كل عنصر في الفهرس بدون استثناء — لا تحذف أي عنصر
+2. لا تدمج عناصر مع بعضها — كل عنوان في الفهرس = عنصر منفصل
+3. إذا وجدت 13 عنصراً في الفهرس، يجب أن يكون الناتج 13 عنصراً بالضبط
+4. رقم الصفحة يجب أن يكون من الفهرس نفسه — لا تخترع أرقام
+5. تحقق من الناتج: هل عدد العناصر يطابق ما في الفهرس؟
+
+المخرج: JSON حصراً:
+{
+  "lectures": [
+    { "title": "عنوان", "start_page": رقم }
+  ]
+}
+
+النص:
+${tocContext}`;
                 try {
                     if (tocContext.trim().length > 50) {
                         parsedToc = await callGeminiJSON(prompt, geminiKey);

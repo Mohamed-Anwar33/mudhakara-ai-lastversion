@@ -7,6 +7,7 @@ import Auth from './pages/Auth.tsx';
 import Dashboard from './pages/Dashboard.tsx';
 import SubjectDetail from './pages/SubjectDetail.tsx';
 import LessonDetail from './pages/LessonDetail.tsx';
+import AnalyzedLessonDetail from './pages/AnalyzedLessonDetail.tsx';
 import SubscriptionRequest from './pages/SubscriptionRequest.tsx';
 import { Subject, User } from './types.ts';
 import { fetchSubjects, upsertSubject, removeSubject, supabase, signOut } from './services/supabaseService.ts';
@@ -173,6 +174,7 @@ const App: React.FC = () => {
           } />
 
           <Route path="/subject/:id" element={session ? <SubjectDetail subjects={subjects} setSubjects={setSubjects} user={dashboardUser} /> : <Navigate to="/login" replace />} />
+          <Route path="/subject/:id/analyzed/:lessonIndex" element={session ? <AnalyzedLessonDetail subjects={subjects} /> : <Navigate to="/login" replace />} />
           <Route path="/lesson/:lessonId" element={session ? <LessonDetail /> : <Navigate to="/login" replace />} />
 
           <Route path="*" element={<Navigate to="/" replace />} />

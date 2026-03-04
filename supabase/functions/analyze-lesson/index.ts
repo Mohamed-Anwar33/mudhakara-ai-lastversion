@@ -216,9 +216,89 @@ serve(async (req) => {
                 }
                 payload.audio_context = audioContext; // Save into payload to pass it to the Map stage
                 // ------------------------------------------------
+                // ── PDF RE-READ FALLBACK ──
+                // If OCR produced no text or very little, read pages directly from PDF
+                const totalOcrChars = rawTextChunks.join('').length;
+                if (totalOcrChars < 200) {
+                    console.log(`[analyze-lesson] ⚠️ OCR text insufficient (${totalOcrChars} chars) for pages ${start_page}-${end_page}. Attempting PDF re-read...`);
+
+                    try {
+                        // Find gemini_file_uri from processing_queue
+                        let pdfUri = '';
+                        const { data: pdfJobs } = await supabase.from('processing_queue')
+                            .select('payload').eq('lesson_id', lesson_id)
+                            .eq('job_type', 'extract_pdf_info').limit(1);
+
+                        if (pdfJobs?.[0]?.payload?.gemini_file_uri) {
+                            pdfUri = pdfJobs[0].payload.gemini_file_uri;
+                            console.log(`[analyze-lesson] 📎 Found gemini_file_uri from processing_queue`);
+                        }
+
+                        if (pdfUri && geminiKey) {
+                            const ocrPrompt = `أنت خبير في استخراج النصوص العربية من ملفات PDF. اقرأ الصفحات من ${start_page} إلى ${end_page} واستخرج النص كاملاً.
+القواعد:
+- استخرج كل النص بدقة مع الحفاظ على ترتيب الفقرات
+- اكتب النص بالكامل كما هو
+- لا تضف أي تعليقات
+
+مطلوب استخراج النص من الصفحات ${start_page} إلى ${end_page} فقط.`;
+
+                            const ocrRes = await fetch(
+                                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
+                                {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        contents: [{
+                                            parts: [
+                                                { text: ocrPrompt },
+                                                { fileData: { fileUri: pdfUri, mimeType: 'application/pdf' } }
+                                            ]
+                                        }],
+                                        generationConfig: { temperature: 0.1, maxOutputTokens: 65536 }
+                                    })
+                                }
+                            );
+
+                            if (ocrRes.ok) {
+                                const ocrData = await ocrRes.json();
+                                const extractedText = ocrData.candidates?.[0]?.content?.parts
+                                    ?.filter((p: any) => p.text).map((p: any) => p.text).join('').trim() || '';
+
+                                if (extractedText.length > 100) {
+                                    console.log(`[analyze-lesson] ✅ PDF re-read got ${extractedText.length} chars for pages ${start_page}-${end_page}`);
+                                    rawTextChunks = [extractedText];
+
+                                    // Save to OCR storage for future use
+                                    const reOcrPath = `${lesson_id}/reocr_${start_page}_${end_page}.txt`;
+                                    await supabase.storage.from('ocr')
+                                        .upload(reOcrPath, extractedText, { upsert: true, contentType: 'text/plain;charset=UTF-8' });
+
+                                    // Update lesson_pages
+                                    for (let pn = start_page; pn <= end_page; pn++) {
+                                        await supabase.from('lesson_pages').upsert({
+                                            lesson_id,
+                                            page_number: pn,
+                                            storage_path: reOcrPath,
+                                            char_count: extractedText.length,
+                                            status: 'success'
+                                        }, { onConflict: 'lesson_id,page_number' });
+                                    }
+                                } else {
+                                    console.warn(`[analyze-lesson] ⚠️ PDF re-read also insufficient (${extractedText.length} chars)`);
+                                }
+                            } else {
+                                console.warn(`[analyze-lesson] ⚠️ PDF re-read API failed: ${ocrRes.status}`);
+                            }
+                        }
+                    } catch (fallbackErr: any) {
+                        console.warn(`[analyze-lesson] ⚠️ PDF fallback error:`, fallbackErr.message);
+                    }
+                }
 
                 if (rawTextChunks.length === 0) {
-                    // Empty section, skip
+                    // Empty section even after fallback, skip
+                    console.warn(`[analyze-lesson] ❌ No text available for pages ${start_page}-${end_page} even after PDF fallback. Skipping.`);
                     await supabase.from('segmented_lectures').update({ status: 'quiz_done' }).eq('id', payload.lecture_id);
                     await supabase.from('processing_queue').update({ status: 'completed' }).eq('id', jobId);
 
@@ -418,9 +498,22 @@ ${content}`;
 
                 // If content is too short, skip quiz generation entirely to avoid garbage questions
                 if (totalExplanation.length < 500) {
-                    console.warn(`[analyze-lesson] Lecture ${lecture_id} has insufficient content (${totalExplanation.length} chars). Skipping quiz generation.`);
+                    console.warn(`[analyze-lesson] Lecture ${lecture_id} has insufficient content (${totalExplanation.length} chars). Saving minimal summary and skipping quiz.`);
+
+                    // CRITICAL FIX: Save a minimal summary JSON so the lecture still has summary_storage_path
+                    // Without this, the frontend filter (`summary_storage_path IS NOT NULL`) drops the lecture entirely
+                    const minimalJson = {
+                        title: payload.title,
+                        explanation_notes: totalExplanation || `محتوى المحاضرة "${payload.title}" قصير جداً ولم يتم استخراج تفاصيل كافية.`,
+                        key_definitions: allDefinitions,
+                        metadata: { generated_at: new Date().toISOString(), skipped_quiz: true }
+                    };
+                    const storagePath = `${lesson_id}/lecture_${lecture_id}.json`;
+                    await supabase.storage.from('analysis')
+                        .upload(storagePath, JSON.stringify(minimalJson, null, 2), { upsert: true, contentType: 'application/json' });
+
                     await supabase.from('segmented_lectures')
-                        .update({ status: 'quiz_done', char_count: totalExplanation.length })
+                        .update({ status: 'quiz_done', char_count: totalExplanation.length, summary_storage_path: storagePath })
                         .eq('id', lecture_id);
                     await supabase.from('processing_queue').update({ status: 'completed' }).eq('id', jobId);
                     return new Response(JSON.stringify({ status: 'skipped_insufficient_content' }), { headers: corsHeaders });

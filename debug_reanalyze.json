@@ -1,0 +1,13 @@
+{
+  "reanalyzeJobs": null,
+  "pendingJobs": null,
+  "processingJobs": null,
+  "failedJobs": null,
+  "tempLessons": [
+    {
+      "id": "76b4b2f9-0927-49c2-9616-959b0c977410",
+      "lesson_title": "__analysis__1772574858152",
+      "created_at": "2026-03-03T21:54:18.152+00:00"
+    }
+  ]
+}

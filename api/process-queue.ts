@@ -56,9 +56,9 @@ async function acquireJobId(supabase: any, workerId: string): Promise<string | n
         .eq('status', 'processing');
 
     const excludedTypes: string[] = [];
-    if ((activeOcr || 0) >= 5) excludedTypes.push('ocr_range', 'image_ocr', 'ocr_page_batch');
-    if ((activeAnalysis || 0) >= 4) excludedTypes.push('generate_analysis', 'analyze_lecture');
-    if ((activeQuiz || 0) >= 4) excludedTypes.push('generate_quiz');
+    if ((activeOcr || 0) >= 8) excludedTypes.push('ocr_range', 'image_ocr', 'ocr_page_batch');
+    if ((activeAnalysis || 0) >= 6) excludedTypes.push('generate_analysis', 'analyze_lecture');
+    if ((activeQuiz || 0) >= 6) excludedTypes.push('generate_quiz');
 
     for (let attempt = 0; attempt < 3; attempt++) {
         let query = supabase

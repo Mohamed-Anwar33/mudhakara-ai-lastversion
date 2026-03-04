@@ -1,0 +1,206 @@
+{
+  "lessonId": "5f455350-c017-42e8-9f72-ff57c268d8d2",
+  "totalSegments": 25,
+  "segments": [
+    {
+      "title": "قوِّم نفسك",
+      "status": "quiz_done",
+      "summary_storage_path": "5f455350-c017-42e8-9f72-ff57c268d8d2/lecture_bc9df2a9-a597-4946-927c-7580c0c9e54f.json",
+      "char_count": 0,
+      "start_page": 9,
+      "end_page": 9
+    },
+    {
+      "title": "الترحيب بالطلاب، والتعريف بمفردات المقرر، والتوزيع الزمني لها",
+      "status": "quiz_done",
+      "summary_storage_path": null,
+      "char_count": 0,
+      "start_page": 9,
+      "end_page": 8
+    },
+    {
+      "title": "إرشادات المحتوى الإلكتروني",
+      "status": "quiz_done",
+      "summary_storage_path": null,
+      "char_count": 0,
+      "start_page": 9,
+      "end_page": 8
+    },
+    {
+      "title": "الهمزة في بداية الكلمة",
+      "status": "quiz_done",
+      "summary_storage_path": "5f455350-c017-42e8-9f72-ff57c268d8d2/lecture_f845e26b-7565-441a-a15d-92ae6dd904dd.json",
+      "char_count": 0,
+      "start_page": 10,
+      "end_page": 19
+    },
+    {
+      "title": "الهمزة في وسط الكلمة",
+      "status": "quiz_done",
+      "summary_storage_path": "5f455350-c017-42e8-9f72-ff57c268d8d2/lecture_5216df6f-4485-401e-83fe-75318fb46a73.json",
+      "char_count": 16250,
+      "start_page": 20,
+      "end_page": 23
+    },
+    {
+      "title": "الهمزة في نهاية الكلمة",
+      "status": "summary_done",
+      "summary_storage_path": "5f455350-c017-42e8-9f72-ff57c268d8d2/lecture_5236ce2d-4405-44eb-9001-25938486b5a8.json",
+      "char_count": 15414,
+      "start_page": 24,
+      "end_page": 29
+    },
+    {
+      "title": "التاء المربوطة والتاء المفتوحة والهاء",
+      "status": "quiz_done",
+      "summary_storage_path": "5f455350-c017-42e8-9f72-ff57c268d8d2/lecture_6367e9c7-3245-4c63-8377-b9c9f7fc0af9.json",
+      "char_count": 13978,
+      "start_page": 30,
+      "end_page": 32
+    },
+    {
+      "title": "الضاد والظاء",
+      "status": "quiz_done",
+      "summary_storage_path": null,
+      "char_count": 0,
+      "start_page": 33,
+      "end_page": 36
+    },
+    {
+      "title": "الألف في نهاية الكلمة",
+      "status": "quiz_done",
+      "summary_storage_path": "5f455350-c017-42e8-9f72-ff57c268d8d2/lecture_22542040-6bb1-4f95-b0e3-536708f7a736.json",
+      "char_count": 13151,
+      "start_page": 37,
+      "end_page": 43
+    },
+    {
+      "title": "الحذف والزيادة والوصل",
+      "status": "quiz_done",
+      "summary_storage_path": "5f455350-c017-42e8-9f72-ff57c268d8d2/lecture_d6b4e0b2-0ac1-4a1d-8d6a-c7eb36d8bfd3.json",
+      "char_count": 0,
+      "start_page": 44,
+      "end_page": 47
+    },
+    {
+      "title": "الأخطاء الشائعة",
+      "status": "quiz_done",
+      "summary_storage_path": "5f455350-c017-42e8-9f72-ff57c268d8d2/lecture_916b6cb0-52b9-4a7e-a1b1-c752343b9c95.json",
+      "char_count": 13734,
+      "start_page": 48,
+      "end_page": 53
+    },
+    {
+      "title": "تطبيق عام",
+      "status": "quiz_done",
+      "summary_storage_path": null,
+      "char_count": 0,
+      "start_page": 54,
+      "end_page": 57
+    },
+    {
+      "title": "الخط العربي",
+      "status": "quiz_done",
+      "summary_storage_path": null,
+      "char_count": 0,
+      "start_page": 58,
+      "end_page": 65
+    },
+    {
+      "title": "أنواع الكتابة وأدبياتها",
+      "status": "quiz_done",
+      "summary_storage_path": "5f455350-c017-42e8-9f72-ff57c268d8d2/lecture_0aa0024f-e9e4-46d8-9502-b915b86380a4.json",
+      "char_count": 20522,
+      "start_page": 66,
+      "end_page": 73
+    },
+    {
+      "title": "عناصر بناء النص ومكوناته (اللفظة والجملة)",
+      "status": "quiz_done",
+      "summary_storage_path": "5f455350-c017-42e8-9f72-ff57c268d8d2/lecture_192a059d-0c34-4667-a217-609a38ccd1b6.json",
+      "char_count": 13928,
+      "start_page": 74,
+      "end_page": 83
+    },
+    {
+      "title": "الفقرة",
+      "status": "quiz_done",
+      "summary_storage_path": "5f455350-c017-42e8-9f72-ff57c268d8d2/lecture_f5943a40-d035-465a-b992-74a98937ab29.json",
+      "char_count": 10792,
+      "start_page": 84,
+      "end_page": 95
+    },
+    {
+      "title": "علامات الترقيم",
+      "status": "quiz_done",
+      "summary_storage_path": "5f455350-c017-42e8-9f72-ff57c268d8d2/lecture_7ae09c24-a0ad-4cfe-9109-6c8cd24062d8.json",
+      "char_count": 13138,
+      "start_page": 96,
+      "end_page": 107
+    },
+    {
+      "title": "المقال",
+      "status": "quiz_done",
+      "summary_storage_path": "5f455350-c017-42e8-9f72-ff57c268d8d2/lecture_005694e4-27d0-44bf-a2cd-d335cf6755b9.json",
+      "char_count": 11890,
+      "start_page": 108,
+      "end_page": 119
+    },
+    {
+      "title": "كتابة التلخيص",
+      "status": "quiz_done",
+      "summary_storage_path": "5f455350-c017-42e8-9f72-ff57c268d8d2/lecture_a74137db-af8e-4f38-ac11-110430b3a373.json",
+      "char_count": 15034,
+      "start_page": 120,
+      "end_page": 127
+    },
+    {
+      "title": "الرسالة الإدارية",
+      "status": "quiz_done",
+      "summary_storage_path": "5f455350-c017-42e8-9f72-ff57c268d8d2/lecture_db7379e2-f518-4c7f-a367-50275dc60a35.json",
+      "char_count": 15372,
+      "start_page": 128,
+      "end_page": 131
+    },
+    {
+      "title": "التقرير",
+      "status": "quiz_done",
+      "summary_storage_path": "5f455350-c017-42e8-9f72-ff57c268d8d2/lecture_d4262acf-0777-43f5-aaea-740c8ef6b686.json",
+      "char_count": 11800,
+      "start_page": 132,
+      "end_page": 134
+    },
+    {
+      "title": "السيرة الذاتية",
+      "status": "quiz_done",
+      "summary_storage_path": "5f455350-c017-42e8-9f72-ff57c268d8d2/lecture_1cdb9ce3-4045-47be-a3c1-26ca5995e901.json",
+      "char_count": 16462,
+      "start_page": 135,
+      "end_page": 141
+    },
+    {
+      "title": "الثروة اللغوية",
+      "status": "quiz_done",
+      "summary_storage_path": "5f455350-c017-42e8-9f72-ff57c268d8d2/lecture_ef525016-3afa-4c49-865f-07a89e2d79dd.json",
+      "char_count": 8554,
+      "start_page": 142,
+      "end_page": 152
+    },
+    {
+      "title": "تطبيق عام، ومراجعة لما سبقت دراسته",
+      "status": "quiz_done",
+      "summary_storage_path": "5f455350-c017-42e8-9f72-ff57c268d8d2/lecture_fe1ec03a-8a37-46e1-94b9-d8b3ab7e73dc.json",
+      "char_count": 9837,
+      "start_page": 153,
+      "end_page": 155
+    },
+    {
+      "title": "قوِّم نفسك",
+      "status": "quiz_done",
+      "summary_storage_path": "5f455350-c017-42e8-9f72-ff57c268d8d2/lecture_389bb8c8-8186-4a9e-8022-49115ab0d803.json",
+      "char_count": 9660,
+      "start_page": 156,
+      "end_page": 256
+    }
+  ]
+}
