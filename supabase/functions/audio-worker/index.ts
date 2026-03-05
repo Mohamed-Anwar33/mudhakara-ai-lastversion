@@ -6,7 +6,7 @@ const corsHeaders = {
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-async function uploadStreamToGemini(audioUrl: string, apiKey: string): Promise<string> {
+async function startUploadToGemini(audioUrl: string, apiKey: string): Promise<{ fileUri: string, fileName: string }> {
     const headRes = await fetch(audioUrl, { method: 'HEAD' });
     const contentLength = headRes.headers.get('content-length');
     const mimeType = headRes.headers.get('content-type') || 'audio/mp3';
@@ -50,17 +50,18 @@ async function uploadStreamToGemini(audioUrl: string, apiKey: string): Promise<s
 
     const fileInfo = await uploadRes.json();
     const fileUri = fileInfo.file?.uri;
-    if (!fileUri) throw new Error('No file URI returned');
+    const fileName = fileInfo.file?.name;
+    if (!fileUri || !fileName) throw new Error('No file URI/Name returned from upload');
 
-    const fileName2 = fileInfo.file?.name;
-    for (let i = 0; i < 150; i++) {
-        const s = await fetch(`https://generativelanguage.googleapis.com/v1beta/${fileName2}?key=${apiKey}`);
-        const status = await s.json();
-        if (status.state === 'ACTIVE') return fileUri;
-        if (status.state === 'FAILED') throw new Error('File processing failed on Gemini servers');
-        await new Promise(r => setTimeout(r, 3000));
-    }
-    throw new Error('Audio file processing timeout on Gemini');
+    return { fileUri, fileName }; // Return immediately, do NOT block the Edge Function polling
+}
+
+async function checkGeminiFileActive(fileName: string, apiKey: string): Promise<string> {
+    const s = await fetch(`https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${apiKey}`);
+    const status = await s.json();
+    if (status.state === 'ACTIVE') return 'ACTIVE';
+    if (status.state === 'FAILED') throw new Error('File processing failed on Gemini servers');
+    return 'PROCESSING';
 }
 
 async function transcribeWithGemini(fileUri: string, apiKey: string): Promise<string> {
@@ -117,10 +118,11 @@ serve(async (req) => {
 
         if (jobError || !job) throw new Error('Job not found');
 
-        const { job_type, payload, lesson_id } = job;
+        const { job_type, payload, lesson_id, stage } = job;
+        const currentStage = stage || 'uploading';
         const audioPath = payload.audio_url || payload.file_path; // From storage pointer
 
-        console.log(`[audio-worker] Executing ${job_type} for lesson ${lesson_id}`);
+        console.log(`[audio-worker] Executing ${job_type} | stage: ${currentStage} for lesson ${lesson_id}`);
         // Helper to update UI progress visually using error_message field
         const updateProgress = async (msg: string) => {
             console.log(`[audio-worker-progress] ${msg}`);
@@ -149,62 +151,108 @@ serve(async (req) => {
             let fullTranscript = '';
             let usedWhisper = false;
 
-            // Edge Functions have 50MB RAM limit. Loading > 12MB blob + FormData overhead will crash V8.
-            if (openaiKey && fileSizeMB < 12) {
-                try {
-                    console.log(`[audio-worker] Attempting transcription with OpenAI Whisper...`);
-                    await updateProgress('جاري تفريغ الصوت بدقة عالية (OpenAI Whisper)...');
+            if (currentStage === 'uploading') {
+                // Edge Functions have 50MB RAM limit. Loading > 12MB blob + FormData overhead will crash V8.
+                if (openaiKey && fileSizeMB < 12) {
+                    try {
+                        console.log(`[audio-worker] Attempting transcription with OpenAI Whisper...`);
+                        await updateProgress('جاري تفريغ الصوت بدقة عالية (OpenAI Whisper)...');
 
-                    // We only load to memory if we use Whisper
-                    const audioRes = await fetch(audioUrl);
-                    let audioBlob: Blob | null = await audioRes.blob();
+                        // We only load to memory if we use Whisper
+                        const audioRes = await fetch(audioUrl);
+                        let audioBlob: Blob | null = await audioRes.blob();
 
-                    const formData = new FormData();
-                    formData.append('file', audioBlob, 'audio.mp3');
-                    formData.append('model', 'whisper-1');
-                    formData.append('response_format', 'text'); // Native text response
+                        const formData = new FormData();
+                        formData.append('file', audioBlob, 'audio.mp3');
+                        formData.append('model', 'whisper-1');
+                        formData.append('response_format', 'text'); // Native text response
 
-                    const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-                        method: 'POST',
-                        headers: { 'Authorization': `Bearer ${openaiKey}` },
-                        body: formData
-                    });
+                        const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+                            method: 'POST',
+                            headers: { 'Authorization': `Bearer ${openaiKey}` },
+                            body: formData
+                        });
 
-                    if (whisperRes.ok) {
-                        fullTranscript = await whisperRes.text();
-                        usedWhisper = true;
-                        console.log(`[audio-worker] OpenAI Whisper transcription successful. Length: ${fullTranscript.length}`);
-                    } else {
-                        const errText = await whisperRes.text();
-                        console.warn(`[audio-worker] Whisper API Failed (${whisperRes.status}): ${errText}. Falling back to Gemini...`);
+                        if (whisperRes.ok) {
+                            fullTranscript = await whisperRes.text();
+                            usedWhisper = true;
+                            console.log(`[audio-worker] OpenAI Whisper transcription successful. Length: ${fullTranscript.length}`);
+                        } else {
+                            const errText = await whisperRes.text();
+                            console.warn(`[audio-worker] Whisper API Failed (${whisperRes.status}): ${errText}. Falling back to Gemini...`);
+                        }
+
+                        // CRITICAL: Explicitly free V8 isolate memory to prevent OOM
+                        audioBlob = null;
+                    } catch (e: any) {
+                        console.warn(`[audio-worker] Whisper request exception: ${e.message}. Falling back to Gemini...`);
+                    }
+                }
+
+                if (!usedWhisper) {
+                    if (!geminiKey) throw new Error('Missing GEMINI_API_KEY for fallback audio transcription');
+
+                    if (fileSizeMB >= 12) {
+                        console.log(`[audio-worker] File too large for Whisper (${fileSizeMB.toFixed(2)}MB). Bypassing to Gemini Stream directly to prevent OOM.`);
                     }
 
-                    // CRITICAL: Explicitly free V8 isolate memory to prevent OOM
-                    audioBlob = null;
-                } catch (e: any) {
-                    console.warn(`[audio-worker] Whisper request exception: ${e.message}. Falling back to Gemini...`);
+                    console.log(`[audio-worker] Uploading stream to Gemini File API for transcription...`);
+                    await updateProgress('جاري رفع المقطع المستمر إلى محرك Gemini Pro للملفات الكبيرة (Streaming)...');
+
+                    // 1. Upload bypassing local memory, return immediately (OOM Defense & Timeout Defense)
+                    const { fileUri, fileName } = await startUploadToGemini(audioUrl, geminiKey);
+
+                    console.log(`[audio-worker] Audio uploaded successfully. URI: ${fileUri}. Yielding thread while Gemini processes...`);
+                    await updateProgress('تم رفع الملف بنجاح. جاري الاستماع للمقطع في خوادم جوجل (Gemini)... هذه العملية قد تستغرق بضع دقائق.');
+
+                    payload.gemini_file_uri = fileUri;
+                    payload.gemini_file_name = fileName;
+
+                    // Delay Orchestrator picking it up by 15 seconds to give Gemini time to process
+                    const retryTime = new Date(Date.now() + 15000).toISOString();
+
+                    await supabase.from('processing_queue').update({
+                        stage: 'polling_gemini',
+                        payload: payload,
+                        status: 'pending',
+                        next_retry_at: retryTime,
+                        locked_by: null, locked_at: null
+                    }).eq('id', jobId);
+
+                    return new Response(JSON.stringify({ status: 'advancing', next_stage: 'polling_gemini' }), { headers: corsHeaders });
                 }
             }
 
-            if (!usedWhisper) {
-                if (!geminiKey) throw new Error('Missing GEMINI_API_KEY for fallback audio transcription');
+            if (currentStage === 'polling_gemini') {
+                const fileName = payload.gemini_file_name;
+                const fileUri = payload.gemini_file_uri;
 
-                if (fileSizeMB >= 12) {
-                    console.log(`[audio-worker] File too large for Whisper (${fileSizeMB.toFixed(2)}MB). Bypassing to Gemini Stream directly to prevent OOM.`);
+                if (!fileName || !fileUri) throw new Error('Missing Gemini file references for polling');
+
+                const pollState = await checkGeminiFileActive(fileName, geminiKey);
+
+                if (pollState === 'PROCESSING') {
+                    console.log(`[audio-worker] Gemini still processing file ${fileName}... postponing.`);
+                    await updateProgress('جاري استخراج النصوص من الريكورد، يرجى الانتظار (Gemini 1.5 Pro)...');
+
+                    const retryTime = new Date(Date.now() + 15000).toISOString();
+
+                    await supabase.from('processing_queue').update({
+                        status: 'pending',
+                        next_retry_at: retryTime,
+                        locked_by: null, locked_at: null
+                    }).eq('id', jobId);
+
+                    return new Response(JSON.stringify({ status: 'advancing', next_stage: 'polling_gemini' }), { headers: corsHeaders });
                 }
 
-                console.log(`[audio-worker] Uploading stream to Gemini File API for transcription...`);
-                await updateProgress('جاري رفع المقطع المستمر إلى محرك Gemini Pro للملفات الكبيرة (Streaming)...');
-
-                // 1. Upload bypassing local memory (OOM Defense)
-                const fileUri = await uploadStreamToGemini(audioUrl, geminiKey);
-
-                console.log(`[audio-worker] Audio uploaded successfully. URI: ${fileUri}. Starting Gemini transcription...`);
-                await updateProgress('نجح الرفع. جاري الاستماع للمقطع وتفريغ النصوص (Gemini 1.5 Pro)... هذه العملية قد تستغرق بضع دقائق.');
+                console.log(`[audio-worker] Gemini file is ACTIVE. Starting transcription...`);
+                await updateProgress('أصبحت السيرفرات جاهزة! جاري تفريغ النصوص بدقة (Gemini 1.5 Pro)...');
 
                 // 2. Transcribe Audio natively with Gemini 1.5 Pro (High Accuracy)
                 fullTranscript = await transcribeWithGemini(fileUri, geminiKey);
                 console.log(`[audio-worker] Gemini Pro transcription successful. Length: ${fullTranscript.length}`);
+                usedWhisper = false;
             }
 
             if (!fullTranscript || fullTranscript.length < 5) {
