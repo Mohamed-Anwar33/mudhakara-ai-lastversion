@@ -317,20 +317,26 @@ serve(async (req) => {
                 }
 
                 if (rawTextChunks.length === 0) {
-                    // Empty section even after fallback, skip
-                    console.warn(`[analyze-lesson] ❌ No text available for pages ${start_page}-${end_page} even after PDF fallback. Skipping.`);
-                    await supabase.from('segmented_lectures').update({ status: 'quiz_done' }).eq('id', payload.lecture_id);
-                    await supabase.from('processing_queue').update({ status: 'completed' }).eq('id', jobId);
+                    if (audioContext && audioContext.length > 50) {
+                        console.log(`[analyze-lesson] ℹ️ No PDF text available for pages ${start_page}-${end_page}, but Audio Context exists. Proceeding with Audio as primary content.`);
+                        // Push a dummy chunk so the pipeline proceeds to Map phase where audioContext is analyzed
+                        rawTextChunks.push("تنبيه للنظام: المحتوى الرئيسي لهذا القسم هو التسجيل الصوتي المرفق (التفريغ). يرجى الاعتماد عليه كلياً في استخراج الشرح ونقاط التركيز.");
+                    } else {
+                        // Empty section even after fallback, skip
+                        console.warn(`[analyze-lesson] ❌ No text AND no audio available for pages ${start_page}-${end_page}. Skipping.`);
+                        await supabase.from('segmented_lectures').update({ status: 'quiz_done' }).eq('id', payload.lecture_id);
+                        await supabase.from('processing_queue').update({ status: 'completed' }).eq('id', jobId);
 
-                    // We also need to check if this was the last lecture holding up the global aggregator!
-                    const { count: totalSegments } = await supabase.from('segmented_lectures').select('*', { count: 'exact', head: true }).eq('lesson_id', lesson_id);
-                    const { count: finishedSegments } = await supabase.from('segmented_lectures').select('*', { count: 'exact', head: true }).eq('lesson_id', lesson_id).eq('status', 'quiz_done');
+                        // We also need to check if this was the last lecture holding up the global aggregator!
+                        const { count: totalSegments } = await supabase.from('segmented_lectures').select('*', { count: 'exact', head: true }).eq('lesson_id', lesson_id);
+                        const { count: finishedSegments } = await supabase.from('segmented_lectures').select('*', { count: 'exact', head: true }).eq('lesson_id', lesson_id).eq('status', 'quiz_done');
 
-                    if (totalSegments && finishedSegments && totalSegments === finishedSegments) {
-                        console.log(`[analyze-lesson] All quizzes done for lesson ${lesson_id} (Skipped Empty)!`);
+                        if (totalSegments && finishedSegments && totalSegments === finishedSegments) {
+                            console.log(`[analyze-lesson] All quizzes done for lesson ${lesson_id} (Skipped Empty)!`);
+                        }
+
+                        return new Response(JSON.stringify({ status: 'skipped_empty' }), { headers: corsHeaders });
                     }
-
-                    return new Response(JSON.stringify({ status: 'skipped_empty' }), { headers: corsHeaders });
                 }
 
                 const batches = splitIntoBatches(rawTextChunks, 60000);

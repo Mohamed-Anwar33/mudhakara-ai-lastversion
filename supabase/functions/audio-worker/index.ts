@@ -139,10 +139,18 @@ serve(async (req) => {
 
             const audioUrl = signedUrlData.signedUrl;
 
+            // --- OOM DEFENSE: Check file size before deciding to use memory-heavy Whisper ---
+            const headRes = await fetch(audioUrl, { method: 'HEAD' });
+            const contentLengthStr = headRes.headers.get('content-length');
+            const fileSizeBytes = contentLengthStr ? parseInt(contentLengthStr, 10) : 0;
+            const fileSizeMB = fileSizeBytes / (1024 * 1024);
+            console.log(`[audio-worker] Audio file size: ${fileSizeMB.toFixed(2)} MB`);
+
             let fullTranscript = '';
             let usedWhisper = false;
 
-            if (openaiKey) {
+            // Edge Functions have 50MB RAM limit. Loading > 12MB blob + FormData overhead will crash V8.
+            if (openaiKey && fileSizeMB < 12) {
                 try {
                     console.log(`[audio-worker] Attempting transcription with OpenAI Whisper...`);
                     await updateProgress('جاري تفريغ الصوت بدقة عالية (OpenAI Whisper)...');
@@ -180,6 +188,10 @@ serve(async (req) => {
 
             if (!usedWhisper) {
                 if (!geminiKey) throw new Error('Missing GEMINI_API_KEY for fallback audio transcription');
+
+                if (fileSizeMB >= 12) {
+                    console.log(`[audio-worker] File too large for Whisper (${fileSizeMB.toFixed(2)}MB). Bypassing to Gemini Stream directly to prevent OOM.`);
+                }
 
                 console.log(`[audio-worker] Uploading stream to Gemini File API for transcription...`);
                 await updateProgress('جاري رفع المقطع المستمر إلى محرك Gemini Pro للملفات الكبيرة (Streaming)...');
