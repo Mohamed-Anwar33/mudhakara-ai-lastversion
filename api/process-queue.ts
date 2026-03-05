@@ -312,8 +312,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         // ═══ ORPHANED JOB RECOVERY ═══
-        // Jobs stuck in 'processing' with NO lock and not updated in 3+ minutes
-        const orphanCutoff = new Date(Date.now() - 3 * 60 * 1000).toISOString();
+        // Jobs stuck in 'processing' with NO lock and not updated in 90+ seconds
+        // (This catches silent failures from Edge Functions hitting timeouts/memory limits faster)
+        const orphanCutoff = new Date(Date.now() - 90 * 1000).toISOString();
         const { data: orphanedJobs } = await supabase
             .from('processing_queue')
             .select('id, attempt_count')

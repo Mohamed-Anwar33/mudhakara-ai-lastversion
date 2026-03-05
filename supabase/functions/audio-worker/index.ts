@@ -110,11 +110,17 @@ serve(async (req) => {
         const audioPath = payload.audio_url || payload.file_path; // From storage pointer
 
         console.log(`[audio-worker] Executing ${job_type} for lesson ${lesson_id}`);
+        // Helper to update UI progress visually using error_message field
+        const updateProgress = async (msg: string) => {
+            console.log(`[audio-worker-progress] ${msg}`);
+            await supabase.from('processing_queue').update({ error_message: msg }).eq('id', jobId);
+        };
 
         // 1. Audio Transcribe Job
         if (job_type === 'transcribe_audio') {
             if (!audioPath) throw new Error('Missing audio_url to process');
 
+            await updateProgress('جاري تحميل المقطع الصوتي من التخزين السحابي...');
             // Download file from Storage to memory (Assuming < 25MB limits handled by File Upload API pre-worker)
             const { data: audioBlob, error: downloadErr } = await supabase.storage.from('homework-uploads').download(audioPath);
             if (downloadErr || !audioBlob) throw new Error(`Failed to download audio: ${downloadErr?.message}`);
@@ -125,6 +131,7 @@ serve(async (req) => {
             if (openaiKey) {
                 try {
                     console.log(`[audio-worker] Attempting transcription with OpenAI Whisper...`);
+                    await updateProgress('جاري تفريغ الصوت بدقة عالية (OpenAI Whisper)...');
                     const formData = new FormData();
                     formData.append('file', audioBlob, 'audio.mp3');
                     formData.append('model', 'whisper-1');
@@ -153,12 +160,14 @@ serve(async (req) => {
                 if (!geminiKey) throw new Error('Missing GEMINI_API_KEY for fallback audio transcription');
 
                 console.log(`[audio-worker] Uploading ${audioBlob.size} bytes to Gemini File API for transcription...`);
+                await updateProgress('جاري رفع المقطع إلى محرك Gemini Pro للصوتيات...');
 
                 // 1. Upload the raw audio blob to Gemini
                 const mimeType = audioBlob.type || 'audio/mp3'; // Default fallback
                 const fileUri = await uploadBlobToGemini(audioBlob, mimeType, geminiKey);
 
                 console.log(`[audio-worker] Audio uploaded successfully. URI: ${fileUri}. Starting Gemini transcription...`);
+                await updateProgress('نجح الرفع. جاري الاستماع للمقطع وتفريغ النصوص (Gemini 1.5 Pro)... هذه العملية قد تستغرق بضع دقائق.');
 
                 // 2. Transcribe Audio natively with Gemini 1.5 Pro (High Accuracy)
                 fullTranscript = await transcribeWithGemini(fileUri, geminiKey);
@@ -169,6 +178,7 @@ serve(async (req) => {
                 console.warn(`[audio-worker] Transcription returned unusually short text.`);
             }
 
+            await updateProgress('اكتمل التفريغ! جاري حفظ النصوص المفرغة...');
             // Save the raw text to Supabase Storage
             const storagePath = `audio_transcripts/${lesson_id}/raw_transcript.txt`;
             await supabase.storage.from('audio_transcripts').upload(storagePath, fullTranscript, { upsert: true, contentType: 'text/plain;charset=UTF-8' });

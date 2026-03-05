@@ -433,23 +433,37 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
       setProgressMsg('بدأ التحليل الذكي...');
       triggerQueueWorker(8).catch(console.warn);
 
-      // Poll for results — optimized for speed
+      // Poll for results — optimized for speed and API limits
       let result: AIResult | null = null;
-      const pollIntervalMs = 2000;
+      let currentPollIntervalMs = 2000; // Start with 2 seconds
+      const maxPollIntervalMs = 8000;   // Cap at 8 seconds
       const pollStartTime = Date.now();
+      let consecutiveNoJobs = 0;
 
       for (let attempt = 1; attempt <= 10000; attempt++) {
-        if (attempt === 1 || attempt % 2 === 0) triggerQueueWorker(8).catch(console.warn);
+        // Only trigger queue worker aggressively at the start or if we know jobs exist
+        if (attempt === 1 || consecutiveNoJobs < 3) {
+          triggerQueueWorker(4).catch(console.warn); // Reduced concurrency from 8 to 4
+        }
 
         let status: any;
         try {
           const statusRes = await fetch(`/api/job-status?lessonId=${tempLessonId}`);
           status = await statusRes.json().catch(() => ({}));
-        } catch { await delay(pollIntervalMs); continue; }
+        } catch { await delay(currentPollIntervalMs); continue; }
 
         const jobs = Array.isArray(status?.jobs) ? status.jobs : [];
         const activeJobs = jobs.filter((j: any) => j.status === 'pending' || j.status === 'processing');
         const failedJobs = jobs.filter((j: any) => j.status === 'failed');
+
+        // Exponential Backoff Logic: If no active jobs are found, slow down the polling
+        if (activeJobs.length === 0 && !status?.analysisResult) {
+          consecutiveNoJobs++;
+          currentPollIntervalMs = Math.min(currentPollIntervalMs * 1.5, maxPollIntervalMs);
+        } else {
+          consecutiveNoJobs = 0;
+          currentPollIntervalMs = 2000; // Reset if jobs are active
+        }
 
         // Build progress message
         if (activeJobs.length > 0) {
@@ -464,6 +478,12 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
             'finalize_global_summary': 'ترتيب وتجميع الذاكرة...',
           };
           let qMsg = stageMap[pJob.job_type] || 'قيد العمل...';
+
+          // Override with granular real-time progress updates from the backend (stored in error_message while processing)
+          if (pJob.status === 'processing' && pJob.error_message) {
+            qMsg = pJob.error_message;
+          }
+
           const totalJobs = jobs.length;
           const completedJobs = jobs.filter((j: any) => j.status === 'completed').length;
           if (totalJobs > 2) qMsg += ` — الإنجاز الكلي: ${Math.floor((completedJobs / totalJobs) * 100)}%`;
@@ -502,7 +522,7 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
             }
           }
         }
-        await delay(pollIntervalMs);
+        await delay(currentPollIntervalMs);
       }
 
       if (!result) throw new Error('انتهت المهلة في انتظار نتيجة التحليل');
