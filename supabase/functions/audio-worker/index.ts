@@ -119,7 +119,8 @@ serve(async (req) => {
         if (jobError || !job) throw new Error('Job not found');
 
         const { job_type, payload, lesson_id, stage } = job;
-        const currentStage = stage || 'uploading';
+        // Treat any initial stage like 'pending_upload' as 'uploading'
+        const currentStage = (stage === 'polling_gemini') ? 'polling_gemini' : 'uploading';
         const audioPath = payload.audio_url || payload.file_path; // From storage pointer
 
         console.log(`[audio-worker] Executing ${job_type} | stage: ${currentStage} for lesson ${lesson_id}`);
