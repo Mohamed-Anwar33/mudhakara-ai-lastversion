@@ -6,8 +6,13 @@ const corsHeaders = {
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-async function uploadBlobToGemini(blob: Blob, mimeType: string, apiKey: string): Promise<string> {
-    const contentLength = blob.size.toString();
+async function uploadStreamToGemini(audioUrl: string, apiKey: string): Promise<string> {
+    const headRes = await fetch(audioUrl, { method: 'HEAD' });
+    const contentLength = headRes.headers.get('content-length');
+    const mimeType = headRes.headers.get('content-type') || 'audio/mp3';
+
+    if (!contentLength) throw new Error('Could not determine content length for streaming');
+
     const startRes = await fetch(
         `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`,
         {
@@ -23,8 +28,12 @@ async function uploadBlobToGemini(blob: Blob, mimeType: string, apiKey: string):
         }
     );
     if (!startRes.ok) throw new Error(`Gemini File API start failed: ${startRes.status} ${await startRes.text()}`);
+
     const uploadUrl = startRes.headers.get('X-Goog-Upload-URL');
     if (!uploadUrl) throw new Error('No upload URL allocated');
+
+    const audioStreamRes = await fetch(audioUrl);
+    if (!audioStreamRes.ok || !audioStreamRes.body) throw new Error('Failed to stream audio from Storage');
 
     const uploadRes = await fetch(uploadUrl, {
         method: 'PUT',
@@ -33,8 +42,10 @@ async function uploadBlobToGemini(blob: Blob, mimeType: string, apiKey: string):
             'X-Goog-Upload-Offset': '0',
             'X-Goog-Upload-Command': 'upload, finalize'
         },
-        body: blob
-    });
+        body: audioStreamRes.body,
+        duplex: 'half'
+    } as any);
+
     if (!uploadRes.ok) throw new Error(`Gemini File API upload failed: ${uploadRes.status} ${await uploadRes.text()}`);
 
     const fileInfo = await uploadRes.json();
@@ -121,9 +132,12 @@ serve(async (req) => {
             if (!audioPath) throw new Error('Missing audio_url to process');
 
             await updateProgress('جاري تحميل المقطع الصوتي من التخزين السحابي...');
-            // Download file from Storage to memory (Assuming < 25MB limits handled by File Upload API pre-worker)
-            const { data: audioBlob, error: downloadErr } = await supabase.storage.from('homework-uploads').download(audioPath);
-            if (downloadErr || !audioBlob) throw new Error(`Failed to download audio: ${downloadErr?.message}`);
+
+            // Bypass memory completely with Signed URLs
+            const { data: signedUrlData, error: signErr } = await supabase.storage.from('homework-uploads').createSignedUrl(audioPath, 3600);
+            if (signErr || !signedUrlData?.signedUrl) throw new Error(`Failed to get signed URL: ${signErr?.message}`);
+
+            const audioUrl = signedUrlData.signedUrl;
 
             let fullTranscript = '';
             let usedWhisper = false;
@@ -132,6 +146,11 @@ serve(async (req) => {
                 try {
                     console.log(`[audio-worker] Attempting transcription with OpenAI Whisper...`);
                     await updateProgress('جاري تفريغ الصوت بدقة عالية (OpenAI Whisper)...');
+
+                    // We only load to memory if we use Whisper
+                    const audioRes = await fetch(audioUrl);
+                    let audioBlob: Blob | null = await audioRes.blob();
+
                     const formData = new FormData();
                     formData.append('file', audioBlob, 'audio.mp3');
                     formData.append('model', 'whisper-1');
@@ -151,6 +170,9 @@ serve(async (req) => {
                         const errText = await whisperRes.text();
                         console.warn(`[audio-worker] Whisper API Failed (${whisperRes.status}): ${errText}. Falling back to Gemini...`);
                     }
+
+                    // CRITICAL: Explicitly free V8 isolate memory to prevent OOM
+                    audioBlob = null;
                 } catch (e: any) {
                     console.warn(`[audio-worker] Whisper request exception: ${e.message}. Falling back to Gemini...`);
                 }
@@ -159,12 +181,11 @@ serve(async (req) => {
             if (!usedWhisper) {
                 if (!geminiKey) throw new Error('Missing GEMINI_API_KEY for fallback audio transcription');
 
-                console.log(`[audio-worker] Uploading ${audioBlob.size} bytes to Gemini File API for transcription...`);
-                await updateProgress('جاري رفع المقطع إلى محرك Gemini Pro للصوتيات...');
+                console.log(`[audio-worker] Uploading stream to Gemini File API for transcription...`);
+                await updateProgress('جاري رفع المقطع المستمر إلى محرك Gemini Pro للملفات الكبيرة (Streaming)...');
 
-                // 1. Upload the raw audio blob to Gemini
-                const mimeType = audioBlob.type || 'audio/mp3'; // Default fallback
-                const fileUri = await uploadBlobToGemini(audioBlob, mimeType, geminiKey);
+                // 1. Upload bypassing local memory (OOM Defense)
+                const fileUri = await uploadStreamToGemini(audioUrl, geminiKey);
 
                 console.log(`[audio-worker] Audio uploaded successfully. URI: ${fileUri}. Starting Gemini transcription...`);
                 await updateProgress('نجح الرفع. جاري الاستماع للمقطع وتفريغ النصوص (Gemini 1.5 Pro)... هذه العملية قد تستغرق بضع دقائق.');

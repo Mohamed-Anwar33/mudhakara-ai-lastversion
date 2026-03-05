@@ -1096,18 +1096,21 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
                     const allAudioFocus = analyzedLessons.flatMap(al =>
                       (al.focusPoints || []).filter(fp => fp.title?.includes('🎙️') || fp.title?.includes('المعلم') || fp.details?.includes('🎙️'))
                     );
-                    if (allAudioFocus.length === 0 || !audioTranscriptData || audioTranscriptData.length < 50) return null;
+
+                    // Display the card unconditionally if we have at least one audio focus point.
+                    if (allAudioFocus.length === 0) return null;
+
                     return (
                       <div className="col-span-2 sm:col-span-3">
-                        <div className="bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 p-6 rounded-[2.5rem] border border-amber-200 shadow-sm">
+                        <div className="bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 p-6 rounded-[2.5rem] border border-amber-200 shadow-sm transition-all hover:shadow-md">
                           <div className="flex items-center gap-3 mb-4 justify-end">
                             <div className="flex-1 text-right">
-                              <h3 className="font-black text-base text-amber-800 flex items-center gap-2 justify-end">
-                                نقاط تركيز المعلم من التسجيل
+                              <h3 className="font-black text-base md:text-lg text-amber-800 flex items-center gap-2 justify-end">
+                                ما قاله المعلم في الريكورد (النقاط الشاملة)
                                 <Target size={20} className="text-amber-500" />
                               </h3>
-                              <p className="text-[11px] text-amber-600/70 font-bold">
-                                🎙️ {allAudioFocus.length} نقطة استخرجها الذكاء الاصطناعي من التسجيل الصوتي — من البداية للنهاية
+                              <p className="text-[11px] md:text-xs text-amber-600/70 font-bold mt-1">
+                                🎙️ تم استخراج جميع الملاحظات ({allAudioFocus.length} نقطة) من التسجيل الصوتي بالكامل
                               </p>
                             </div>
                             <div className="w-14 h-14 bg-gradient-to-br from-amber-400 to-orange-500 text-white rounded-[1.2rem] flex items-center justify-center shadow-lg flex-shrink-0">
