@@ -182,7 +182,15 @@ serve(async (req) => {
             // Audio complete, mark done.
             await supabase.from('processing_queue').update({ status: 'completed' }).eq('id', jobId);
 
-            // We no longer trigger 'extract_audio_focus'
+            // Trigger the segmentation barrier (in case this is an audio-only lesson, or to notify OCR it's done)
+            await supabase.from('processing_queue').upsert({
+                lesson_id: lesson_id,
+                job_type: 'segment_lesson',
+                payload: { ...payload },
+                status: 'pending',
+                dedupe_key: `lesson:${lesson_id}:segment_lesson`
+            }, { onConflict: 'dedupe_key', ignoreDuplicates: true });
+
             return new Response(JSON.stringify({ status: 'completed', chunk_count: 1 }), { headers: corsHeaders });
         }
 

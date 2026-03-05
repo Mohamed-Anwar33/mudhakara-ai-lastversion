@@ -230,7 +230,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             if (audioBlob) {
                 const audioText = await audioBlob.text();
                 if (audioText.length > 50) {
-                    audioSection = `\n--- 🎙️ تفريغ التسجيل الصوتي للمعلم ---\n${audioText}\n
+                    let textToAnalyze = audioText;
+
+                    // Support for Audio Chunking (e.g. "محتوى التسجيل الصوتي (الجزء X)")
+                    // segment.title e.g. "محتوى التسجيل الصوتي (الجزء 2)", start_page is used as the chunk index
+                    if (segment.title.includes('محتوى التسجيل الصوتي')) {
+                        const words = audioText.split(/\s+/);
+                        // If it's a chunked segment, slice the words array
+                        if (words.length > 2000 && segment.start_page > 0) {
+                            const chunkIndex = segment.start_page; // 1-based chunk index
+                            const chunkSize = 2000;
+                            const startIndex = (chunkIndex - 1) * chunkSize;
+                            const endIndex = startIndex + chunkSize;
+
+                            // Prevent out-of-bounds just in case
+                            if (startIndex < words.length) {
+                                textToAnalyze = words.slice(startIndex, endIndex).join(' ');
+                                console.log(`[Direct Reanalyze] Audio is chunked. Analyzing chunk ${chunkIndex} (words ${startIndex} to ${endIndex})`);
+                            }
+                        }
+                    }
+
+                    audioSection = `\n--- 🎙️ تفريغ التسجيل الصوتي للمعلم ---\n${textToAnalyze}\n
                     عليك تحليل هذا التسجيل الصوتي بدقة. استخرج النقاط التي ركّز عليها المعلم في شرحه والتي ترتبط بمحتوى الكتاب.
                     ضع كل نقطة تركيز في مصفوفة \`focusPoints\` مع شرح مفصل لماذا هي مهمة وكيف فسّرها المعلم.`;
                 }

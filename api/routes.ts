@@ -303,103 +303,21 @@ router.post('/api/fetch-audio-transcript', async (req, res) => {
             }
         }
 
-        // 3. No transcript found — re-transcribe from audio file
-        if (!geminiKey) return res.json({ success: false, error: 'No Gemini API key' });
+        // 3. No transcript found — check if it's still processing
+        const { data: jobs } = await supabase.from('processing_queue')
+            .select('status, job_type')
+            .eq('lesson_id', lessonId)
+            .in('job_type', ['transcribe_audio', 'extract_audio_focus'])
+            .order('created_at', { ascending: false })
+            .limit(1);
 
-        console.log(`🎧 [Audio] No transcript found for ${lessonId}. Looking for audio file...`);
-
-        const { data: lesson } = await supabase.from('lessons')
-            .select('sources').eq('id', lessonId).single();
-
-        const audioSource = (lesson?.sources || []).find((s: any) => s.type === 'audio');
-        if (!audioSource) {
-            return res.json({ success: false, error: 'No audio source in lesson' });
+        if (jobs && jobs.length > 0 && ['pending', 'processing'].includes(jobs[0].status)) {
+            console.log(`🎧 [Audio] Transcript still processing for ${lessonId}`);
+            return res.json({ success: false, status: 'processing', message: 'جاري التفريغ الصوتي، يرجى الانتظار...' });
         }
 
-        const audioPath = audioSource.content || audioSource.uploadedUrl?.split('/homework-uploads/')[1] || '';
-        if (!audioPath) return res.json({ success: false, error: 'No audio file path' });
-
-        const cleanPath = decodeURIComponent(audioPath.trim()).replace(/^\/+/, '').split('?')[0];
-        console.log(`🎧 [Audio] Downloading audio from homework-uploads/${cleanPath}...`);
-
-        const { data: audioBlob, error: dlErr } = await supabase.storage.from('homework-uploads').download(cleanPath);
-        if (!audioBlob || dlErr) {
-            return res.json({ success: false, error: `Download failed: ${dlErr?.message}` });
-        }
-
-        // Upload to Gemini File API for transcription
-        console.log(`🎧 [Audio] Uploading ${Math.round(audioBlob.size / 1024)}KB to Gemini...`);
-        const arrayBuf = await audioBlob.arrayBuffer();
-
-        const uploadResp = await fetch(
-            `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${geminiKey}`,
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': audioBlob.type || 'audio/mp4',
-                    'X-Goog-Upload-Protocol': 'raw',
-                },
-                body: Buffer.from(arrayBuf)
-            }
-        );
-
-        if (!uploadResp.ok) {
-            return res.json({ success: false, error: `Gemini upload failed: ${uploadResp.status}` });
-        }
-
-        const uploadData = await uploadResp.json();
-        const fileUri = uploadData.file?.uri;
-        if (!fileUri) return res.json({ success: false, error: 'No file URI from Gemini' });
-
-        // Wait for file to be active
-        const fileName = uploadData.file?.name;
-        if (fileName) {
-            for (let i = 0; i < 60; i++) {
-                const statusResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${geminiKey}`);
-                const status = await statusResp.json();
-                if (status.state === 'ACTIVE') break;
-                if (status.state === 'FAILED') return res.json({ success: false, error: 'Gemini file processing failed' });
-                await new Promise(r => setTimeout(r, 3000));
-            }
-        }
-
-        console.log(`🎧 [Audio] Transcribing with Gemini...`);
-        const transcribeResp = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{
-                        parts: [
-                            { text: 'أنت خبير في التفريغ الصوتي. قم بتفريغ هذا المقطع الصوتي بكل دقة إلى نص عربي واضح ومترابط. اكتب النص بالكامل كما قيل بدون تلخيص.' },
-                            { fileData: { fileUri, mimeType: 'audio/mp4' } }
-                        ]
-                    }],
-                    generationConfig: { temperature: 0.1, maxOutputTokens: 65536 }
-                })
-            }
-        );
-
-        const transcribeData = await transcribeResp.json();
-        if (!transcribeResp.ok) {
-            return res.json({ success: false, error: `Transcription failed: ${transcribeData.error?.message}` });
-        }
-
-        const transcript = transcribeData.candidates?.[0]?.content?.parts
-            ?.filter((p: any) => p.text).map((p: any) => p.text).join('').trim() || '';
-
-        if (transcript.length < 10) {
-            return res.json({ success: false, error: 'Transcription returned empty' });
-        }
-
-        console.log(`✅ [Audio] Transcribed ${transcript.length} chars. Saving...`);
-
-        // Save to storage for future use
-        await supabase.storage.from('audio_transcripts')
-            .upload(storagePath, transcript, { upsert: true, contentType: 'text/plain;charset=UTF-8' });
-
-        return res.json({ success: true, transcript, source: 'retranscribed' });
+        console.log(`🎧 [Audio] No transcript found for ${lessonId} and no active jobs.`);
+        return res.json({ success: false, status: 'missing', error: 'لم يتم العثور على تفريغ صوتي.' });
 
     } catch (error: any) {
         console.error('❌ Audio Transcript Error:', error);

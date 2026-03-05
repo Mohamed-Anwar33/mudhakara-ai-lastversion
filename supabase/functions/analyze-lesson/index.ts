@@ -207,7 +207,27 @@ serve(async (req) => {
                     const audioPath = `audio_transcripts/${lesson_id}/raw_transcript.txt`;
                     const { data: audioBlob } = await supabase.storage.from('audio_transcripts').download(audioPath);
                     if (audioBlob) {
-                        audioContext = await audioBlob.text();
+                        const audioText = await audioBlob.text();
+                        let textToAnalyze = audioText;
+
+                        // Support for Audio Chunking (e.g. "محتوى التسجيل الصوتي (الجزء X)")
+                        // segment title e.g. "محتوى التسجيل الصوتي (الجزء 2)", start_page is used as the chunk index
+                        if (payload.title && payload.title.includes('محتوى التسجيل الصوتي')) {
+                            const words = audioText.split(/\s+/);
+                            if (words.length > 2000 && start_page > 0) {
+                                const chunkIndex = start_page; // 1-based chunk index
+                                const chunkSize = 2000;
+                                const startIndex = (chunkIndex - 1) * chunkSize;
+                                const endIndex = startIndex + chunkSize;
+
+                                if (startIndex < words.length) {
+                                    textToAnalyze = words.slice(startIndex, endIndex).join(' ');
+                                    console.log(`[analyze-lesson] Audio is chunked. Analyzing chunk ${chunkIndex} (words ${startIndex} to ${endIndex})`);
+                                }
+                            }
+                        }
+
+                        audioContext = textToAnalyze;
                         console.log(`[analyze-lesson] Found Audio Transcript (${audioContext.length} chars). Injecting for Semantic Focus Matching.`);
                     }
                 } catch (e) {

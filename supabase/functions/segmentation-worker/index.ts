@@ -107,21 +107,23 @@ serve(async (req) => {
 
             console.log(`[segmentation-worker] OCR complete. ${successPages}/${totalPages} pages have content.`);
 
-            // If NO pages have any content at all, then we truly failed
-            if (!successPages || successPages === 0) {
-                console.error(`[segmentation-worker] Zero pages extracted. Cannot proceed.`);
+            // Also check Audio Track if Audio exists using 'sources'
+            const { data: lessonData } = await supabase.from('lessons').select('sources, audio_url').eq('id', lesson_id).single();
+            const hasAudio = lessonData?.audio_url || (lessonData?.sources || []).some((s: any) => s.type === 'audio');
+
+            // If NO pages have any content at all, and NO audio exists, then we truly failed
+            if ((!successPages || successPages === 0) && !hasAudio) {
+                console.error(`[segmentation-worker] Zero pages extracted and no audio. Cannot proceed.`);
                 await supabase.from('processing_queue').update({
                     status: 'failed',
-                    error_message: 'لم يتم استخراج أي نص من الكتاب.',
+                    error_message: 'لم يتم استخراج أي نص من الكتاب أو التسجيل الصوتي.',
                     locked_by: null, locked_at: null
                 }).eq('id', jobId);
                 await supabase.from('lessons').update({ pipeline_stage: 'failed' }).eq('id', lesson_id);
                 return new Response(JSON.stringify({ status: 'aborted_no_content' }), { headers: corsHeaders });
             }
 
-            // Also check Audio Track if Audio exists
-            const { data: lessonData } = await supabase.from('lessons').select('audio_url').eq('id', lesson_id).single();
-            if (lessonData?.audio_url) {
+            if (hasAudio) {
                 const { count: pendingAudio } = await supabase.from('processing_queue')
                     .select('*', { count: 'exact', head: true })
                     .eq('lesson_id', lesson_id)
@@ -149,15 +151,44 @@ serve(async (req) => {
             let hasTOC = false;
 
             if (!pages || pages.length === 0) {
-                // Check if we have image/audio content directly in sections
+                // Check if we have image/audio content directly in sections or if it has audio
                 const { count: sectionCount } = await supabase.from('document_sections')
                     .select('*', { count: 'exact', head: true })
                     .eq('lesson_id', lesson_id);
 
-                if (sectionCount && sectionCount > 0) {
-                    console.log(`[segmentation-worker] No PDF pages found, but ${sectionCount} sections exist (Image/Audio). Bypassing TOC extraction.`);
-                    parsedToc.lectures.push({ title: "محتوى الملف بالكامل", start_page: 1 });
-                    hasTOC = true;
+                if ((sectionCount && sectionCount > 0) || hasAudio) {
+                    console.log(`[segmentation-worker] No PDF pages found, but sections/audio exist.`);
+
+                    let audioChunked = false;
+                    if (hasAudio) {
+                        try {
+                            // Fetch the audio transcript to chunk it
+                            const audioPath = `audio_transcripts/${lesson_id}/raw_transcript.txt`;
+                            const { data: audioBlob } = await supabase.storage.from('audio_transcripts').download(audioPath);
+                            if (audioBlob) {
+                                const text = await audioBlob.text();
+                                const words = text.split(/\s+/);
+                                if (words.length > 2000) {
+                                    console.log(`[segmentation-worker] Large audio transcript detected (${words.length} words). Chunking...`);
+                                    const chunkSize = 2000;
+                                    for (let i = 0; i < words.length; i += chunkSize) {
+                                        const chunkNumber = Math.floor(i / chunkSize) + 1;
+                                        parsedToc.lectures.push({ title: `محتوى التسجيل الصوتي (الجزء ${chunkNumber})`, start_page: chunkNumber });
+                                    }
+                                    audioChunked = true;
+                                    hasTOC = true;
+                                }
+                            }
+                        } catch (e) {
+                            console.warn(`[segmentation-worker] Failed to download/chunk audio transcript:`, e);
+                        }
+                    }
+
+                    if (!audioChunked) {
+                        console.log(`[segmentation-worker] Creating a single segment for the entire file.`);
+                        parsedToc.lectures.push({ title: "محتوى الملف بالكامل", start_page: 1 });
+                        hasTOC = true;
+                    }
                 }
             }
 
