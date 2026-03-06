@@ -197,6 +197,12 @@ async function transcribeWithGemini(fileUri: string, apiKey: string): Promise<st
     }
 
     console.log(`[audio-worker] Final transcription: ${fullText.length} chars`);
+
+    // CRITICAL FIX: Reject empty/very short transcripts instead of silently continuing
+    if (!fullText || fullText.trim().length < 50) {
+        throw new Error(`Gemini returned empty/too-short transcription (${fullText?.length || 0} chars). Audio may be silent, corrupted, or unsupported language.`);
+    }
+
     return fullText;
 }
 
@@ -260,11 +266,11 @@ serve(async (req) => {
                 let fullTranscript = '';
                 let whisperDone = false;
 
-                // Try Whisper for small files (< 12MB)
-                if (openaiKey && fileSizeMB < 12) {
+                // Whisper PRIMARY for files ≤ 25MB (most accurate for Arabic)
+                if (openaiKey && fileSizeBytes <= 25 * 1024 * 1024) {
                     try {
-                        console.log(`[audio-worker] Attempting transcription with OpenAI Whisper...`);
-                        await updateProgress('جاري تفريغ الصوت بدقة عالية (OpenAI Whisper)...');
+                        console.log(`[audio-worker] Attempting transcription with OpenAI Whisper (PRIMARY)...`);
+                        await updateProgress('جاري تفريغ الصوت بدقة عالية (Whisper — الأعلى دقة للعربية)...');
 
                         const audioRes = await fetch(audioUrl);
                         let audioBlob: Blob | null = await audioRes.blob();
@@ -324,6 +330,7 @@ serve(async (req) => {
                         stage: 'polling_gemini',
                         gemini_file_uri: fileUri,
                         gemini_file_name: fileName,
+                        audio_file_size: fileSizeBytes,
                         poll_count: 0
                     }
                 }).eq('id', jobId);
@@ -402,16 +409,115 @@ serve(async (req) => {
             // ╚══════════════════════════════════════════════════════════╝
             if (stage === 'transcribe') {
                 const fileUri = payload.gemini_file_uri;
-                if (!fileUri) throw new Error('Missing gemini_file_uri in payload for transcribe stage');
+                const audioFileSize = payload.audio_file_size || 0;
 
-                console.log(`[audio-worker] Starting Gemini transcription with file URI: ${fileUri}`);
-                await updateProgress('نجح الرفع. جاري الاستماع للمقطع وتفريغ النصوص (Gemini 2.5 Flash)... هذه العملية قد تستغرق بضع دقائق.');
+                console.log(`[audio-worker] Stage 3: TRANSCRIBE — file size: ${(audioFileSize / (1024 * 1024)).toFixed(1)}MB`);
 
-                const fullTranscript = await transcribeWithGemini(fileUri, geminiKey);
-                console.log(`[audio-worker] Gemini Pro transcription successful. Length: ${fullTranscript.length}`);
+                let fullTranscript = '';
+                const WHISPER_LIMIT = 25 * 1024 * 1024; // 25MB
 
-                if (!fullTranscript || fullTranscript.length < 5) {
-                    console.warn(`[audio-worker] Transcription returned unusually short text.`);
+                // ═══ STRATEGY: Whisper FIRST (most accurate for Arabic) ═══
+                if (openaiKey && audioFileSize <= WHISPER_LIMIT) {
+                    await updateProgress('جاري تفريغ النصوص بواسطة Whisper (الأعلى دقة للعربية)...');
+
+                    const MAX_WHISPER_RETRIES = 5;
+                    const BASE_DELAY = 2000;
+
+                    try {
+                        const { data: signedUrlData } = await supabase.storage
+                            .from('homework-uploads').createSignedUrl(audioPath, 3600);
+
+                        if (signedUrlData?.signedUrl) {
+                            const audioRes = await fetch(signedUrlData.signedUrl);
+                            const audioBlob = await audioRes.blob();
+
+                            for (let attempt = 0; attempt < MAX_WHISPER_RETRIES; attempt++) {
+                                try {
+                                    const formData = new FormData();
+                                    formData.append('file', audioBlob, 'audio.mp3');
+                                    formData.append('model', 'whisper-1');
+                                    formData.append('language', 'ar');
+                                    formData.append('response_format', 'text');
+
+                                    const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+                                        method: 'POST',
+                                        headers: { 'Authorization': `Bearer ${openaiKey}` },
+                                        body: formData
+                                    });
+
+                                    if (whisperRes.status === 429 || whisperRes.status >= 500) {
+                                        const errText = await whisperRes.text();
+                                        if (errText.includes('billing_not_active')) {
+                                            console.warn('[audio-worker] Whisper billing not active. Skipping to Gemini.');
+                                            break;
+                                        }
+
+                                        if (attempt < MAX_WHISPER_RETRIES - 1) {
+                                            // Respect Retry-After or use exponential backoff with jitter
+                                            const retryAfter = whisperRes.headers.get('Retry-After');
+                                            let delayMs: number;
+                                            if (retryAfter) {
+                                                const secs = parseInt(retryAfter, 10);
+                                                delayMs = (isNaN(secs) ? 10 : secs) * 1000;
+                                            } else {
+                                                delayMs = Math.min(BASE_DELAY * Math.pow(2, attempt), 64000);
+                                                delayMs = delayMs * (0.75 + Math.random() * 0.5); // ±25% jitter
+                                            }
+
+                                            console.warn(`[audio-worker] ⏳ Whisper ${whisperRes.status} — retry ${attempt + 1}/${MAX_WHISPER_RETRIES} after ${(delayMs / 1000).toFixed(1)}s`);
+                                            await updateProgress(`Whisper مشغول، إعادة المحاولة ${attempt + 1}/${MAX_WHISPER_RETRIES} بعد ${Math.round(delayMs / 1000)} ثانية...`);
+                                            await new Promise(r => setTimeout(r, delayMs));
+                                            continue;
+                                        }
+                                        console.warn(`[audio-worker] Whisper rate limited after ${MAX_WHISPER_RETRIES} retries. Falling back to Gemini.`);
+                                        break;
+                                    }
+
+                                    if (whisperRes.ok) {
+                                        const whisperText = (await whisperRes.text()).trim();
+                                        if (whisperText.length >= 50 && !whisperText.startsWith('{') && !whisperText.startsWith('<')) {
+                                            fullTranscript = whisperText;
+                                            console.log(`[audio-worker] ✅ Whisper transcription: ${fullTranscript.length} chars (attempt ${attempt + 1})`);
+                                            break;
+                                        }
+                                        console.warn(`[audio-worker] Whisper returned invalid output (${whisperText.length} chars)`);
+                                    } else {
+                                        console.warn(`[audio-worker] Whisper error: ${whisperRes.status}`);
+                                    }
+                                    break; // Non-retryable error
+                                } catch (attemptErr: any) {
+                                    console.warn(`[audio-worker] Whisper attempt ${attempt + 1} error: ${attemptErr.message}`);
+                                    if (attempt >= MAX_WHISPER_RETRIES - 1) break;
+                                }
+                            }
+                        }
+                    } catch (whisperErr: any) {
+                        console.warn(`[audio-worker] ⚠️ Whisper pipeline error: ${whisperErr.message}`);
+                    }
+                }
+
+                // ═══ FALLBACK: Gemini if Whisper failed or file too large ═══
+                if (!fullTranscript || fullTranscript.trim().length < 50) {
+                    if (!fileUri) {
+                        throw new Error('Whisper failed and no gemini_file_uri available for Gemini fallback');
+                    }
+
+                    console.log(`[audio-worker] Falling back to Gemini transcription...`);
+                    await updateProgress('جاري تفريغ النصوص بواسطة Gemini كبديل...');
+
+                    try {
+                        const geminiText = await transcribeWithGemini(fileUri, geminiKey);
+                        if (geminiText && geminiText.trim().length >= 50) {
+                            fullTranscript = geminiText;
+                            console.log(`[audio-worker] ✅ Gemini fallback transcription: ${fullTranscript.length} chars`);
+                        }
+                    } catch (geminiErr: any) {
+                        console.warn(`[audio-worker] ⚠️ Gemini transcription also failed: ${geminiErr.message}`);
+                    }
+                }
+
+                if (!fullTranscript || fullTranscript.trim().length < 50) {
+                    throw new Error(`فشل تفريغ الصوت — لم يرجع أي نص كافٍ من Whisper أو Gemini (${fullTranscript?.length || 0} حرف)`);
                 }
 
                 await saveTranscriptAndComplete(supabase, lesson_id, jobId!, fullTranscript, payload, updateProgress);
@@ -453,16 +559,36 @@ async function saveTranscriptAndComplete(
     payload: any,
     updateProgress: (msg: string) => Promise<void>
 ) {
+    // CRITICAL GUARD: Never save empty/garbage transcripts
+    if (!transcript || transcript.trim().length < 50) {
+        console.error(`[audio-worker] ❌ Transcript is empty or too short (${transcript?.length || 0} chars). NOT saving.`);
+        await supabase.from('processing_queue').update({
+            status: 'failed',
+            error_message: 'لم يتم التعرف على أي محتوى صوتي — التفريغ فارغ أو قصير جداً',
+            locked_by: null, locked_at: null
+        }).eq('id', jobId);
+        return;
+    }
+
     await updateProgress('اكتمل التفريغ! جاري حفظ النصوص المفرغة...');
 
     const storagePath = `audio_transcripts/${lessonId}/raw_transcript.txt`;
     await supabase.storage.from('audio_transcripts').upload(storagePath, transcript, { upsert: true, contentType: 'text/plain;charset=UTF-8' });
 
-    console.log(`[audio-worker] Successfully transcribed and saved audio for lesson ${lessonId}.`);
+    console.log(`[audio-worker] Successfully transcribed and saved audio for lesson ${lessonId}. (${transcript.length} chars)`);
 
     await supabase.from('processing_queue').update({ status: 'completed' }).eq('id', jobId);
 
-    // Trigger segmentation
+    // CRITICAL FIX: Delete any old completed/failed segment_lesson jobs BEFORE upserting.
+    // Without this, ignoreDuplicates would silently skip the insert when a previous
+    // segment_lesson job exists (e.g. from a PDF pipeline that ran before audio finished).
+    // The old job may have completed without the audio transcript available.
+    await supabase.from('processing_queue').delete()
+        .eq('lesson_id', lessonId)
+        .eq('job_type', 'segment_lesson')
+        .in('status', ['completed', 'failed']);
+
+    // Trigger segmentation (will now succeed even if segment_lesson ran before)
     await supabase.from('processing_queue').upsert({
         lesson_id: lessonId,
         job_type: 'segment_lesson',

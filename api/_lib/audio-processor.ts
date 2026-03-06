@@ -4,17 +4,18 @@ import { chunkText, linkChunks } from './chunker.js';
 /**
  * Audio Transcription + Chunking + Storage
  * 
- * Strategy: Gemini PRIMARY (handles up to 9.5 hours)
- *   - Files ≤ 15MB: inline data (fast)
- *   - Files > 15MB: File API upload first (no size limit truncation)
- *   Whisper as FALLBACK for short files only.
+ * Strategy: Whisper PRIMARY (most accurate for Arabic)
+ *   - Files ≤ 25MB: Whisper first with aggressive retry on 429
+ *   - Files > 25MB: Gemini File API (no size limit)
+ *   Gemini as FALLBACK if Whisper fails for any reason.
  */
 
 const WHISPER_API_URL = 'https://api.openai.com/v1/audio/transcriptions';
-const WHISPER_MAX_BYTES = 20 * 1024 * 1024;
+const WHISPER_MAX_BYTES = 25 * 1024 * 1024; // 25MB Whisper limit
 const GEMINI_INLINE_MAX = 15 * 1024 * 1024; // 15MB inline limit
-const MAX_RETRIES = 3;
-const BASE_DELAY_MS = 1000;
+const MAX_RETRIES = 5;       // More retries for rate limits
+const BASE_DELAY_MS = 2000;  // Start with 2s delay
+const MAX_DELAY_MS = 64000;  // Cap at 64s
 
 function getMime(fileName: string): string {
     const ext = fileName.split('.').pop()?.toLowerCase() || 'mp3';
@@ -188,52 +189,89 @@ async function transcribeWithGemini(audioBuffer: ArrayBuffer, fileName: string):
     throw new Error(`Gemini returned too short after ${prompts.length} attempts`);
 }
 
-// ─── Whisper Transcription (FALLBACK) ───────────────────
+// ─── Whisper Transcription (PRIMARY) ────────────────────
 
 async function transcribeWithWhisper(audioBuffer: ArrayBuffer, fileName: string): Promise<string> {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) throw new Error('OPENAI_API_KEY not set');
 
-    const blob = new Blob([audioBuffer], { type: getMime(fileName) });
-    const formData = new FormData();
-    formData.append('file', blob, fileName);
-    formData.append('model', 'whisper-1');
-    formData.append('language', 'ar');
-    formData.append('response_format', 'text');
+    const mimeType = getMime(fileName);
+    const fileSizeMB = (audioBuffer.byteLength / (1024 * 1024)).toFixed(1);
+    console.log(`[Audio] 🎤 Whisper transcription (${fileSizeMB} MB)...`);
 
     let lastError: Error | null = null;
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
         try {
+            // Must recreate FormData each attempt (consumed by fetch)
+            const blob = new Blob([audioBuffer], { type: mimeType });
+            const formData = new FormData();
+            formData.append('file', blob, fileName);
+            formData.append('model', 'whisper-1');
+            formData.append('language', 'ar');
+            formData.append('response_format', 'text');
+
             const response = await fetch(WHISPER_API_URL, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${apiKey}` },
                 body: formData
             });
 
+            // Handle rate limits (429) and server errors (5xx) with retry
             if (response.status === 429 || response.status >= 500) {
                 const errorText = await response.clone().text();
-                if (errorText.includes('billing_not_active')) throw new Error(`Whisper Billing: ${errorText}`);
+
+                // Billing not active = permanent failure, no retry
+                if (errorText.includes('billing_not_active')) {
+                    throw new Error(`Whisper billing not active: ${errorText.substring(0, 200)}`);
+                }
+
                 if (attempt < MAX_RETRIES - 1) {
-                    await new Promise(r => setTimeout(r, BASE_DELAY_MS * Math.pow(2, attempt)));
+                    // Respect Retry-After header if present
+                    const retryAfter = response.headers.get('Retry-After');
+                    let delayMs: number;
+
+                    if (retryAfter) {
+                        // Retry-After can be seconds or a date
+                        const retrySeconds = parseInt(retryAfter, 10);
+                        delayMs = (isNaN(retrySeconds) ? 10 : retrySeconds) * 1000;
+                    } else {
+                        // Exponential backoff with jitter: 2s, 4s, 8s, 16s, 32s (±25%)
+                        delayMs = Math.min(BASE_DELAY_MS * Math.pow(2, attempt), MAX_DELAY_MS);
+                        // Add jitter (±25%) to prevent thundering herd
+                        delayMs = delayMs * (0.75 + Math.random() * 0.5);
+                    }
+
+                    console.warn(`[Audio] ⏳ Whisper ${response.status} — retry ${attempt + 1}/${MAX_RETRIES} after ${(delayMs / 1000).toFixed(1)}s`);
+                    await new Promise(r => setTimeout(r, delayMs));
                     continue;
                 }
+                // All retries exhausted
+                throw new Error(`Whisper rate limited (429) after ${MAX_RETRIES} retries. Last: ${errorText.substring(0, 200)}`);
             }
 
             if (!response.ok) throw new Error(`Whisper (${response.status}): ${await response.text()}`);
 
             const transcript = (await response.text()).trim();
+
+            // Validate output
             if (transcript.length < 50 || transcript.startsWith('{') || transcript.startsWith('<')) {
-                throw new Error(`Whisper invalid (${transcript.length} chars)`);
+                throw new Error(`Whisper returned invalid output (${transcript.length} chars)`);
             }
 
-            console.log(`[Audio] ✅ Whisper: ${transcript.length} chars`);
+            console.log(`[Audio] ✅ Whisper: ${transcript.length} chars (attempt ${attempt + 1})`);
             return transcript;
         } catch (err: any) {
             lastError = err;
+            // Permanent errors: don't retry
             if (err.message?.includes('billing_not_active')) throw err;
+            if (err.message?.includes('invalid_api_key')) throw err;
+            // Transient errors: continue retry loop
+            if (attempt < MAX_RETRIES - 1) {
+                console.warn(`[Audio] ⚠️ Whisper attempt ${attempt + 1} failed: ${err.message}`);
+            }
         }
     }
-    throw lastError || new Error('Whisper failed');
+    throw lastError || new Error('Whisper failed after all retries');
 }
 
 // ─── Main Pipeline ──────────────────────────────────────
@@ -268,19 +306,27 @@ export async function processAudioJob(
 
         console.log(`[Audio] File: ${fileName} (${fileSizeMB.toFixed(1)} MB)`);
 
-        // 3. Transcribe: Gemini FIRST, Whisper fallback
-        try {
-            transcription = await transcribeWithGemini(buffer, fileName);
-        } catch (geminiErr: any) {
-            console.warn(`[Audio] ⚠️ Gemini failed: ${geminiErr.message}. Trying Whisper...`);
-            if (buffer.byteLength > WHISPER_MAX_BYTES) {
-                throw new Error(`Audio ${fileSizeMB.toFixed(0)}MB: Gemini failed (${geminiErr.message}), too large for Whisper`);
+        // 3. Transcribe: Whisper FIRST (most accurate), Gemini fallback
+        if (buffer.byteLength <= WHISPER_MAX_BYTES) {
+            // Within Whisper size limit → try Whisper first
+            try {
+                transcription = await transcribeWithWhisper(buffer, fileName);
+            } catch (whisperErr: any) {
+                console.warn(`[Audio] ⚠️ Whisper failed: ${whisperErr.message}. Falling back to Gemini...`);
+                // Permanent billing error = don't try Gemini either (same cost issue likely)
+                if (whisperErr.message?.includes('billing_not_active') || whisperErr.message?.includes('invalid_api_key')) {
+                    // Still try Gemini as it uses a different key
+                }
+                transcription = await transcribeWithGemini(buffer, fileName);
             }
-            transcription = await transcribeWithWhisper(buffer, fileName);
+        } else {
+            // File too large for Whisper → Gemini only
+            console.log(`[Audio] File ${fileSizeMB.toFixed(1)}MB exceeds Whisper limit (25MB). Using Gemini directly.`);
+            transcription = await transcribeWithGemini(buffer, fileName);
         }
 
-        if (!transcription || transcription.trim().length < 5) {
-            throw new Error('لم يتم التعرف على محتوى صوتي');
+        if (!transcription || transcription.trim().length < 50) {
+            throw new Error('لم يتم التعرف على محتوى صوتي — التفريغ فارغ أو غير كافٍ');
         }
 
         console.log(`[Audio] Final: ${transcription.length} chars`);

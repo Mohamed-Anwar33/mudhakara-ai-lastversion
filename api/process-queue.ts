@@ -214,9 +214,13 @@ async function processSingleJob(supabase: any, job: any, workerId: string, supab
             result = await executeEdgeFunctionStep(supabaseUrl, serviceKey, endpoint, job.id);
         }
 
-        // If dispatched (fire-and-forget), release lock but keep processing
+        // If dispatched (fire-and-forget), release lock AND reset to pending
+        // CRITICAL FIX: Previously left as 'processing' with no lock = orphan job
+        // that wouldn't be picked up until orphan recovery (90s). Now resets to
+        // 'pending' so the Edge Function result is properly handled when it finishes.
         if (result?.status === 'dispatched' && result?.unlockNeeded) {
             await supabase.from('processing_queue').update({
+                status: 'pending',
                 locked_by: null,
                 locked_at: null,
                 updated_at: new Date().toISOString()
