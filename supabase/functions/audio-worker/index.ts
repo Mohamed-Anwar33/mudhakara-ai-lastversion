@@ -59,9 +59,12 @@ async function uploadStreamToGemini(audioUrl: string, apiKey: string): Promise<{
 }
 
 // ─── Stage 2 Helper: Check if Gemini file is ready (single check, no loop!) ───
-async function checkGeminiFileStatus(fileName: string, apiKey: string): Promise<'ACTIVE' | 'PROCESSING' | 'FAILED'> {
+async function checkGeminiFileStatus(fileName: string, apiKey: string): Promise<'ACTIVE' | 'PROCESSING' | 'FAILED' | 'ERROR'> {
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${apiKey}`);
-    if (!res.ok) throw new Error(`Gemini file status check failed: ${res.status}`);
+    if (!res.ok) {
+        console.warn(`[audio-worker] Gemini file status check failed (${res.status}): ${await res.text().catch(() => '')}`);
+        return 'ERROR';
+    }
     const status = await res.json();
     if (status.state === 'ACTIVE') return 'ACTIVE';
     if (status.state === 'FAILED') return 'FAILED';
@@ -374,8 +377,31 @@ serve(async (req) => {
                     return new Response(JSON.stringify({ status: 'staged', next_stage: 'transcribe' }), { headers: corsHeaders });
                 }
 
-                if (fileStatus === 'FAILED') {
-                    throw new Error('Gemini file processing FAILED on their servers.');
+                if (fileStatus === 'FAILED' || fileStatus === 'ERROR') {
+                    // Try to reset the upload instead of immediately failing
+                    const resetCount = payload.reset_count || 0;
+                    if (resetCount < 2) {
+                        console.warn(`[audio-worker] Gemini file ${fileName} is FAILED/ERROR. Resetting to upload stage (reset #${resetCount + 1}).`);
+                        await supabase.from('processing_queue').update({
+                            status: 'pending',
+                            locked_by: null,
+                            locked_at: null,
+                            next_retry_at: new Date().toISOString(),
+                            attempt_count: 0,
+                            error_message: 'واجه مزود التحليل مشكلة تقنية، جاري إعادة الرفع...',
+                            payload: {
+                                ...payload,
+                                stage: 'upload',
+                                gemini_file_uri: undefined,
+                                gemini_file_name: undefined,
+                                poll_count: 0,
+                                reset_count: resetCount + 1
+                            }
+                        }).eq('id', jobId);
+                        return new Response(JSON.stringify({ status: 'staged', next_stage: 'upload' }), { headers: corsHeaders });
+                    } else {
+                        throw new Error(`Gemini file processing FAILED on their servers repeatedly (${fileStatus}).`);
+                    }
                 }
 
                 // Still PROCESSING — re-queue with backoff

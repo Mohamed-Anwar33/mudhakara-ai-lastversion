@@ -439,6 +439,7 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
       const maxPollIntervalMs = 8000;   // Cap at 8 seconds
       const pollStartTime = Date.now();
       let consecutiveNoJobs = 0;
+      let autoRetryCount = 0; // Prevent infinite retry loops
 
       for (let attempt = 1; attempt <= 10000; attempt++) {
         // Only trigger queue worker aggressively at the start or if we know jobs exist
@@ -498,7 +499,13 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
             // If there are failed jobs, offer retry instead of full failure
             if (failedJobs.length > 0 && !status?.analysisResult) {
               const failInfo = failedJobs.map((j: any) => `${j.job_type}: ${j.error_message || 'فشل'}`).join(' | ');
-              setProgressMsg(`فشلت ${failedJobs.length} مهام. جاري إعادة المحاولة تلقائياً...`);
+
+              if (autoRetryCount >= 1) {
+                throw new Error(`فشل التحليل بشكل متكرر: ${failInfo}`);
+              }
+
+              autoRetryCount++;
+              setProgressMsg(`فشلت ${failedJobs.length} مهام. جاري المحاولة لمرة أخيرة...`);
               // Auto-retry failed jobs
               try {
                 const retryRes = await fetch('/api/retry-failed', {
