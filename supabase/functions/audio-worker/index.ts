@@ -69,23 +69,37 @@ async function checkGeminiFileStatus(fileName: string, apiKey: string): Promise<
 }
 
 // ─── Stage 3 Helper: Transcribe with Gemini using file URI ───
+// Uses gemini-2.5-flash with maxOutputTokens: 65536 + finishReason continuation
+// Future: migrate to Whisper/Speech-to-Text for transcription, Gemini for analysis only
 async function transcribeWithGemini(fileUri: string, apiKey: string): Promise<string> {
-    const prompt = "أنت خبير في التفريغ الصوتي (Transcription). قم بتفريغ هذا المقطع الصوتي بكل دقة إلى نص عربي واضح ومترابط. اكتب النص بالكامل كما قيل بدون تلخيص، وتأكد من صحة الإملاء والوقفات.";
+    const TRANSCRIPTION_PROMPT = `أنت مفرّغ صوتي محترف ودقيق جداً متخصص في المحتوى الأكاديمي العربي.
+حوّل كل الكلام في هذا التسجيل الصوتي إلى نص عربي مكتوب بأعلى دقة ممكنة.
 
-    const apiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`, {
+⚠️ قواعد صارمة:
+- فرّغ التسجيل كاملاً من أوله لآخره بدون توقف أو تخطي أي جزء
+- اكتب كل كلمة بدون حذف أو اختصار أو تلخيص
+- المصطلحات العلمية والأسماء الخاصة: اكتبها بدقة كما نُطقت
+- الأرقام والتواريخ والمعادلات: اكتبها كما قالها المتحدث بالضبط
+- إذا كان هناك سؤال وجواب بين المعلم والطلاب، اكتب (المعلم: ...) و(طالب: ...)
+- حافظ على الترتيب الزمني للشرح
+- اكتب النص المُفرَّغ فقط بدون مقدمات أو تعليقات من عندك`;
+
+    const MODEL_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    const GEN_CONFIG = { temperature: 0.1, maxOutputTokens: 65536 };
+
+    // ── Initial transcription request ──
+    const apiRes = await fetch(MODEL_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             contents: [{
                 role: 'user',
                 parts: [
-                    { text: prompt },
+                    { text: TRANSCRIPTION_PROMPT },
                     { fileData: { fileUri: fileUri, mimeType: "audio/mp3" } }
                 ]
             }],
-            generationConfig: {
-                temperature: 0.1,
-            }
+            generationConfig: GEN_CONFIG
         })
     });
 
@@ -94,8 +108,96 @@ async function transcribeWithGemini(fileUri: string, apiKey: string): Promise<st
     }
 
     const data = await apiRes.json();
+    const finishReason = data.candidates?.[0]?.finishReason;
     const resParts = data.candidates?.[0]?.content?.parts || [];
-    return resParts.filter((p: any) => p.text).map((p: any) => p.text).join('').trim();
+    let fullText = resParts.filter((p: any) => p.text).map((p: any) => p.text).join('').trim();
+
+    console.log(`[audio-worker] Initial transcription: ${fullText.length} chars, finishReason: ${finishReason}`);
+
+    // ── Continuation loop: handle MAX_TOKENS truncation ──
+    // For 1-2 hour recordings, 65536 tokens may not be enough in one shot
+    if (finishReason === 'MAX_TOKENS' && fullText.length > 100) {
+        console.log(`[audio-worker] MAX_TOKENS hit (${fullText.length} chars). Starting continuation...`);
+
+        const MAX_CONTINUATIONS = 5;
+        for (let cont = 0; cont < MAX_CONTINUATIONS; cont++) {
+            const lastChunk = fullText.slice(-500);
+            const continuePrompt = `أنت تكمل تفريغ تسجيل صوتي أكاديمي عربي. آخر ما تم تفريغه:
+"${lastChunk}"
+
+أكمل التفريغ من حيث توقف النص أعلاه. اكتب فقط الجزء الجديد الذي لم يُفرَّغ بعد.
+لا تكرر ما تم تفريغه سابقاً. اكتب النص المُفرَّغ فقط.`;
+
+            const contRes = await fetch(MODEL_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{
+                        role: 'user',
+                        parts: [
+                            { text: continuePrompt },
+                            { fileData: { fileUri: fileUri, mimeType: "audio/mp3" } }
+                        ]
+                    }],
+                    generationConfig: GEN_CONFIG
+                })
+            });
+
+            if (!contRes.ok) {
+                console.warn(`[audio-worker] Continuation ${cont + 1} failed: ${contRes.status}`);
+                break;
+            }
+
+            const contData = await contRes.json();
+            const contFinish = contData.candidates?.[0]?.finishReason;
+            const contParts = contData.candidates?.[0]?.content?.parts || [];
+            const contText = contParts.filter((p: any) => p.text).map((p: any) => p.text).join('').trim();
+
+            if (!contText || contText.length < 50) {
+                console.log(`[audio-worker] Continuation ${cont + 1}: empty/short response. Transcription likely complete.`);
+                break;
+            }
+
+            fullText += '\n' + contText;
+            console.log(`[audio-worker] Continuation ${cont + 1}: +${contText.length} chars (total: ${fullText.length}), finishReason: ${contFinish}`);
+
+            if (contFinish === 'STOP') {
+                console.log(`[audio-worker] Continuation complete (STOP). Total: ${fullText.length} chars`);
+                break;
+            }
+
+            if (contFinish === 'SAFETY' || contFinish === 'RECITATION') {
+                console.warn(`[audio-worker] Continuation blocked: ${contFinish}. Using partial transcript.`);
+                break;
+            }
+        }
+    } else if (finishReason === 'SAFETY' || finishReason === 'RECITATION') {
+        console.warn(`[audio-worker] Transcription blocked by ${finishReason}. Retrying with simpler prompt...`);
+        // Retry with minimal prompt
+        const retryRes = await fetch(MODEL_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{
+                    role: 'user',
+                    parts: [
+                        { text: 'استمع للتسجيل الصوتي التالي وحوّله إلى نص عربي مكتوب. اكتب كل ما يقوله المتحدث بالضبط. اكتب النص فقط.' },
+                        { fileData: { fileUri: fileUri, mimeType: "audio/mp3" } }
+                    ]
+                }],
+                generationConfig: GEN_CONFIG
+            })
+        });
+        if (retryRes.ok) {
+            const retryData = await retryRes.json();
+            const retryParts = retryData.candidates?.[0]?.content?.parts || [];
+            const retryText = retryParts.filter((p: any) => p.text).map((p: any) => p.text).join('').trim();
+            if (retryText.length > fullText.length) fullText = retryText;
+        }
+    }
+
+    console.log(`[audio-worker] Final transcription: ${fullText.length} chars`);
+    return fullText;
 }
 
 serve(async (req) => {
@@ -303,7 +405,7 @@ serve(async (req) => {
                 if (!fileUri) throw new Error('Missing gemini_file_uri in payload for transcribe stage');
 
                 console.log(`[audio-worker] Starting Gemini transcription with file URI: ${fileUri}`);
-                await updateProgress('نجح الرفع. جاري الاستماع للمقطع وتفريغ النصوص (Gemini 1.5 Pro)... هذه العملية قد تستغرق بضع دقائق.');
+                await updateProgress('نجح الرفع. جاري الاستماع للمقطع وتفريغ النصوص (Gemini 2.5 Flash)... هذه العملية قد تستغرق بضع دقائق.');
 
                 const fullTranscript = await transcribeWithGemini(fileUri, geminiKey);
                 console.log(`[audio-worker] Gemini Pro transcription successful. Length: ${fullTranscript.length}`);

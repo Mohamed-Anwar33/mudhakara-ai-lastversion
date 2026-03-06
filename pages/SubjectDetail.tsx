@@ -1094,7 +1094,14 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
                   {/* ── Audio Focus Points Card (ما ركّز عليه المعلم) ── */}
                   {(() => {
                     const allAudioFocus = analyzedLessons.flatMap(al =>
-                      (al.focusPoints || []).filter(fp => fp.title?.includes('🎙️') || fp.title?.includes('المعلم') || fp.details?.includes('🎙️'))
+                      // Audio-sourced lessons: show ALL focusPoints (they are entirely from audio)
+                      (al.lessonTitle?.includes('التسجيل الصوتي') || al.lessonTitle?.includes('محتوى الملف'))
+                        ? (al.focusPoints || [])
+                        // Book-sourced lessons: show only audio-tagged focus points
+                        : (al.focusPoints || []).filter(fp =>
+                          fp.title?.includes('🎙️') || fp.title?.includes('المعلم') ||
+                          fp.details?.includes('🎙️') || fp.details?.includes('المعلم')
+                        )
                     );
 
                     // Display the card unconditionally if we have at least one audio focus point.
