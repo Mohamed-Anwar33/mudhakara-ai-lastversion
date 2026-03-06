@@ -181,6 +181,21 @@ async function processSingleJob(supabase: any, job: any, workerId: string, supab
     let endpoint = '';
 
     try {
+        // ── Dead-letter guard: prevent infinite retry loops ──
+        // A job with >10 attempts is clearly broken. Auto-fail it so it doesn't
+        // monopolize the orchestrator and block all other work.
+        const MAX_ATTEMPTS = 10;
+        if ((job.attempt_count || 0) > MAX_ATTEMPTS) {
+            console.warn(`[Orchestrator] Job ${job.id} (${job.job_type}) exceeded ${MAX_ATTEMPTS} attempts. Auto-failing.`);
+            await supabase.from('processing_queue').update({
+                status: 'dead',
+                error_message: `تم إيقاف المهمة تلقائياً بعد ${job.attempt_count} محاولة فاشلة`,
+                locked_by: null,
+                locked_at: null
+            }).eq('id', job.id);
+            return { status: 'dead', message: 'Exceeded max attempts' };
+        }
+
         // V2 Architecture Route Mapping
         if (['extract_pdf_info', 'ocr_page_batch'].includes(job.job_type)) {
             endpoint = 'ocr-worker';
