@@ -60,6 +60,12 @@ async function acquireJobId(supabase: any, workerId: string): Promise<string | n
     if ((activeAnalysis || 0) >= 6) excludedTypes.push('generate_analysis', 'analyze_lecture');
     if ((activeQuiz || 0) >= 6) excludedTypes.push('generate_quiz');
 
+    // Skip barrier jobs (finalize_global_summary) when analysis/quiz work is still active.
+    // These barrier jobs just check if everything is done and return — no point calling them early.
+    if ((activeAnalysis || 0) > 0 || (activeQuiz || 0) > 0) {
+        excludedTypes.push('finalize_global_summary');
+    }
+
     for (let attempt = 0; attempt < 3; attempt++) {
         let query = supabase
             .from('processing_queue')
@@ -214,13 +220,14 @@ async function processSingleJob(supabase: any, job: any, workerId: string, supab
             result = await executeEdgeFunctionStep(supabaseUrl, serviceKey, endpoint, job.id);
         }
 
-        // If dispatched (fire-and-forget), release lock AND reset to pending
-        // CRITICAL FIX: Previously left as 'processing' with no lock = orphan job
-        // that wouldn't be picked up until orphan recovery (90s). Now resets to
-        // 'pending' so the Edge Function result is properly handled when it finishes.
+        // If dispatched (fire-and-forget), release lock but keep as 'processing'
+        // The Edge Function is STILL RUNNING in Supabase after we disconnect.
+        // Setting to 'pending' would cause re-acquisition → duplicate Gemini calls!
+        // The Edge Function itself updates status when done (e.g. stage advancement).
+        // If it crashes, orphan recovery (90s) will reset it to pending.
         if (result?.status === 'dispatched' && result?.unlockNeeded) {
             await supabase.from('processing_queue').update({
-                status: 'pending',
+                status: 'processing',  // Keep processing — Edge Function still running!
                 locked_by: null,
                 locked_at: null,
                 updated_at: new Date().toISOString()

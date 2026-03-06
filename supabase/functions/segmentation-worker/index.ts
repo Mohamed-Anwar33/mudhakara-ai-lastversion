@@ -241,6 +241,23 @@ ${tocContext}`;
                 parsedToc = { lectures: [{ title: 'محتوى الدرس العام', start_page: 1 }] };
             }
 
+            // ── CAP: Max 30 segments to prevent queue explosion ──
+            // (e.g. a TOC with 200+ items would create 200+ analyze_lecture jobs!)
+            const MAX_SEGMENTS = 30;
+            if (parsedToc.lectures.length > MAX_SEGMENTS) {
+                console.warn(`[segmentation-worker] TOC has ${parsedToc.lectures.length} items! Merging down to ${MAX_SEGMENTS}.`);
+                const mergeRatio = Math.ceil(parsedToc.lectures.length / MAX_SEGMENTS);
+                const merged = [];
+                for (let i = 0; i < parsedToc.lectures.length; i += mergeRatio) {
+                    const group = parsedToc.lectures.slice(i, i + mergeRatio);
+                    merged.push({
+                        title: group.length === 1 ? group[0].title : `${group[0].title} — ${group[group.length - 1].title}`,
+                        start_page: group[0].start_page
+                    });
+                }
+                parsedToc.lectures = merged;
+            }
+
             const lecturesToInsert = parsedToc.lectures.map((l: any, idx: number) => {
                 const start_page = l.start_page || 1;
                 const next = parsedToc.lectures[idx + 1];
