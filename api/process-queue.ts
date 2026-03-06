@@ -199,6 +199,26 @@ async function processSingleJob(supabase: any, job: any, workerId: string, supab
             endpoint = 'quiz-generator';
             await supabase.from('lessons').update({ pipeline_stage: 'generating_quizzes' }).eq('id', job.lesson_id);
         } else if (['finalize_global_summary'].includes(job.job_type)) {
+            // ── Inline Barrier: Don't call Edge Function if work is still pending ──
+            // The RPC acquire_job doesn't filter by job_type, so this barrier job
+            // gets picked up even when analysis is still running. Check here instead.
+            const { count: activeWork } = await supabase.from('processing_queue')
+                .select('*', { count: 'exact', head: true })
+                .eq('lesson_id', job.lesson_id)
+                .in('job_type', ['analyze_lecture', 'generate_quiz'])
+                .in('status', ['pending', 'processing']);
+
+            if ((activeWork || 0) > 0) {
+                console.log(`[Orchestrator] finalize_global_summary deferred — ${activeWork} analyze/quiz jobs still active.`);
+                await supabase.from('processing_queue').update({
+                    status: 'pending',
+                    locked_by: null,
+                    locked_at: null,
+                    next_retry_at: new Date(Date.now() + 30_000).toISOString(),
+                    updated_at: new Date().toISOString()
+                }).eq('id', job.id);
+                return { status: 'deferred' };
+            }
             endpoint = 'global-aggregator';
         } else if (['extract_text_range'].includes(job.job_type)) {
             endpoint = 'extract-text-node';

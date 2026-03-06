@@ -493,7 +493,7 @@ const LessonDetail: React.FC = () => {
       }
 
       setProgressMsg('Triggering queue worker...');
-      triggerQueueWorker(5).catch(console.warn);
+      triggerQueueWorker(2).catch(console.warn);
 
       setProgressMsg('Processing queue and waiting for analysis...');
       let result: AIResult | null = null;
@@ -506,7 +506,7 @@ const LessonDetail: React.FC = () => {
 
       for (let attempt = 1; attempt <= maxPollAttempts; attempt++) {
         if (attempt === 1 || attempt % queueKickEveryAttempts === 0) {
-          triggerQueueWorker(5).catch(console.warn);
+          triggerQueueWorker(1).catch(console.warn);
         }
 
         let status: any;
