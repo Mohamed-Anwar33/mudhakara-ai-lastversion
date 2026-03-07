@@ -35,7 +35,11 @@ async function uploadStreamToGemini(audioUrl: string, apiKey: string): Promise<{
     if (!uploadUrl) throw new Error('No upload URL allocated');
 
     const audioStreamRes = await fetch(audioUrl);
-    if (!audioStreamRes.ok || !audioStreamRes.body) throw new Error('Failed to stream audio from Storage');
+    if (!audioStreamRes.ok) throw new Error('Failed to fetch audio from Storage');
+
+    // NATIVE DENO FIX: Deno fetch streaming into another fetch body often corrupts the Google Resumable Upload.
+    // Instead of streaming `audioStreamRes.body`, we load it into an ArrayBuffer and upload fully.
+    const fileBuffer = await audioStreamRes.arrayBuffer();
 
     const uploadRes = await fetch(uploadUrl, {
         method: 'PUT',
@@ -44,9 +48,8 @@ async function uploadStreamToGemini(audioUrl: string, apiKey: string): Promise<{
             'X-Goog-Upload-Offset': '0',
             'X-Goog-Upload-Command': 'upload, finalize'
         },
-        body: audioStreamRes.body,
-        duplex: 'half'
-    } as any);
+        body: fileBuffer
+    });
 
     if (!uploadRes.ok) throw new Error(`Gemini File API upload failed: ${uploadRes.status} ${await uploadRes.text()}`);
 

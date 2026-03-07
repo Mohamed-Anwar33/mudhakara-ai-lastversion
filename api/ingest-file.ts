@@ -449,26 +449,34 @@ async function uploadToGemini(supabase: any, storagePath: string): Promise<{ uri
         // 4. Try to get actual page count from Gemini file metadata
         let pageCount = 200; // Safe default for Arabic textbooks (covers up to 200 pages)
         try {
-            if (uploadResponse.name) {
-                const fileInfo = await ai.files.get({ name: uploadResponse.name });
-                // Gemini File API may expose page count in metadata
-                const metaPages = (fileInfo as any).pageCount || (fileInfo as any).metadata?.pageCount;
-                if (metaPages && metaPages > 0) {
-                    pageCount = metaPages;
-                    console.log(`[Gemini Upload] Detected ${pageCount} pages from Gemini metadata.`);
-                } else {
-                    // Fallback: estimate from file size (avg ~5KB per page for Arabic PDF)
-                    const estimatedPages = Math.ceil(buffer.length / 5000);
-                    if (estimatedPages > 10 && estimatedPages < 500) {
-                        pageCount = estimatedPages;
-                        console.log(`[Gemini Upload] Estimated ${pageCount} pages from file size (${buffer.length} bytes).`);
+            // New Accurate Method: read buffer using pdf-lib
+            const { PDFDocument } = await import('pdf-lib');
+            const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
+            pageCount = pdfDoc.getPageCount();
+            console.log(`[Gemini Upload] Accurate page count from PDF document: ${pageCount} pages.`);
+        } catch (pdfErr: any) {
+            console.warn(`[Gemini Upload] Could not read page count via pdf-lib: ${pdfErr.message}. Trying Gemini Metadata...`);
+            try {
+                if (uploadResponse.name) {
+                    const fileInfo = await ai.files.get({ name: uploadResponse.name });
+                    const metaPages = (fileInfo as any).pageCount || (fileInfo as any).metadata?.pageCount;
+                    if (metaPages && metaPages > 0) {
+                        pageCount = metaPages;
+                        console.log(`[Gemini Upload] Detected ${pageCount} pages from Gemini metadata.`);
                     } else {
-                        console.log(`[Gemini Upload] Using safe default: ${pageCount} pages.`);
+                        // Fallback estimation
+                        const estimatedPages = Math.ceil(buffer.length / 5000);
+                        if (estimatedPages > 10 && estimatedPages < 500) {
+                            pageCount = estimatedPages;
+                            console.log(`[Gemini Upload] Estimated ${pageCount} pages from file size (${buffer.length} bytes).`);
+                        } else {
+                            console.log(`[Gemini Upload] Using safe default: ${pageCount} pages.`);
+                        }
                     }
                 }
+            } catch (metaErr: any) {
+                console.warn(`[Gemini Upload] Could not get page count from metadata: ${metaErr.message}.`);
             }
-        } catch (metaErr: any) {
-            console.warn(`[Gemini Upload] Could not get page count from metadata: ${metaErr.message}. Using default ${pageCount}.`);
         }
 
         return { uri: uploadResponse.uri!, pageCount };
