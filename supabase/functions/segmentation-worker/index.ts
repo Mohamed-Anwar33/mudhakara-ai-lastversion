@@ -62,7 +62,7 @@ serve(async (req) => {
             // 1. SELF-HEALING: Reset any OCR jobs stuck in 'processing' for > 2 min
             //    These are orphans from Edge Functions that crashed after orchestrator disconnected.
             //    Instead of waiting 3+ min for orphan recovery in process-queue, we fix them HERE.
-            const stuckCutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+            const stuckCutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString(); // 5 min — matches process-queue orphan recovery
             const { data: stuckJobs } = await supabase.from('processing_queue')
                 .select('id, attempt_count')
                 .eq('lesson_id', lesson_id)

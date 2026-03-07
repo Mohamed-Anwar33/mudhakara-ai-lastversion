@@ -521,10 +521,10 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
                 }
               } catch (e) { console.warn('Auto-retry failed:', e); }
               // If retry also failed or no jobs to retry
-              if (Date.now() - pollStartTime > 120000) {
+              if (Date.now() - pollStartTime > 600000) {
                 throw new Error(`فشل التحليل: ${failInfo}`);
               }
-            } else if (!status?.analysisResult && Date.now() - pollStartTime > 120000) {
+            } else if (!status?.analysisResult && Date.now() - pollStartTime > 600000) {
               throw new Error('فشل التحليل: خطأ غير معروف');
             }
           }

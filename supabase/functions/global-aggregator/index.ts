@@ -54,7 +54,7 @@ serve(async (req) => {
             console.log(`[global-aggregator] Checking global status for lesson ${lesson_id}...`);
 
             // 0. SELF-HEALING: Reset any stuck jobs > 2 min
-            const stuckCutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+            const stuckCutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString(); // 5 min — matches process-queue orphan recovery
             const { data: stuckJobs } = await supabase.from('processing_queue')
                 .select('id, job_type, attempt_count')
                 .eq('lesson_id', lesson_id)

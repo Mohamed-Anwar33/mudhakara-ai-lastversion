@@ -618,9 +618,9 @@ const LessonDetail: React.FC = () => {
         if (activeJobs.length === 0 && jobs.length > 0) {
           const allDone = jobs.every((j: any) => ['completed', 'failed', 'dead'].includes(j.status));
           const elapsed = Date.now() - pollStartTime;
-          // Grace period: 120s (was 30s). Edge Functions can take minutes for Gemini calls.
+          // Grace period: 600s (10 min). Edge Functions can take minutes for Gemini calls.
           // Short grace periods cause false "خطأ غير معروف" errors.
-          if (allDone && !status?.analysisResult && elapsed > 120000) {
+          if (allDone && !status?.analysisResult && elapsed > 600000) {
             const failInfo = failedJobs.map((j: any) => `${j.job_type}: ${j.error_message || 'فشل'}`).join(' | ');
             throw new Error(`فشل التحليل: ${failInfo || 'خطأ غير معروف'}`);
           }
