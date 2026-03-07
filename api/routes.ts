@@ -266,11 +266,11 @@ router.post('/reanalyze-lecture', async (req, res) => {
 });
 
 // ------------------------------------------------------------------
-// POST /api/fetch-audio-transcript
+// POST /fetch-audio-transcript
 // Body: { lessonId: string }
 // Fetches audio transcript from storage, or re-transcribes if missing
 // ------------------------------------------------------------------
-router.post('/api/fetch-audio-transcript', async (req, res) => {
+router.post('/fetch-audio-transcript', async (req, res) => {
     try {
         const { lessonId } = req.body;
         if (!lessonId) return res.status(400).json({ error: 'lessonId is required' });
