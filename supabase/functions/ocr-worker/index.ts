@@ -206,10 +206,19 @@ serve(async (req) => {
 
             // Instead of putting huge text in DB, save to Storage
             const storagePath = `ocr/${lesson_id}/batch_${start}_${end}.txt`;
-            const { error: storageErr } = await supabase.storage.from('ocr')
-                .upload(storagePath, resultText, { upsert: true, contentType: 'text/plain;charset=UTF-8' });
 
-            if (storageErr) throw new Error(`Storage upload failed: ${storageErr.message}`);
+            // Adding a 3-retry loop for Connection Reset errors from Supabase Storage
+            let storageErr: any = null;
+            for (let u_attempt = 1; u_attempt <= 3; u_attempt++) {
+                const { error } = await supabase.storage.from('ocr')
+                    .upload(storagePath, resultText, { upsert: true, contentType: 'text/plain;charset=UTF-8' });
+                storageErr = error;
+                if (!storageErr) break; // Success
+                console.warn(`[ocr-worker] Storage upload attempt ${u_attempt} failed: ${storageErr.message}`);
+                if (u_attempt < 3) await delay(2000 * u_attempt); // Wait before retrying
+            }
+
+            if (storageErr) throw new Error(`Storage upload failed after 3 attempts: ${storageErr.message}`);
 
             // Embed the chunk (Simulated pgvector insert for now)
             await supabase.from('document_embeddings').insert({

@@ -242,12 +242,21 @@ ${tocContext}`;
             }
 
             const lecturesToInsert = parsedToc.lectures.map((l: any, idx: number) => {
-                const start_page = l.start_page || 1;
+                // Ensure LLM hasn't hallucinated strings/dashes for page numbers
+                let start_page = parseInt(String(l.start_page), 10);
+                if (isNaN(start_page) || start_page < 1) start_page = 1;
+
+                let next_start = 0;
                 const next = parsedToc.lectures[idx + 1];
-                const end_page = next && next.start_page ? next.start_page - 1 : start_page + 100; // max threshold
+                if (next && next.start_page) {
+                    next_start = parseInt(String(next.start_page), 10);
+                }
+
+                const end_page = (!isNaN(next_start) && next_start > start_page) ? next_start - 1 : start_page + 100; // max threshold
+
                 return {
                     lesson_id: lesson_id,
-                    title: l.title,
+                    title: String(l.title || 'بدون عنوان').trim(),
                     start_page: start_page,
                     end_page: end_page,
                     status: 'pending'
