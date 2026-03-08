@@ -131,10 +131,36 @@ serve(async (req) => {
                     .in('status', ['pending', 'processing']);
 
                 if (pendingAudio && pendingAudio > 0) {
-                    console.log(`[segmentation-worker] Audio processing not complete yet. Re-queuing with 15s backoff.`);
-                    const nextRetry = new Date(Date.now() + 15 * 1000).toISOString();
-                    await supabase.from('processing_queue').update({ status: 'pending', locked_by: null, locked_at: null, next_retry_at: nextRetry }).eq('id', jobId);
-                    return new Response(JSON.stringify({ status: 'staged', message: 'waiting_for_audio' }), { headers: corsHeaders });
+                    // Check how long we've been waiting — don't block forever
+                    const { data: segJob } = await supabase.from('processing_queue')
+                        .select('created_at')
+                        .eq('id', jobId)
+                        .single();
+
+                    const createdAt = segJob?.created_at ? new Date(segJob.created_at).getTime() : Date.now();
+                    const waitingMinutes = (Date.now() - createdAt) / 60000;
+
+                    if (waitingMinutes < 5) {
+                        console.log(`[segmentation-worker] Audio processing not complete yet (${waitingMinutes.toFixed(1)} min). Re-queuing with 15s backoff.`);
+                        const nextRetry = new Date(Date.now() + 15 * 1000).toISOString();
+                        await supabase.from('processing_queue').update({ status: 'pending', locked_by: null, locked_at: null, next_retry_at: nextRetry }).eq('id', jobId);
+                        return new Response(JSON.stringify({ status: 'staged', message: 'waiting_for_audio' }), { headers: corsHeaders });
+                    }
+
+                    // Timeout: 5+ minutes waiting. Continue without audio.
+                    console.warn(`[segmentation-worker] AUDIO TIMEOUT: Waited ${waitingMinutes.toFixed(1)} min. Proceeding WITHOUT audio transcription.`);
+
+                    // Mark stuck audio jobs as failed so they stop cycling
+                    await supabase.from('processing_queue')
+                        .update({
+                            status: 'failed',
+                            error_message: 'تم تخطي معالجة الصوت — تجاوز الحد الزمني (5 دقائق). يمكن إعادة التحليل لاحقاً.',
+                            locked_by: null,
+                            locked_at: null
+                        })
+                        .eq('lesson_id', lesson_id)
+                        .in('job_type', ['transcribe_audio', 'extract_audio_focus'])
+                        .in('status', ['pending', 'processing']);
                 }
             }
 
