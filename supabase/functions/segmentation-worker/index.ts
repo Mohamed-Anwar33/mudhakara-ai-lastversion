@@ -264,8 +264,18 @@ ${tocContext}`;
                 };
             });
 
+            // Clear any existing segments for this lesson (handles retry case)
+            const { count: existingCount } = await supabase.from('segmented_lectures')
+                .select('*', { count: 'exact', head: true })
+                .eq('lesson_id', lesson_id);
+
+            if (existingCount && existingCount > 0) {
+                console.log(`[segmentation-worker] Found ${existingCount} existing segments. Removing for re-segmentation.`);
+                await supabase.from('segmented_lectures').delete().eq('lesson_id', lesson_id);
+            }
+
             const { data: insertedLectures, error: insertErr } = await supabase.from('segmented_lectures')
-                .upsert(lecturesToInsert, { onConflict: 'lesson_id,title,start_page', ignoreDuplicates: false })
+                .insert(lecturesToInsert)
                 .select('id, title, start_page, end_page');
 
             if (insertErr) throw new Error(`Failed to save lecture segments: ${insertErr.message}`);

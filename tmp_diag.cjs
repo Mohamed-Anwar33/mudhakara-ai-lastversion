@@ -1,57 +1,60 @@
 const { createClient } = require('@supabase/supabase-js');
-require('dotenv').config({ path: '.env' });
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY; // IMPORTANT: use service key to bypass RLS
+const supabase = createClient(
+    'https://hsabozxfjdeoddlltivw.supabase.co',
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhzYWJvenhmamRlb2RkbGx0aXZ3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTU5Mzc2NiwiZXhwIjoyMDg1MTY5NzY2fQ.QEvf3c_rn9K1PzjVJXwELtT2PPzu6OFV7-wjvp2CYF0'
+);
 
-if (!supabaseUrl || !supabaseKey) {
-    console.error("Missing Supabase credentials in .env");
-    process.exit(1);
-}
+async function diagnose() {
+    const lessonId = 'd2e7c63f-9489-4bb6-bbaf-c84f55490774';
 
-const supabase = createClient(supabaseUrl, supabaseKey);
-
-async function runDiagnostics() {
-    console.log('--- DIAGNOSTICS START (SERVICE ROLE) ---');
-
-    // 1. Check Latest Lessons
-    console.log('\n--- 1. Latest Lessons ---');
-    const { data: lessons, error: errLessons } = await supabase
-        .from('lessons')
-        .select('id, title, pipeline_stage, created_at')
-        .order('created_at', { ascending: false })
-        .limit(5);
-    if (errLessons) console.error('Error fetching lessons:', errLessons.message);
-    else console.table(lessons);
-
-    // 2. Check Processing Queue
-    console.log('\n--- 2. Processing Queue (All Jobs) ---');
-    const { data: queue, error: errQueue } = await supabase
+    // 1. Get ALL jobs for this lesson
+    const { data: jobs, error } = await supabase
         .from('processing_queue')
-        .select('id, lesson_id, job_type, status, error_message, attempt_count, payload, updated_at')
-        .order('created_at', { ascending: false })
-        .limit(10);
-    if (errQueue) console.error('Error fetching queue:', errQueue.message);
-    else {
-        // Print without huge payload objects
-        const cleaned = queue?.map(q => ({
-            ...q,
-            payload: q.payload ? '...' : null
-        }));
-        console.table(cleaned);
+        .select('id, job_type, status, stage, attempt_count, error_message, locked_by, locked_at, next_retry_at, payload, created_at, updated_at')
+        .eq('lesson_id', lessonId)
+        .order('created_at', { ascending: true });
+
+    if (error) { console.error('Query error:', error); return; }
+
+    console.log(`\n=== LESSON ${lessonId} ===`);
+    console.log(`Total jobs: ${jobs.length}\n`);
+
+    // Group by status
+    const statusGroups = {};
+    for (const j of jobs) {
+        if (!statusGroups[j.status]) statusGroups[j.status] = [];
+        statusGroups[j.status].push(j);
     }
 
-    // 3. Audio Transcripts
-    console.log('\n--- 3. Audio Transcripts ---');
-    const { data: audio, error: errAudio } = await supabase
-        .from('audio_transcripts')
-        .select('id, lesson_id, status, chunk_index')
-        .order('id', { ascending: false }) // or chunk_index if created_at is missing
-        .limit(5);
-    if (errAudio) console.error('Error fetching audio transcripts:', errAudio.message);
-    else console.table(audio);
+    for (const [status, group] of Object.entries(statusGroups)) {
+        console.log(`--- ${status.toUpperCase()} (${group.length}) ---`);
+        for (const j of group) {
+            const payloadStage = j.payload?.stage || 'N/A';
+            const pollCount = j.payload?.poll_count || 0;
+            const audioUrl = j.payload?.audio_url || j.payload?.file_path || '';
+            const geminiUri = j.payload?.gemini_file_uri || '';
+            console.log(`  [${j.job_type}] id=${j.id.substring(0, 8)} | stage=${j.stage} | payload.stage=${payloadStage} | attempts=${j.attempt_count} | polls=${pollCount}`);
+            if (j.error_message) console.log(`    error: ${j.error_message.substring(0, 120)}`);
+            if (j.locked_by) console.log(`    locked_by: ${j.locked_by} | locked_at: ${j.locked_at}`);
+            if (j.next_retry_at) console.log(`    next_retry_at: ${j.next_retry_at} (now: ${new Date().toISOString()})`);
+            if (audioUrl) console.log(`    audio/file: ${audioUrl.substring(0, 80)}`);
+            if (geminiUri) console.log(`    gemini_uri: ${geminiUri}`);
+        }
+    }
 
-    console.log('\n--- DIAGNOSTICS END ---');
+    // 2. Check lesson status
+    const { data: lesson } = await supabase
+        .from('lessons')
+        .select('analysis_status, pipeline_stage, audio_url, sources')
+        .eq('id', lessonId)
+        .single();
+
+    console.log(`\n=== LESSON STATUS ===`);
+    console.log(`  analysis_status: ${lesson?.analysis_status}`);
+    console.log(`  pipeline_stage: ${lesson?.pipeline_stage}`);
+    console.log(`  audio_url: ${lesson?.audio_url || 'null'}`);
+    console.log(`  sources: ${JSON.stringify(lesson?.sources || [])}`);
 }
 
-runDiagnostics();
+diagnose().catch(console.error);
