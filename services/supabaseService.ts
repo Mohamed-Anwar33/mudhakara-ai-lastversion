@@ -164,8 +164,43 @@ export const upsertLesson = async (lesson: Lesson) => {
 
 export const removeLesson = async (id: string) => {
   if (!supabase) return;
-  const { error } = await supabase.from('lessons').delete().eq('id', id);
-  if (error) throw error;
+
+  try {
+    // 1. Delete Storage files (these take the most space)
+    // OCR text files
+    const { data: ocrFiles } = await supabase.storage.from('ocr').list(id);
+    if (ocrFiles && ocrFiles.length > 0) {
+      await supabase.storage.from('ocr').remove(ocrFiles.map(f => `${id}/${f.name}`));
+    }
+
+    // Analysis JSON files
+    const { data: analysisFiles } = await supabase.storage.from('analysis').list(id);
+    if (analysisFiles && analysisFiles.length > 0) {
+      await supabase.storage.from('analysis').remove(analysisFiles.map(f => `${id}/${f.name}`));
+    }
+
+    // Audio transcripts
+    const { data: audioFiles } = await supabase.storage.from('audio_transcripts').list(`audio_transcripts/${id}`);
+    if (audioFiles && audioFiles.length > 0) {
+      await supabase.storage.from('audio_transcripts').remove(audioFiles.map(f => `audio_transcripts/${id}/${f.name}`));
+    }
+
+    // 2. Delete related DB rows (processing queue, segments, pages)
+    await supabase.from('processing_queue').delete().eq('lesson_id', id);
+    await supabase.from('segmented_lectures').delete().eq('lesson_id', id);
+    await supabase.from('lesson_pages').delete().eq('lesson_id', id);
+
+    // 3. Delete the lesson itself
+    const { error } = await supabase.from('lessons').delete().eq('id', id);
+    if (error) throw error;
+
+    console.log(`🗑️ Full cleanup completed for lesson ${id}`);
+  } catch (err) {
+    console.error('Cleanup error (non-blocking):', err);
+    // Fallback: at least delete the lesson row
+    const { error } = await supabase.from('lessons').delete().eq('id', id);
+    if (error) throw error;
+  }
 };
 
 export const testSupabaseConnection = async () => {

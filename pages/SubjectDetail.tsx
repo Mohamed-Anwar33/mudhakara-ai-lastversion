@@ -743,6 +743,7 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
     setReanalyzingIds(prev => new Set(prev).add(al.id));
 
     try {
+      // Queue the reanalysis job via the API
       const res = await fetch('/api/reanalyze-direct', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -750,23 +751,66 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
       });
       const result = await res.json();
 
-      if (!res.ok || result.status === 'no_text' || result.charCount === 0 || !result.content?.explanation_notes) {
+      if (!res.ok) {
         return { success: false, title: al.lessonTitle };
       }
 
-      // Atomic state update — uses callback to avoid stale closures in parallel execution
-      setAnalyzedLessons(prev => {
-        const updated = [...prev];
-        updated[lessonIdx] = {
-          ...updated[lessonIdx],
-          detailedExplanation: result.content.explanation_notes,
-          focusPoints: result.content.focusPoints || updated[lessonIdx].focusPoints,
-        };
-        localStorage.setItem(`mudhakara_analyzedlessons_${id}`, JSON.stringify(updated));
-        return updated;
-      });
+      // If queue-based response, poll storage for results
+      if (result.queued) {
+        const storagePath = `${lessonId}/lecture_${matchingSeg.id}.json`;
+        let analysisData: any = null;
 
-      return { success: true, title: al.lessonTitle, charCount: result.charCount, elapsed: result.elapsed };
+        // Poll for up to 90 seconds (every 5s)
+        for (let attempt = 0; attempt < 18; attempt++) {
+          await new Promise(r => setTimeout(r, 5000));
+          try {
+            const { data: blob } = await supabase.storage.from('analysis').download(storagePath);
+            if (blob) {
+              const text = await blob.text();
+              const parsed = JSON.parse(text);
+              if (parsed.explanation_notes && parsed.explanation_notes.length > 100) {
+                analysisData = parsed;
+                break;
+              }
+            }
+          } catch (_) { /* Not ready yet */ }
+        }
+
+        if (!analysisData) {
+          return { success: false, title: al.lessonTitle };
+        }
+
+        // Update state with results from storage
+        setAnalyzedLessons(prev => {
+          const updated = [...prev];
+          updated[lessonIdx] = {
+            ...updated[lessonIdx],
+            detailedExplanation: analysisData.explanation_notes,
+            focusPoints: analysisData.focusPoints || updated[lessonIdx].focusPoints,
+          };
+          localStorage.setItem(`mudhakara_analyzedlessons_${id}`, JSON.stringify(updated));
+          return updated;
+        });
+
+        return { success: true, title: al.lessonTitle, charCount: analysisData.explanation_notes.length };
+      }
+
+      // Legacy: inline response (backwards compat)
+      if (result.content?.explanation_notes) {
+        setAnalyzedLessons(prev => {
+          const updated = [...prev];
+          updated[lessonIdx] = {
+            ...updated[lessonIdx],
+            detailedExplanation: result.content.explanation_notes,
+            focusPoints: result.content.focusPoints || updated[lessonIdx].focusPoints,
+          };
+          localStorage.setItem(`mudhakara_analyzedlessons_${id}`, JSON.stringify(updated));
+          return updated;
+        });
+        return { success: true, title: al.lessonTitle, charCount: result.charCount, elapsed: result.elapsed };
+      }
+
+      return { success: false, title: al.lessonTitle };
     } catch (err: any) {
       return { success: false, title: al.lessonTitle, error: err.message };
     } finally {
