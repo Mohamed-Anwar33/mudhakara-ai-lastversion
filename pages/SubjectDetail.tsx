@@ -189,13 +189,8 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
         } catch (_) { }
       }
       if (!lessonId) return;
-
-      // Check if this lesson has audio transcripts (sources column doesn't exist in DB — stored in localStorage)
-      try {
-        const { data: audioBlob } = await supabase.storage.from('audio_transcripts').download(`${lessonId}/raw_transcript.txt`);
-        if (!audioBlob) return; // No audio transcript found
-      } catch (_) { return; }
-
+      // No pre-check needed — the fetch-audio-transcript API handles the case
+      // where no transcript exists (returns empty/error which is handled below)
       console.log('[Audio] Auto-loading transcript for lesson', lessonId);
       try {
         const res = await fetch('/api/fetch-audio-transcript', {
