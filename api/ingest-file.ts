@@ -315,13 +315,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
             let initialJobType = 'extract_pdf_info';
             if (file.fileType === 'audio') initialJobType = 'transcribe_audio';
-            if (file.fileType === 'image') initialJobType = 'image_ocr';
+            if (file.fileType === 'image') initialJobType = 'ingest_upload'; // Uses Gemini File API → ingest_extract → ingest_chunk
 
             // Map job type to its correct initial stage for UI display
             const stageMap: Record<string, string> = {
                 'extract_pdf_info': 'extracting_info',
                 'transcribe_audio': 'upload',
-                'image_ocr': 'processing_batch'
+                'ingest_upload': 'pending_upload'
             };
 
             // V2 Architecture: Direct to specialized extraction workers
@@ -390,7 +390,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 .from('processing_queue')
                 .select('*', { count: 'exact', head: true })
                 .eq('lesson_id', lessonId)
-                .in('job_type', ['extract_pdf_info', 'transcribe_audio', 'image_ocr', 'ocr_page_batch'])
+                .in('job_type', ['extract_pdf_info', 'transcribe_audio', 'ingest_upload', 'ocr_page_batch'])
                 .in('status', ['pending', 'processing']);
 
             if (!countErr && pendingExtracts === 0) {
