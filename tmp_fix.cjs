@@ -4,55 +4,87 @@ const supabase = createClient(
     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhzYWJvenhmamRlb2RkbGx0aXZ3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTU5Mzc2NiwiZXhwIjoyMDg1MTY5NzY2fQ.QEvf3c_rn9K1PzjVJXwELtT2PPzu6OFV7-wjvp2CYF0'
 );
 
-async function fullReset() {
-    const lessonId = '77281931-3ad3-4424-b841-2639df4fa99d';
-    console.log(`=== FULL RESET for ${lessonId} ===\n`);
+async function applyMigrationAndFix() {
+    const lessonId = '65ae7cce-a566-4952-90af-2ff78a13a333';
+    console.log('=== APPLYING MIGRATION 017 + FIX ===\n');
 
-    // 1. check ALL jobs
-    const { data: allJobs } = await supabase.from('processing_queue')
-        .select('id, job_type, status, payload, attempt_count, error_message')
-        .eq('lesson_id', lessonId)
-        .order('created_at', { ascending: true });
+    // 1. Drop the old constraint and create the new one (without analyze_lecture, generate_quiz)
+    const { error: dropErr } = await supabase.rpc('exec_sql', {
+        sql: `DROP INDEX IF EXISTS idx_processing_queue_active_singleton_jobs;`
+    }).maybeSingle();
 
-    console.log(`Total jobs: ${allJobs?.length || 0}`);
-    for (const j of (allJobs || [])) {
-        const stage = j.payload?.stage || '-';
-        const polls = j.payload?.poll_count || 0;
-        const err = j.error_message ? j.error_message.substring(0, 60) : '';
-        console.log(`  [${j.job_type}] ${j.status} | stage=${stage} | polls=${polls} | attempts=${j.attempt_count} | ${err}`);
+    // If RPC doesn't exist, try via REST
+    if (dropErr) {
+        console.log('RPC not available, applying via direct SQL...');
+        // We'll use a workaround — the constraint is the problem, and we can't run DDL via API
+        // But we CAN insert the jobs now if we change status to 'completed' for the conflicting ones
+        // Actually, the issue is that `ignoreDuplicates: true` in upsert silently swallows the error
+        // We need to run this migration on Supabase Dashboard
+
+        console.log('⚠️ NEED TO RUN THIS SQL ON SUPABASE DASHBOARD:');
+        console.log(`
+DROP INDEX IF EXISTS idx_processing_queue_active_singleton_jobs;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_processing_queue_active_singleton_jobs
+    ON processing_queue (lesson_id, job_type)
+    WHERE status IN ('pending', 'processing')
+      AND job_type IN (
+        'segment_lesson',
+        'finalize_global_summary',
+        'generate_analysis',
+        'generate_book_overview',
+        'embed_sections',
+        'extract_toc',
+        'build_lecture_segments',
+        'book_segment'
+      );
+        `);
     }
 
-    // 2. Reset transcribe_audio to upload stage for Whisper
-    const { data: audioReset } = await supabase.from('processing_queue')
-        .update({
+    // 2. For now, insert analyze_lecture jobs one by one (they'll conflict with the old constraint)
+    // Instead, let's create the jobs WITHOUT the constraint by dropping it first
+    console.log('\n=== Attempting to create jobs via direct inserts ===');
+
+    const { data: lectures } = await supabase.from('segmented_lectures')
+        .select('id, title, start_page, end_page')
+        .eq('lesson_id', lessonId);
+
+    console.log(`Found ${lectures?.length || 0} lectures to create jobs for`);
+
+    // Try inserting one at a time to see what happens
+    let created = 0;
+    for (const lec of (lectures || [])) {
+        const { error } = await supabase.from('processing_queue').insert({
+            lesson_id: lessonId,
+            job_type: 'analyze_lecture',
+            payload: { lecture_id: lec.id, title: lec.title, start_page: lec.start_page, end_page: lec.end_page },
             status: 'pending',
-            locked_by: null, locked_at: null, next_retry_at: null,
-            attempt_count: 0, error_message: null,
-            payload: {
-                audio_url: (allJobs || []).find(j => j.job_type === 'transcribe_audio')?.payload?.audio_url || (allJobs || []).find(j => j.job_type === 'transcribe_audio')?.payload?.file_path,
-                file_path: (allJobs || []).find(j => j.job_type === 'transcribe_audio')?.payload?.file_path || (allJobs || []).find(j => j.job_type === 'transcribe_audio')?.payload?.audio_url,
-                stage: 'upload'
-            }
-        })
-        .eq('lesson_id', lessonId).eq('job_type', 'transcribe_audio')
-        .select('id');
-    console.log(`\n[1] Reset ${audioReset?.length || 0} audio job(s) to upload/Whisper stage`);
-
-    // 3. Make sure lesson is NOT failed
-    const { data: lesson } = await supabase.from('lessons')
-        .select('analysis_status, pipeline_stage')
-        .eq('id', lessonId).single();
-    console.log(`[2] Lesson status: ${lesson?.analysis_status} | stage: ${lesson?.pipeline_stage}`);
-
-    if (lesson?.analysis_status === 'failed') {
-        await supabase.from('lessons').update({
-            analysis_status: 'processing',
-            pipeline_stage: 'audio_transcription'
-        }).eq('id', lessonId);
-        console.log(`[3] Reset lesson from failed → processing`);
+            dedupe_key: `lesson:${lessonId}:analyze_lecture:${lec.id}`
+        });
+        if (error) {
+            console.log(`  ❌ ${lec.title?.substring(0, 30)}: ${error.message.substring(0, 80)}`);
+        } else {
+            created++;
+        }
     }
+    console.log(`\nCreated ${created}/${lectures?.length || 0} analyze_lecture jobs`);
 
-    console.log('\n✅ All done. Audio will now try Whisper first (up to 25MB).');
+    // Also create finalize job
+    const { error: finErr } = await supabase.from('processing_queue').insert({
+        lesson_id: lessonId,
+        job_type: 'finalize_global_summary',
+        payload: {},
+        status: 'pending',
+        dedupe_key: `lesson:${lessonId}:finalize_global_summary`
+    });
+    console.log(`finalize_global_summary: ${finErr ? finErr.message.substring(0, 80) : '✅'}`);
+
+    // Fix lesson status
+    await supabase.from('lessons').update({
+        analysis_status: 'processing',
+        pipeline_stage: 'generating_summary'
+    }).eq('id', lessonId);
+    console.log('\nLesson status reset to processing');
 }
 
-fullReset().catch(console.error);
+applyMigrationAndFix().catch(console.error);
