@@ -183,11 +183,22 @@ serve(async (req) => {
                     // Timeout: 15+ minutes waiting. Continue without audio.
                     console.warn(`[segmentation-worker] AUDIO TIMEOUT: Waited ${waitingMinutes.toFixed(1)} min. Proceeding WITHOUT audio transcription.`);
 
+                    // Fetch the actual error from the audio job for diagnostics
+                    const { data: audioJobs } = await supabase.from('processing_queue')
+                        .select('id, error_message, attempt_count, status')
+                        .eq('lesson_id', lesson_id)
+                        .in('job_type', ['transcribe_audio', 'extract_audio_focus'])
+                        .in('status', ['pending', 'processing']);
+
+                    const audioErrors = audioJobs?.map((j: any) => `[${j.status} a:${j.attempt_count}] ${j.error_message || 'no error'}`).join(' | ');
+                    console.warn(`[segmentation-worker] Audio job details: ${audioErrors}`);
+
                     // Mark stuck audio jobs as failed so they stop cycling
+                    const timeoutMsg = `تم تخطي معالجة الصوت — تجاوز الحد الزمني (15 دقيقة). السبب: ${audioErrors || 'غير معروف'}`;
                     await supabase.from('processing_queue')
                         .update({
                             status: 'failed',
-                            error_message: 'تم تخطي معالجة الصوت — تجاوز الحد الزمني (15 دقيقة). يمكن إعادة التحليل لاحقاً.',
+                            error_message: timeoutMsg,
                             locked_by: null,
                             locked_at: null
                         })

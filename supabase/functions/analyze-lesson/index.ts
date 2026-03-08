@@ -683,20 +683,26 @@ ${content}`;
                     const supabase = createClient(supabaseUrl, supabaseKey);
                     const { data: currentJob } = await supabase.from('processing_queue')
                         .select('attempt_count').eq('id', jobId).single();
-                    const attempts = (currentJob?.attempt_count || 0);
+                    const attempts = (currentJob?.attempt_count || 0) + 1;
+                    console.error(`[analyze-lesson] ❌ Attempt ${attempts}/5 failed: ${error.message}`);
                     if (attempts >= 5) {
                         await supabase.from('processing_queue').update({
                             status: 'failed',
-                            error_message: error.message || 'Unknown Analyze Lesson Error (max retries)',
+                            attempt_count: attempts,
+                            error_message: `فشل نهائي (${attempts} محاولات): ${error.message || 'Unknown Analyze Lesson Error'}`,
                             locked_by: null,
                             locked_at: null
                         }).eq('id', jobId);
                     } else {
+                        const backoffMs = Math.min(Math.pow(2, attempts) * 3000, 60000);
+                        const nextRetry = new Date(Date.now() + backoffMs).toISOString();
                         await supabase.from('processing_queue').update({
                             status: 'pending',
-                            error_message: `Retry ${attempts}/5: ${error.message || 'Unknown Analyze Lesson Error'}`,
+                            attempt_count: attempts,
+                            error_message: `محاولة ${attempts}/5: ${error.message || 'Unknown Analyze Lesson Error'}`,
                             locked_by: null,
-                            locked_at: null
+                            locked_at: null,
+                            next_retry_at: nextRetry
                         }).eq('id', jobId);
                     }
                 }

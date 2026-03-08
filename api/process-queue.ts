@@ -87,7 +87,9 @@ async function acquireJobId(supabase: any, workerId: string): Promise<string | n
                 status: 'processing',  // Mark as processing immediately to prevent re-acquisition
                 locked_at: nowIso,
                 locked_by: workerId,
-                attempt_count: Number(nextPending.attempt_count || 0) + 1,
+                // NOTE: Do NOT increment attempt_count here! The Edge Function's error handler
+                // manages attempt_count when it actually fails. Incrementing here too causes
+                // double-counting, killing jobs after only 5 pickups even for transient errors.
                 updated_at: nowIso
             })
             .eq('id', nextPending.id)

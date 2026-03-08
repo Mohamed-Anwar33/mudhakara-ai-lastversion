@@ -57,16 +57,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             .in('id', ids);
 
         // Delete any existing analyze_lecture/generate_quiz jobs for these lectures
-        // to prevent dedupe conflicts
+        // to prevent dedupe conflicts — use EXACT dedupe_key match (not LIKE, which fails with UUIDs)
+        const dedupeKeys = segments.map(seg => `lesson:${lessonId}:analyze_lecture:${seg.id}`);
+        for (const key of dedupeKeys) {
+            await supabase.from('processing_queue')
+                .delete()
+                .eq('dedupe_key', key);
+        }
+        // Also delete any quiz jobs for these lectures
         for (const seg of segments) {
             await supabase.from('processing_queue')
                 .delete()
                 .eq('lesson_id', lessonId)
-                .eq('job_type', 'analyze_lecture')
+                .eq('job_type', 'generate_quiz')
                 .like('dedupe_key', `%${seg.id}%`);
         }
 
-        // Create fresh analyze_lecture jobs
+        // Create fresh analyze_lecture jobs with ALL fields properly reset
         const jobsToInsert = segments.map(seg => ({
             lesson_id: lessonId,
             job_type: 'analyze_lecture',
@@ -78,11 +85,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 reanalyze: true
             },
             status: 'pending',
+            attempt_count: 0,
+            error_message: null,
+            locked_by: null,
+            locked_at: null,
+            next_retry_at: null,
             dedupe_key: `lesson:${lessonId}:analyze_lecture:${seg.id}`
         }));
 
+        // Use insert (not upsert) since we deleted old jobs above
         const { error: insertErr } = await supabase.from('processing_queue')
-            .upsert(jobsToInsert, { onConflict: 'dedupe_key', ignoreDuplicates: false });
+            .insert(jobsToInsert);
 
         if (insertErr) {
             console.error(`[Reanalyze] Job insert error:`, insertErr.message);
@@ -91,6 +104,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             for (const job of jobsToInsert) {
                 const { error } = await supabase.from('processing_queue').insert(job);
                 if (!error) created++;
+                else console.warn(`[Reanalyze] Single insert failed: ${error.message}`);
             }
             console.log(`[Reanalyze] Fallback: created ${created}/${jobsToInsert.length} jobs`);
         }

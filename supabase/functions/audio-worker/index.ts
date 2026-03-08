@@ -185,7 +185,7 @@ serve(async (req) => {
         // ─── Determine Stage ───
         const stage = payload.stage || 'upload'; // Default = first call = upload stage
 
-        console.log(`[audio-worker] Executing ${job_type} | stage: ${stage} for lesson ${lesson_id}`);
+        console.log(`[audio-worker] ▶ EXECUTING ${job_type} | stage: ${stage} | lesson: ${lesson_id} | attempt: ${job.attempt_count || 0} | audioPath: ${audioPath}`);
 
         const updateProgress = async (msg: string) => {
             console.log(`[audio-worker-progress] ${msg}`);
@@ -215,8 +215,9 @@ serve(async (req) => {
                 let fullTranscript = '';
                 let whisperDone = false;
 
-                // Whisper for files ≤25MB (OpenAI's actual limit) — more accurate for Arabic
-                if (openaiKey && fileSizeMB <= 25) {
+                // Whisper for files ≤15MB — conservative limit for 256MB Edge Function RAM
+                // (file blob + FormData copy + response ≈ 3x file size in memory)
+                if (openaiKey && fileSizeMB <= 15) {
                     try {
                         console.log(`[audio-worker] Short audio (${fileSizeMB.toFixed(1)}MB). Using Whisper...`);
                         await updateProgress('جاري تفريغ الصوت بدقة عالية (OpenAI Whisper)...');
@@ -249,8 +250,8 @@ serve(async (req) => {
                     } catch (e: any) {
                         console.warn(`[audio-worker] Whisper exception: ${e.message}`);
                     }
-                } else if (openaiKey && fileSizeMB > 25) {
-                    console.log(`[audio-worker] Audio too large for Whisper (${fileSizeMB.toFixed(1)}MB > 25MB). Skipping to Gemini chunked transcription.`);
+                } else if (openaiKey && fileSizeMB > 15) {
+                    console.log(`[audio-worker] Audio too large for Whisper in Edge Function (${fileSizeMB.toFixed(1)}MB > 15MB). Skipping to Gemini stream transcription.`);
                 }
 
                 // Quality check: detect Whisper hallucination
@@ -423,21 +424,27 @@ serve(async (req) => {
                     const supabase = createClient(supabaseUrl, supabaseKey);
                     const { data: currentJob } = await supabase.from('processing_queue')
                         .select('attempt_count').eq('id', jobId).single();
-                    const attempts = (currentJob?.attempt_count || 0);
+                    const attempts = (currentJob?.attempt_count || 0) + 1;
+                    console.error(`[audio-worker] ❌ Attempt ${attempts}/5 failed: ${error.message}`);
                     if (attempts >= 5) {
                         await supabase.from('processing_queue').update({
                             status: 'failed',
-                            error_message: error.message || 'Unknown Audio Worker Error (max retries exceeded)',
+                            attempt_count: attempts,
+                            error_message: `فشل نهائي (${attempts} محاولات): ${error.message || 'Unknown Audio Worker Error'}`,
                             locked_by: null,
                             locked_at: null
                         }).eq('id', jobId);
                     } else {
                         // Allow retry — reset to pending so orchestrator can re-dispatch
+                        const backoffMs = Math.min(Math.pow(2, attempts) * 3000, 60000);
+                        const nextRetry = new Date(Date.now() + backoffMs).toISOString();
                         await supabase.from('processing_queue').update({
                             status: 'pending',
-                            error_message: `Retry ${attempts}/5: ${error.message || 'Unknown Audio Worker Error'}`,
+                            attempt_count: attempts,
+                            error_message: `محاولة ${attempts}/5: ${error.message || 'Unknown Audio Worker Error'}`,
                             locked_by: null,
-                            locked_at: null
+                            locked_at: null,
+                            next_retry_at: nextRetry
                         }).eq('id', jobId);
                     }
                 }
