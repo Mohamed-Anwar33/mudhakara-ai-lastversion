@@ -63,11 +63,10 @@ serve(async (req) => {
                 .lt('updated_at', stuckCutoff);
 
             if (stuckJobs && stuckJobs.length > 0) {
-                console.warn(`[global-aggregator] SELF-HEALING: Found ${stuckJobs.length} stuck jobs. Auto-completing.`);
+                console.warn(`[global-aggregator] SELF-HEALING: Found ${stuckJobs.length} stuck jobs. Resetting to pending for retry.`);
                 for (const stuck of stuckJobs) {
                     await supabase.from('processing_queue').update({
-                        status: 'completed',
-                        error_message: 'Auto-completed by global-aggregator self-healing (stuck >2min)',
+                        status: 'pending',
                         locked_by: null, locked_at: null
                     }).eq('id', stuck.id);
                 }
@@ -264,12 +263,24 @@ serve(async (req) => {
                     const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
                     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
                     const supabase = createClient(supabaseUrl, supabaseKey);
-                    await supabase.from('processing_queue').update({
-                        status: 'failed',
-                        error_message: error.message || 'Unknown Global Aggregator Error',
-                        locked_by: null,
-                        locked_at: null
-                    }).eq('id', jobId);
+                    const { data: currentJob } = await supabase.from('processing_queue')
+                        .select('attempt_count').eq('id', jobId).single();
+                    const attempts = (currentJob?.attempt_count || 0);
+                    if (attempts >= 5) {
+                        await supabase.from('processing_queue').update({
+                            status: 'failed',
+                            error_message: error.message || 'Unknown Global Aggregator Error (max retries)',
+                            locked_by: null,
+                            locked_at: null
+                        }).eq('id', jobId);
+                    } else {
+                        await supabase.from('processing_queue').update({
+                            status: 'pending',
+                            error_message: `Retry ${attempts}/5: ${error.message || 'Unknown Global Aggregator Error'}`,
+                            locked_by: null,
+                            locked_at: null
+                        }).eq('id', jobId);
+                    }
                 }
             } catch (_) { }
         }

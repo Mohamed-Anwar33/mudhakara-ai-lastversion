@@ -71,11 +71,10 @@ serve(async (req) => {
                 .lt('updated_at', stuckCutoff);
 
             if (stuckJobs && stuckJobs.length > 0) {
-                console.warn(`[segmentation-worker] SELF-HEALING: Found ${stuckJobs.length} stuck OCR jobs. Resetting to completed.`);
+                console.warn(`[segmentation-worker] SELF-HEALING: Found ${stuckJobs.length} stuck OCR jobs. Resetting to pending for retry.`);
                 for (const stuck of stuckJobs) {
                     await supabase.from('processing_queue').update({
-                        status: 'completed',
-                        error_message: 'Auto-completed by barrier self-healing (stuck >2min)',
+                        status: 'pending',
                         locked_by: null, locked_at: null
                     }).eq('id', stuck.id);
                 }
@@ -91,7 +90,7 @@ serve(async (req) => {
             if (pendingOcrJobs && pendingOcrJobs > 0) {
                 console.log(`[segmentation-worker] ${pendingOcrJobs} OCR jobs still running. Re-queuing with 15s backoff.`);
                 const nextRetry = new Date(Date.now() + 15 * 1000).toISOString();
-                await supabase.from('processing_queue').update({ status: 'pending', locked_by: null, locked_at: null, next_retry_at: nextRetry, attempt_count: 0 }).eq('id', jobId);
+                await supabase.from('processing_queue').update({ status: 'pending', locked_by: null, locked_at: null, next_retry_at: nextRetry }).eq('id', jobId);
                 return new Response(JSON.stringify({ status: 'staged', message: 'waiting_for_ocr' }), { headers: corsHeaders });
             }
 
@@ -134,7 +133,7 @@ serve(async (req) => {
                 if (pendingAudio && pendingAudio > 0) {
                     console.log(`[segmentation-worker] Audio processing not complete yet. Re-queuing with 15s backoff.`);
                     const nextRetry = new Date(Date.now() + 15 * 1000).toISOString();
-                    await supabase.from('processing_queue').update({ status: 'pending', locked_by: null, locked_at: null, attempt_count: 0, next_retry_at: nextRetry }).eq('id', jobId);
+                    await supabase.from('processing_queue').update({ status: 'pending', locked_by: null, locked_at: null, next_retry_at: nextRetry }).eq('id', jobId);
                     return new Response(JSON.stringify({ status: 'staged', message: 'waiting_for_audio' }), { headers: corsHeaders });
                 }
             }
@@ -305,12 +304,24 @@ ${tocContext}`;
                     const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
                     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
                     const supabase = createClient(supabaseUrl, supabaseKey);
-                    await supabase.from('processing_queue').update({
-                        status: 'failed',
-                        error_message: error.message || 'Unknown Segmentation Error',
-                        locked_by: null,
-                        locked_at: null
-                    }).eq('id', jobId);
+                    const { data: currentJob } = await supabase.from('processing_queue')
+                        .select('attempt_count').eq('id', jobId).single();
+                    const attempts = (currentJob?.attempt_count || 0);
+                    if (attempts >= 5) {
+                        await supabase.from('processing_queue').update({
+                            status: 'failed',
+                            error_message: error.message || 'Unknown Segmentation Error (max retries)',
+                            locked_by: null,
+                            locked_at: null
+                        }).eq('id', jobId);
+                    } else {
+                        await supabase.from('processing_queue').update({
+                            status: 'pending',
+                            error_message: `Retry ${attempts}/5: ${error.message || 'Unknown Segmentation Error'}`,
+                            locked_by: null,
+                            locked_at: null
+                        }).eq('id', jobId);
+                    }
                 }
             } catch (_) { }
         }

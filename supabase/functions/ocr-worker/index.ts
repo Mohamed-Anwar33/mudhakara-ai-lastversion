@@ -205,7 +205,7 @@ serve(async (req) => {
             }
 
             // Instead of putting huge text in DB, save to Storage
-            const storagePath = `ocr/${lesson_id}/batch_${start}_${end}.txt`;
+            const storagePath = `${lesson_id}/batch_${start}_${end}.txt`;
 
             // Adding a 3-retry loop for Connection Reset errors from Supabase Storage
             let storageErr: any = null;
@@ -254,12 +254,24 @@ serve(async (req) => {
                     const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
                     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
                     const supabase = createClient(supabaseUrl, supabaseKey);
-                    await supabase.from('processing_queue').update({
-                        status: 'failed',
-                        error_message: error.message || 'Unknown OCR Error',
-                        locked_by: null,
-                        locked_at: null
-                    }).eq('id', jobId);
+                    const { data: currentJob } = await supabase.from('processing_queue')
+                        .select('attempt_count').eq('id', jobId).single();
+                    const attempts = (currentJob?.attempt_count || 0);
+                    if (attempts >= 5) {
+                        await supabase.from('processing_queue').update({
+                            status: 'failed',
+                            error_message: error.message || 'Unknown OCR Error (max retries)',
+                            locked_by: null,
+                            locked_at: null
+                        }).eq('id', jobId);
+                    } else {
+                        await supabase.from('processing_queue').update({
+                            status: 'pending',
+                            error_message: `Retry ${attempts}/5: ${error.message || 'Unknown OCR Error'}`,
+                            locked_by: null,
+                            locked_at: null
+                        }).eq('id', jobId);
+                    }
                 }
             } catch (_) { }
         }

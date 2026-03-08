@@ -284,7 +284,6 @@ serve(async (req) => {
                     locked_by: null,
                     locked_at: null,
                     next_retry_at: nextRetry,
-                    attempt_count: 0,
                     error_message: `جاري معالجة الملف على سيرفرات Gemini... (محاولة ${pollCount + 1})`,
                     payload: {
                         ...payload,
