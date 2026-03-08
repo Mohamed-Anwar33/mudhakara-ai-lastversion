@@ -843,6 +843,80 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
     }
   };
 
+  // ── Check Audio Transcription Status ──
+  const [checkingAudio, setCheckingAudio] = useState(false);
+  const handleCheckAudio = async () => {
+    let lessonId = lastTempLessonId;
+    if (!lessonId) {
+      try {
+        const { data: tempLessons } = await supabase.from('lessons')
+          .select('id').eq('course_id', id)
+          .like('lesson_title', '__analysis__%')
+          .order('created_at', { ascending: false }).limit(1);
+        if (tempLessons?.[0]) lessonId = tempLessons[0].id;
+      } catch (_) { }
+    }
+    if (!lessonId) { toast.error('لا يوجد درس محلل'); return; }
+
+    setCheckingAudio(true);
+    const toastId = 'audio-check';
+    toast.loading('جاري فحص التسجيل الصوتي...', { id: toastId });
+
+    try {
+      // Check transcribe_audio job
+      const { data: audioJobs } = await supabase.from('processing_queue')
+        .select('status, error_message')
+        .eq('lesson_id', lessonId)
+        .eq('job_type', 'transcribe_audio');
+
+      if (!audioJobs || audioJobs.length === 0) {
+        toast.error('🎙️ لا يوجد ملف صوتي في هذا الدرس', { id: toastId, duration: 5000 });
+        return;
+      }
+
+      const job = audioJobs[0];
+      let transcriptFound = false;
+      let transcriptChars = 0;
+
+      // Check storage for transcript
+      const paths = [
+        { bucket: 'audio_transcripts', path: `${lessonId}/raw_transcript.txt` },
+        { bucket: 'audio_transcripts', path: `audio_transcripts/${lessonId}/raw_transcript.txt` },
+        { bucket: 'ocr', path: `${lessonId}/audio_transcript.txt` },
+      ];
+
+      for (const { bucket, path } of paths) {
+        try {
+          const { data: blob } = await supabase.storage.from(bucket).download(path);
+          if (blob) {
+            const text = await blob.text();
+            if (text.length > 50) {
+              transcriptFound = true;
+              transcriptChars = text.length;
+              break;
+            }
+          }
+        } catch (_) { }
+      }
+
+      if (job.status === 'completed' && transcriptFound) {
+        toast.success(`🎙️ التسجيل الصوتي: ✅ تم التفريغ بنجاح!\n📝 ${transcriptChars.toLocaleString()} حرف`, { id: toastId, duration: 6000 });
+      } else if (job.status === 'completed' && !transcriptFound) {
+        toast.error(`🎙️ التسجيل: التفريغ اكتمل لكن النص لم يُحفظ!\nالسبب: خطأ في حفظ الملف. أعد تحليل الدرس.`, { id: toastId, duration: 8000 });
+      } else if (job.status === 'processing') {
+        toast.loading(`🎙️ التسجيل: جاري التفريغ حالياً... انتظر قليلاً`, { id: toastId, duration: 5000 });
+      } else if (job.status === 'failed') {
+        toast.error(`🎙️ التسجيل: فشل التفريغ\n${job.error_message || ''}`, { id: toastId, duration: 8000 });
+      } else {
+        toast(`🎙️ التسجيل: الحالة ${job.status}\n${job.error_message || ''}`, { id: toastId, duration: 5000 });
+      }
+    } catch (err: any) {
+      toast.error(`خطأ في الفحص: ${err.message}`, { id: toastId });
+    } finally {
+      setCheckingAudio(false);
+    }
+  };
+
   const filteredLessons = lessons.filter(l => l.title.toLowerCase().includes(searchQuery.toLowerCase()));
 
   const handleAddHomework = async () => {
@@ -1084,6 +1158,15 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
                         </span>
                       </button>
                     )}
+                    {/* Audio verify button */}
+                    <button
+                      onClick={handleCheckAudio}
+                      disabled={checkingAudio}
+                      className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-2xl text-[10px] font-black border-0 cursor-pointer hover:from-blue-600 hover:to-cyan-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
+                    >
+                      {checkingAudio ? <Loader2 size={14} className="animate-spin" /> : <span>🎙️</span>}
+                      <span>{checkingAudio ? 'جاري الفحص...' : 'فحص الصوت'}</span>
+                    </button>
                   </div>
                   <h2 className="text-lg font-black text-slate-800 flex items-center gap-2">
                     الدروس المستخرجة ({analyzedLessons.length})
