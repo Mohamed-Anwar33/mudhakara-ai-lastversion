@@ -160,8 +160,12 @@ async function executeEdgeFunctionStep(supabaseUrl: string, serviceKey: string, 
         clearTimeout(timeoutId);
 
         if (error.name === 'AbortError') {
-            console.log(`[Orchestrator] Edge Function still running (>8s). Disconnecting gracefully. Releasing lock.`);
-            return { status: 'dispatched', message: 'Edge function triggered but still running', unlockNeeded: true };
+            // FIX: Do NOT release the lock! The Edge Function is still running on Supabase
+            // and will update the job when it finishes. Releasing the lock here was causing
+            // an infinite re-dispatch loop where the same job gets picked up again and again.
+            // The orphan recovery (stuck jobs >3min) will handle truly dead Edge Functions.
+            console.log(`[Orchestrator] Edge Function still running (>6.5s). Disconnecting gracefully. Lock retained.`);
+            return { status: 'dispatched', message: 'Edge function triggered and still running (lock retained)' };
         }
 
         throw error;
