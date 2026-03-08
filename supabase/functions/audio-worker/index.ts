@@ -141,7 +141,7 @@ async function geminiTranscribeChunk(
             }],
             generationConfig: {
                 temperature: 0.1,
-                maxOutputTokens: 8192,
+                maxOutputTokens: 65536,
             }
         })
     });
@@ -215,8 +215,8 @@ serve(async (req) => {
                 let fullTranscript = '';
                 let whisperDone = false;
 
-                // Whisper ONLY for short files (≤10MB ≈ ≤10min) — hallucination-free zone
-                if (openaiKey && fileSizeMB <= 10) {
+                // Whisper for files ≤25MB (OpenAI's actual limit) — more accurate for Arabic
+                if (openaiKey && fileSizeMB <= 25) {
                     try {
                         console.log(`[audio-worker] Short audio (${fileSizeMB.toFixed(1)}MB). Using Whisper...`);
                         await updateProgress('جاري تفريغ الصوت بدقة عالية (OpenAI Whisper)...');
@@ -249,14 +249,14 @@ serve(async (req) => {
                     } catch (e: any) {
                         console.warn(`[audio-worker] Whisper exception: ${e.message}`);
                     }
-                } else if (openaiKey && fileSizeMB > 10) {
-                    console.log(`[audio-worker] Audio too long for Whisper (${fileSizeMB.toFixed(1)}MB > 10MB). Skipping to Gemini chunked transcription.`);
+                } else if (openaiKey && fileSizeMB > 25) {
+                    console.log(`[audio-worker] Audio too large for Whisper (${fileSizeMB.toFixed(1)}MB > 25MB). Skipping to Gemini chunked transcription.`);
                 }
 
                 // Quality check: detect Whisper hallucination
                 if (whisperDone && fullTranscript) {
                     // Check 1: Suspiciously short for file size
-                    const expectedMinChars = fileSizeMB * 500; // ~500 chars per MB minimum
+                    const expectedMinChars = fileSizeMB * 300; // ~300 chars per MB minimum (Arabic with pauses)
                     if (fullTranscript.length < expectedMinChars) {
                         console.warn(`[audio-worker] Whisper output too short: ${fullTranscript.length} chars for ${fileSizeMB.toFixed(1)}MB (expected >=${expectedMinChars.toFixed(0)}). Falling back to Gemini.`);
                         whisperDone = false;
@@ -273,7 +273,7 @@ serve(async (req) => {
                         phrases[phrase] = (phrases[phrase] || 0) + 1;
                     }
                     const maxRepeat = Math.max(...Object.values(phrases), 0);
-                    if (maxRepeat > 5) {
+                    if (maxRepeat > 10) {
                         console.warn(`[audio-worker] Whisper hallucination detected: phrase repeated ${maxRepeat} times. Falling back to Gemini.`);
                         whisperDone = false;
                         fullTranscript = '';
@@ -292,7 +292,7 @@ serve(async (req) => {
                 // Whisper not used or failed → Upload to Gemini
                 if (!geminiKey) throw new Error('Missing GEMINI_API_KEY for fallback audio transcription');
 
-                console.log(`[audio-worker] File too large for Whisper (${fileSizeMB.toFixed(2)}MB > 25MB limit). Falling back to Gemini Stream.`);
+                console.log(`[audio-worker] Whisper not available or failed quality check. Falling back to Gemini Stream (${fileSizeMB.toFixed(2)}MB).`);
                 console.log(`[audio-worker] Uploading stream to Gemini File API for transcription...`);
                 await updateProgress('جاري رفع المقطع المستمر إلى محرك Gemini Pro للملفات الكبيرة (Streaming)...');
 

@@ -31,7 +31,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const supabase = getSupabaseAdmin();
 
         // 1. Try to load from storage
-        const storagePath = `audio_transcripts/${lessonId}/raw_transcript.txt`;
+        const storagePath = `${lessonId}/raw_transcript.txt`;
         try {
             const { data: blob } = await supabase.storage.from('audio_transcripts').download(storagePath);
             if (blob) {

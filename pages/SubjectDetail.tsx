@@ -831,7 +831,7 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
     }
   };
 
-  // ── Re-analyze ALL weak lessons in parallel ──
+  // ── Re-analyze ALL weak lessons — BATCH mode (single API call) ──
   const handleReanalyzeAllWeak = async () => {
     const weakIndices = analyzedLessons
       .map((al, idx) => ({ al, idx }))
@@ -839,20 +839,159 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
 
     if (weakIndices.length === 0) return;
 
-    toast.loading(`جاري إعادة تحليل ${weakIndices.length} درس بالتوازي...`, { id: 'reanalyze-all' });
+    // 1. Resolve lessonId
+    let lessonId = lastTempLessonId;
+    if (!lessonId) {
+      try {
+        const { data: tempLessons } = await supabase.from('lessons')
+          .select('id').eq('course_id', id)
+          .like('lesson_title', '__analysis__%')
+          .order('created_at', { ascending: false }).limit(1);
+        if (tempLessons?.[0]) {
+          lessonId = tempLessons[0].id;
+          setLastTempLessonId(lessonId);
+          try { localStorage.setItem(`mudhakara_lastlesson_${id}`, lessonId); } catch (_) { }
+        }
+      } catch (_) { }
+    }
+    if (!lessonId) {
+      toast.error('لا يمكن إعادة التحليل — يرجى تحليل الدروس أولاً');
+      return;
+    }
 
-    // Run all in parallel using Promise.allSettled
-    const results = await Promise.allSettled(
-      weakIndices.map(({ idx }) => handleReanalyzeSingle(idx))
-    );
+    // 2. Find matching segment IDs for ALL weak lessons
+    const { data: segments } = await supabase.from('segmented_lectures')
+      .select('id, title').eq('lesson_id', lessonId).order('start_page', { ascending: true });
 
-    const succeeded = results.filter(r => r.status === 'fulfilled' && r.value?.success).length;
-    const failed = weakIndices.length - succeeded;
+    if (!segments || segments.length === 0) {
+      toast.error('لم يتم العثور على الدروس في قاعدة البيانات');
+      return;
+    }
 
-    if (failed === 0) {
-      toast.success(`تم إعادة تحليل ${succeeded} درس بنجاح! 🎉`, { id: 'reanalyze-all' });
-    } else {
-      toast.error(`تم ${succeeded}/${weakIndices.length} — ${failed} فشل (مشكلة OCR)`, { id: 'reanalyze-all', duration: 6000 });
+    const matchedPairs: { idx: number; segId: string; al: any }[] = [];
+    for (const { al, idx } of weakIndices) {
+      const matchingSeg = segments.find((s: any) =>
+        s.title === al.lessonTitle ||
+        s.title?.includes(al.lessonTitle?.split(':').pop()?.trim() || '___') ||
+        al.lessonTitle?.includes(s.title)
+      );
+      if (matchingSeg) {
+        matchedPairs.push({ idx, segId: matchingSeg.id, al });
+      }
+    }
+
+    if (matchedPairs.length === 0) {
+      toast.error('لم يتم العثور على أي درس مطابق في قاعدة البيانات');
+      return;
+    }
+
+    // Mark all as reanalyzing
+    setReanalyzingIds(prev => {
+      const s = new Set(prev);
+      matchedPairs.forEach(p => s.add(p.al.id));
+      return s;
+    });
+
+    toast.loading(`جاري إعادة تحليل ${matchedPairs.length} درس...`, { id: 'reanalyze-all' });
+
+    try {
+      // 3. Single batch API call — no race conditions!
+      const res = await fetch('/api/reanalyze-direct', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lessonId, lectureIds: matchedPairs.map(p => p.segId) })
+      });
+      const result = await res.json();
+
+      if (!res.ok) {
+        toast.error(`فشل إرسال طلب إعادة التحليل: ${result.error || ''}`, { id: 'reanalyze-all' });
+        return;
+      }
+
+      // 4. Single polling loop — monitors ALL segments together
+      const pendingSegs = new Map(matchedPairs.map(p => [p.segId, p]));
+      let succeeded = 0;
+      let failed = 0;
+
+      for (let attempt = 0; attempt < 60; attempt++) { // 5 minutes max (60 × 5s)
+        await new Promise(r => setTimeout(r, 5000));
+
+        // Kick process-queue once every 15s (not per segment!)
+        if (attempt % 3 === 0) {
+          fetch('/api/process-queue', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"trigger":"batch-reanalyze"}' }).catch(() => { });
+        }
+
+        // Check status of ALL still-pending segments in one query
+        const pendingIds = Array.from(pendingSegs.keys());
+        if (pendingIds.length === 0) break;
+
+        try {
+          const { data: segStatuses } = await supabase.from('segmented_lectures')
+            .select('id, status, summary_storage_path')
+            .in('id', pendingIds);
+
+          for (const seg of (segStatuses || [])) {
+            if (seg.status === 'summary_done' || seg.status === 'quiz_done') {
+              const pair = pendingSegs.get(seg.id);
+              if (!pair) continue;
+
+              // Download the analysis result
+              const storagePath = `${lessonId}/lecture_${seg.id}.json`;
+              try {
+                const { data: blob } = await supabase.storage.from('analysis').download(storagePath);
+                if (blob) {
+                  const parsed = JSON.parse(await blob.text());
+                  if (parsed.explanation_notes?.length > 50) {
+                    // Update UI state
+                    setAnalyzedLessons(prev => {
+                      const updated = [...prev];
+                      updated[pair.idx] = {
+                        ...updated[pair.idx],
+                        detailedExplanation: parsed.explanation_notes,
+                        focusPoints: parsed.focusPoints || parsed.key_definitions || updated[pair.idx].focusPoints,
+                      };
+                      localStorage.setItem(`mudhakara_analyzedlessons_${id}`, JSON.stringify(updated));
+                      return updated;
+                    });
+                    succeeded++;
+                  } else {
+                    failed++;
+                  }
+                } else {
+                  failed++;
+                }
+              } catch (_) { failed++; }
+
+              pendingSegs.delete(seg.id);
+              setReanalyzingIds(prev => { const s = new Set(prev); s.delete(pair.al.id); return s; });
+            }
+          }
+        } catch (_) { /* query error — retry next iteration */ }
+
+        // Update toast with live progress
+        toast.loading(`جاري إعادة التحليل... ✅ ${succeeded} | ⏳ ${pendingSegs.size}`, { id: 'reanalyze-all' });
+      }
+
+      // Any remaining segments are failures (timeout)
+      for (const [, pair] of pendingSegs) {
+        failed++;
+        setReanalyzingIds(prev => { const s = new Set(prev); s.delete(pair.al.id); return s; });
+      }
+
+      if (failed === 0) {
+        toast.success(`تم إعادة تحليل ${succeeded} درس بنجاح! 🎉`, { id: 'reanalyze-all' });
+      } else {
+        toast.error(`تم ${succeeded}/${matchedPairs.length} — ${failed} فشل`, { id: 'reanalyze-all', duration: 6000 });
+      }
+    } catch (err: any) {
+      toast.error(`خطأ: ${err.message}`, { id: 'reanalyze-all' });
+    } finally {
+      // Clean up any remaining reanalyzing IDs
+      setReanalyzingIds(prev => {
+        const s = new Set(prev);
+        matchedPairs.forEach(p => s.delete(p.al.id));
+        return s;
+      });
     }
   };
 

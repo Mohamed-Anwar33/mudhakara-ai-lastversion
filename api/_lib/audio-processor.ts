@@ -11,7 +11,7 @@ import { chunkText, linkChunks } from './chunker.js';
  */
 
 const WHISPER_API_URL = 'https://api.openai.com/v1/audio/transcriptions';
-const WHISPER_MAX_BYTES = 20 * 1024 * 1024;
+const WHISPER_MAX_BYTES = 25 * 1024 * 1024;
 const GEMINI_INLINE_MAX = 15 * 1024 * 1024; // 15MB inline limit
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 1000;

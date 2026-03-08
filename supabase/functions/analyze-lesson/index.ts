@@ -266,6 +266,51 @@ serve(async (req) => {
                                     console.log(`[analyze-lesson] Audio is chunked. Analyzing chunk ${chunkIndex} (words ${startIndex} to ${endIndex})`);
                                 }
                             }
+                        } else {
+                            // ══ SMART AUDIO-LECTURE MATCHING ══
+                            // For PDF-based lectures, match audio proportionally to page ranges.
+                            // Teachers usually explain the book in order, so we split the audio
+                            // transcript proportionally across lectures by page position.
+                            try {
+                                // Get total page count and this lecture's position
+                                const { count: totalPages } = await supabase.from('lesson_pages')
+                                    .select('*', { count: 'exact', head: true })
+                                    .eq('lesson_id', lesson_id);
+
+                                const { data: allSegments } = await supabase.from('segmented_lectures')
+                                    .select('id, start_page, end_page')
+                                    .eq('lesson_id', lesson_id)
+                                    .order('start_page', { ascending: true });
+
+                                if (totalPages && totalPages > 0 && allSegments && allSegments.length > 1) {
+                                    const words = audioText.split(/\s+/);
+                                    const totalWords = words.length;
+
+                                    // Find this lecture's index among all segments
+                                    const segIndex = allSegments.findIndex(s => s.id === lecture_id);
+                                    if (segIndex >= 0) {
+                                        const totalSegs = allSegments.length;
+                                        // Proportional split with 20% overlap on each side for context
+                                        const baseChunkSize = Math.ceil(totalWords / totalSegs);
+                                        const overlapWords = Math.min(Math.floor(baseChunkSize * 0.2), 400);
+
+                                        const rawStart = segIndex * baseChunkSize;
+                                        const rawEnd = Math.min((segIndex + 1) * baseChunkSize, totalWords);
+
+                                        // Add overlap (clamped to bounds)
+                                        const matchStart = Math.max(0, rawStart - overlapWords);
+                                        const matchEnd = Math.min(totalWords, rawEnd + overlapWords);
+
+                                        textToAnalyze = words.slice(matchStart, matchEnd).join(' ');
+                                        console.log(`[analyze-lesson] 🎯 Smart audio match: segment ${segIndex + 1}/${totalSegs}, words ${matchStart}-${matchEnd} of ${totalWords} (${textToAnalyze.length} chars)`);
+                                    }
+                                } else {
+                                    // Single segment or no pages — use full audio
+                                    console.log(`[analyze-lesson] Single segment or no page info — using full audio transcript`);
+                                }
+                            } catch (matchErr: any) {
+                                console.warn(`[analyze-lesson] Smart audio match failed, using full transcript: ${matchErr.message}`);
+                            }
                         }
 
                         audioContext = textToAnalyze;

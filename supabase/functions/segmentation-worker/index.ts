@@ -173,21 +173,21 @@ serve(async (req) => {
                     const createdAt = segJob?.created_at ? new Date(segJob.created_at).getTime() : Date.now();
                     const waitingMinutes = (Date.now() - createdAt) / 60000;
 
-                    if (waitingMinutes < 5) {
+                    if (waitingMinutes < 15) {
                         console.log(`[segmentation-worker] Audio processing not complete yet (${waitingMinutes.toFixed(1)} min). Re-queuing with 15s backoff.`);
                         const nextRetry = new Date(Date.now() + 15 * 1000).toISOString();
                         await supabase.from('processing_queue').update({ status: 'pending', locked_by: null, locked_at: null, next_retry_at: nextRetry }).eq('id', jobId);
                         return new Response(JSON.stringify({ status: 'staged', message: 'waiting_for_audio' }), { headers: corsHeaders });
                     }
 
-                    // Timeout: 5+ minutes waiting. Continue without audio.
+                    // Timeout: 15+ minutes waiting. Continue without audio.
                     console.warn(`[segmentation-worker] AUDIO TIMEOUT: Waited ${waitingMinutes.toFixed(1)} min. Proceeding WITHOUT audio transcription.`);
 
                     // Mark stuck audio jobs as failed so they stop cycling
                     await supabase.from('processing_queue')
                         .update({
                             status: 'failed',
-                            error_message: 'تم تخطي معالجة الصوت — تجاوز الحد الزمني (5 دقائق). يمكن إعادة التحليل لاحقاً.',
+                            error_message: 'تم تخطي معالجة الصوت — تجاوز الحد الزمني (15 دقيقة). يمكن إعادة التحليل لاحقاً.',
                             locked_by: null,
                             locked_at: null
                         })
@@ -222,8 +222,8 @@ serve(async (req) => {
                     let audioChunked = false;
                     if (hasAudio) {
                         try {
-                            // Fetch the audio transcript to chunk it
-                            const audioPath = `audio_transcripts/${lesson_id}/raw_transcript.txt`;
+                            // Fetch the audio transcript to chunk it (path must match audio-worker save path)
+                            const audioPath = `${lesson_id}/raw_transcript.txt`;
                             const { data: audioBlob } = await supabase.storage.from('audio_transcripts').download(audioPath);
                             if (audioBlob) {
                                 const text = await audioBlob.text();

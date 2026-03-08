@@ -279,7 +279,7 @@ router.post('/api/fetch-audio-transcript', async (req, res) => {
         const geminiKey = process.env.GEMINI_API_KEY;
 
         // 1. Try to load from storage
-        const storagePath = `audio_transcripts/${lessonId}/raw_transcript.txt`;
+        const storagePath = `${lessonId}/raw_transcript.txt`;
         try {
             const { data: blob } = await supabase.storage.from('audio_transcripts').download(storagePath);
             if (blob) {
@@ -533,7 +533,7 @@ router.post('/reanalyze-direct', async (req, res) => {
         // Fetch audio transcript if available
         let audioSection = '';
         try {
-            const audioPath = `audio_transcripts/${lessonId}/raw_transcript.txt`;
+            const audioPath = `${lessonId}/raw_transcript.txt`;
             const { data: audioBlob } = await supabase.storage.from('audio_transcripts').download(audioPath);
             if (audioBlob) {
                 const audioText = await audioBlob.text();

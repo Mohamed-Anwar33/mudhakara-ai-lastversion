@@ -180,9 +180,9 @@ export const removeLesson = async (id: string) => {
     }
 
     // Audio transcripts
-    const { data: audioFiles } = await supabase.storage.from('audio_transcripts').list(`audio_transcripts/${id}`);
+    const { data: audioFiles } = await supabase.storage.from('audio_transcripts').list(`${id}`);
     if (audioFiles && audioFiles.length > 0) {
-      await supabase.storage.from('audio_transcripts').remove(audioFiles.map(f => `audio_transcripts/${id}/${f.name}`));
+      await supabase.storage.from('audio_transcripts').remove(audioFiles.map(f => `${id}/${f.name}`));
     }
 
     // 2. Delete related DB rows (processing queue, segments, pages)
