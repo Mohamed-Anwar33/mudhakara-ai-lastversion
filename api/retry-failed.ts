@@ -35,7 +35,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // 1. Find all FAILED jobs for this lesson
         const { data: failedJobs, error: fetchErr } = await supabase
             .from('processing_queue')
-            .select('id, job_type, attempt_count, error_message')
+            .select('id, job_type, attempt_count, error_message, payload')
             .eq('lesson_id', lessonId)
             .eq('status', 'failed');
 
@@ -54,7 +54,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             // Skip audio jobs that exhausted Gemini polling (file can't be processed)
             if (j.job_type === 'transcribe_audio') {
                 const pollCount = j.payload?.poll_count || 0;
-                if (pollCount >= 60) {
+                if (pollCount >= 30) {
                     console.log(`[retry-failed] Skipping transcribe_audio ${j.id}: Gemini permanently failed (${pollCount} polls)`);
                     return false;
                 }

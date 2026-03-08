@@ -253,7 +253,7 @@ async function processSingleJob(supabase: any, job: any, workerId: string, supab
                 locked_at: null
             }).eq('id', job.id);
 
-            if (['extract_pdf_info', 'transcribe_audio', 'segment_lesson', 'analyze_lecture', 'finalize_global_summary'].includes(job.job_type)) {
+            if (['extract_pdf_info', 'segment_lesson', 'analyze_lecture', 'finalize_global_summary'].includes(job.job_type)) {
                 await supabase.from('lessons').update({
                     analysis_status: 'failed',
                     pipeline_stage: 'failed'
