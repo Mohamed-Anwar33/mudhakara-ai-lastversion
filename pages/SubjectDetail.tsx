@@ -92,6 +92,7 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
   const [reanalyzingIds, setReanalyzingIds] = useState<Set<string>>(new Set());
   const [reanalyzeElapsed, setReanalyzeElapsed] = useState(0);
   const [reanalyzeTotalCount, setReanalyzeTotalCount] = useState(0);
+  const [checkingAudio, setCheckingAudio] = useState(false);
 
   // Timer for re-analysis progress
   useEffect(() => {
@@ -844,7 +845,6 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
   };
 
   // ── Check Audio Transcription Status ──
-  const [checkingAudio, setCheckingAudio] = useState(false);
   const handleCheckAudio = async () => {
     let lessonId = lastTempLessonId;
     if (!lessonId) {
