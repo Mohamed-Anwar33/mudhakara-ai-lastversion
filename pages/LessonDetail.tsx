@@ -127,6 +127,8 @@ const LessonDetail: React.FC = () => {
   const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number>>({});
   const [transientAIResult, setTransientAIResult] = useState<AIResult | null>(null);
   const [progressMsg, setProgressMsg] = useState('');
+  const [audioTranscript, setAudioTranscript] = useState<string | null>(null);
+  const [showFullTranscript, setShowFullTranscript] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(0);
 
   const isExtractingRef = useRef(false);
@@ -140,6 +142,30 @@ const LessonDetail: React.FC = () => {
     const interval = setInterval(() => setElapsedTime(t => t + 1), 1000);
     return () => clearInterval(interval);
   }, [isProcessing]);
+
+  // Fetch audio transcript if exists
+  useEffect(() => {
+    if (!lessonId || !supabase) return;
+    const fetchTranscript = async () => {
+      const paths = [
+        `${lessonId}/raw_transcript.txt`,
+        `audio_transcripts/${lessonId}/raw_transcript.txt`,
+      ];
+      for (const path of paths) {
+        try {
+          const { data: blob } = await supabase.storage.from('audio_transcripts').download(path);
+          if (blob) {
+            const text = await blob.text();
+            if (text && text.length > 10) {
+              setAudioTranscript(text);
+              return;
+            }
+          }
+        } catch { }
+      }
+    };
+    fetchTranscript();
+  }, [lessonId]);
 
   // ─── Auto-cleanup: حذف بيانات التحليل غير المكتملة عند تحميل الصفحة لتوفير المساحة ───
   useEffect(() => {
@@ -947,6 +973,49 @@ const LessonDetail: React.FC = () => {
               {!isProcessing && supabase && lessonId && (
                 <RetryBanner lessonId={lessonId} supabase={supabase} onRetry={handleExtractMemory} />
               )}
+              {/* ─── Audio Transcript Card ─── */}
+              {audioTranscript && (
+                <section className="relative overflow-hidden rounded-[3rem] border border-blue-100 shadow-sm" style={{ background: 'linear-gradient(135deg, #eff6ff 0%, #f0f9ff 50%, #ecfeff 100%)' }}>
+                  <div className="absolute top-0 right-0 w-2 h-full bg-gradient-to-b from-blue-500 via-cyan-500 to-teal-500"></div>
+                  <div className="absolute top-4 left-4 w-24 h-24 bg-blue-200/20 rounded-full blur-2xl"></div>
+                  <div className="p-10 relative">
+                    <div className="flex items-center justify-end gap-3 mb-6">
+                      <h2 className="text-2xl font-black text-slate-800">تفريغ التسجيل الصوتي</h2>
+                      <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-2xl flex items-center justify-center shadow-lg">
+                        <Headphones size={24} className="text-white" />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-4 mb-6 justify-end flex-wrap">
+                      <span className="text-[11px] font-bold text-blue-600 bg-blue-100 px-3 py-1.5 rounded-full">Gemini AI</span>
+                      <span className="text-[11px] font-bold text-cyan-600 bg-cyan-100 px-3 py-1.5 rounded-full">
+                        {audioTranscript.split(/\s+/).length.toLocaleString()} كلمة
+                      </span>
+                      <span className="text-[11px] font-bold text-teal-600 bg-teal-100 px-3 py-1.5 rounded-full">
+                        {audioTranscript.length.toLocaleString()} حرف
+                      </span>
+                    </div>
+
+                    {/* Transcript preview / full text */}
+                    <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-blue-100 p-6 mb-4">
+                      <p className="text-slate-700 text-sm leading-[2] text-justify font-medium" dir="rtl">
+                        {showFullTranscript ? audioTranscript : audioTranscript.substring(0, 800) + (audioTranscript.length > 800 ? '...' : '')}
+                      </p>
+                    </div>
+
+                    {audioTranscript.length > 800 && (
+                      <button
+                        onClick={() => setShowFullTranscript(!showFullTranscript)}
+                        className="flex items-center gap-2 text-blue-600 font-bold text-xs hover:text-blue-700 transition-colors mx-auto"
+                      >
+                        <ChevronDown size={14} className={showFullTranscript ? 'rotate-180 transition-transform' : 'transition-transform'} />
+                        <span>{showFullTranscript ? 'إخفاء النص الكامل' : `عرض النص الكامل (${audioTranscript.split(/\s+/).length.toLocaleString()} كلمة)`}</span>
+                      </button>
+                    )}
+                  </div>
+                </section>
+              )}
+
               {(transientAIResult?.focusPoints || lesson?.aiResult?.focusPoints) && (
                 <section className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm relative overflow-hidden">
                   <div className="absolute top-0 right-0 w-2 h-full bg-emerald-500"></div>

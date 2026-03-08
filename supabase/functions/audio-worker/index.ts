@@ -6,12 +6,87 @@ const corsHeaders = {
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// ─── Stage 1 Helper: Upload audio stream to Gemini File API ───
-// Returns { fileUri, fileName } WITHOUT polling — polling happens in Stage 2
+const GEMINI_MODEL = 'gemini-2.5-flash'; // Updated from deprecated gemini-2.0-flash
+
+// ─── Fix MIME type: Supabase Storage returns video/mp4 for WhatsApp audio ───
+// Gemini REJECTS video/mp4 for audio content (400 INVALID_ARGUMENT).
+// Must convert to audio/mp4 or audio/mpeg.
+function fixAudioMimeType(mime: string): string {
+    if (mime === 'video/mp4' || mime === 'video/mpeg') return 'audio/mp4';
+    if (mime === 'video/webm') return 'audio/webm';
+    if (mime === 'video/ogg') return 'audio/ogg';
+    if (!mime || mime === 'application/octet-stream') return 'audio/mp4';
+    return mime;
+}
+
+// ─── Inline Base64 Transcription (NO File API — single call!) ───
+// Works for files ≤ 20MB. Downloads audio → base64 → sends directly to Gemini.
+async function transcribeInline(audioUrl: string, rawMimeType: string, apiKey: string): Promise<string> {
+    const mimeType = fixAudioMimeType(rawMimeType);
+    console.log(`[audio-worker] Inline: MIME fixed from '${rawMimeType}' to '${mimeType}'`);
+    console.log(`[audio-worker] Downloading audio for inline transcription...`);
+    const audioRes = await fetch(audioUrl);
+    if (!audioRes.ok) throw new Error(`Failed to download audio: HTTP ${audioRes.status}`);
+
+    // Read as ArrayBuffer and convert to base64 using Deno
+    const arrayBuffer = await audioRes.arrayBuffer();
+    const uint8 = new Uint8Array(arrayBuffer);
+
+    // Deno base64 encode
+    let base64Audio: string;
+    // @ts-ignore — Deno has btoa but for binary we need a different approach
+    const CHUNK = 32768;
+    let binaryString = '';
+    for (let i = 0; i < uint8.length; i += CHUNK) {
+        const slice = uint8.subarray(i, Math.min(i + CHUNK, uint8.length));
+        binaryString += String.fromCharCode(...slice);
+    }
+    base64Audio = btoa(binaryString);
+
+    const sizeMB = (uint8.length / 1024 / 1024).toFixed(2);
+    console.log(`[audio-worker] Audio downloaded: ${sizeMB}MB. Base64 ready. Sending to Gemini ${GEMINI_MODEL}...`);
+
+    const prompt = "Transcribe this Arabic audio recording word-by-word into Arabic text. Output ONLY the spoken Arabic words, nothing else. Do not add timestamps. Do not translate. Write the complete transcription in Arabic.";
+
+    const apiRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{
+                    role: 'user',
+                    parts: [
+                        { text: prompt },
+                        { inlineData: { mimeType, data: base64Audio } }
+                    ]
+                }],
+                generationConfig: {
+                    temperature: 0.1,
+                    maxOutputTokens: 8192,
+                }
+            })
+        }
+    );
+
+    if (!apiRes.ok) {
+        const errText = await apiRes.text();
+        throw new Error(`Gemini inline transcription failed (${apiRes.status}): ${errText.substring(0, 300)}`);
+    }
+
+    const data = await apiRes.json();
+    const parts = data.candidates?.[0]?.content?.parts || [];
+    return parts.filter((p: any) => p.text).map((p: any) => p.text).join('').trim();
+}
+
+// ─── File API: Upload audio stream to Gemini ───
+// Only used for files > 20MB that can't be sent inline
 async function uploadStreamToGemini(audioUrl: string, apiKey: string): Promise<{ fileUri: string; fileName: string }> {
     const headRes = await fetch(audioUrl, { method: 'HEAD' });
     const contentLength = headRes.headers.get('content-length');
-    const mimeType = headRes.headers.get('content-type') || 'audio/mp3';
+    const rawMime = headRes.headers.get('content-type') || 'audio/mp3';
+    const mimeType = fixAudioMimeType(rawMime);
+    console.log(`[audio-worker] File API upload: MIME fixed from '${rawMime}' to '${mimeType}'`);
 
     if (!contentLength) throw new Error('Could not determine content length for streaming');
 
@@ -52,17 +127,16 @@ async function uploadStreamToGemini(audioUrl: string, apiKey: string): Promise<{
 
     const fileInfo = await uploadRes.json();
     const fileUri = fileInfo.file?.uri;
-    const fileName = fileInfo.file?.name; // e.g. "files/abc123"
+    const fileName = fileInfo.file?.name;
     if (!fileUri || !fileName) throw new Error('No file URI/name returned from Gemini');
 
     return { fileUri, fileName };
 }
 
-// ─── Stage 2 Helper: Check if Gemini file is ready (single check, no loop!) ───
+// ─── File API: Check if Gemini file is ready ───
 async function checkGeminiFileStatus(fileName: string, apiKey: string): Promise<'ACTIVE' | 'PROCESSING' | 'FAILED'> {
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${apiKey}`);
     if (!res.ok) {
-        // Treat 500/502/503 as transient — Gemini is still processing, retry later
         if (res.status >= 500) {
             console.warn(`[audio-worker] Gemini status check returned ${res.status} — treating as PROCESSING (transient).`);
             return 'PROCESSING';
@@ -75,76 +149,31 @@ async function checkGeminiFileStatus(fileName: string, apiKey: string): Promise<
     return 'PROCESSING';
 }
 
-// ─── Stage 3 Helper: Transcribe with Gemini using file URI (parallel chunks) ───
-async function transcribeWithGemini(fileUri: string, apiKey: string, fileSizeMB?: number): Promise<string> {
-    // Estimate audio duration: ~1MB ≈ 1 minute for compressed audio
-    const estimatedMinutes = Math.max(1, Math.round(fileSizeMB || 10));
-    const CHUNK_SIZE_MINUTES = 10;
+// ─── File API: Transcribe using file URI ───
+async function transcribeWithFileUri(fileUri: string, apiKey: string, rawMimeType: string): Promise<string> {
+    const mimeType = fixAudioMimeType(rawMimeType);
+    const prompt = "Transcribe this Arabic audio recording word-by-word into Arabic text. Output ONLY the spoken Arabic words, nothing else. Do not add timestamps. Do not translate. Write the complete transcription in Arabic.";
 
-    // If short audio (<= 12 min), do single transcription
-    if (estimatedMinutes <= 12) {
-        return await geminiTranscribeChunk(fileUri, apiKey, null);
-    }
-
-    // Split into chunks and transcribe in parallel
-    const numChunks = Math.ceil(estimatedMinutes / CHUNK_SIZE_MINUTES);
-    console.log(`[audio-worker] Splitting ${estimatedMinutes}min audio into ${numChunks} chunks for parallel transcription`);
-
-    const chunkPromises = [];
-    for (let i = 0; i < numChunks; i++) {
-        const startMin = i * CHUNK_SIZE_MINUTES;
-        const endMin = Math.min((i + 1) * CHUNK_SIZE_MINUTES, estimatedMinutes);
-        chunkPromises.push(
-            geminiTranscribeChunk(fileUri, apiKey, { start: startMin, end: endMin, part: i + 1, total: numChunks })
-        );
-    }
-
-    const results = await Promise.allSettled(chunkPromises);
-    const transcripts: string[] = [];
-    for (const r of results) {
-        if (r.status === 'fulfilled' && r.value) {
-            transcripts.push(r.value);
-        } else if (r.status === 'rejected') {
-            console.warn(`[audio-worker] Chunk transcription failed:`, r.reason?.message);
+    const apiRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{
+                    role: 'user',
+                    parts: [
+                        { text: prompt },
+                        { fileData: { fileUri, mimeType } }
+                    ]
+                }],
+                generationConfig: {
+                    temperature: 0.1,
+                    maxOutputTokens: 8192,
+                }
+            })
         }
-    }
-
-    console.log(`[audio-worker] Parallel transcription done: ${transcripts.length}/${numChunks} chunks succeeded`);
-    return transcripts.join('\n\n');
-}
-
-// ─── Single chunk transcription call ───
-async function geminiTranscribeChunk(
-    fileUri: string, apiKey: string,
-    timeRange: { start: number; end: number; part: number; total: number } | null
-): Promise<string> {
-    let prompt: string;
-    if (timeRange) {
-        prompt = `أنت خبير في التفريغ الصوتي. هذا الملف الصوتي مقسم إلى ${timeRange.total} أجزاء.
-قم بتفريغ الجزء ${timeRange.part} فقط: من الدقيقة ${timeRange.start} إلى الدقيقة ${timeRange.end}.
-اكتب النص بالكامل كما قيل بدون تلخيص أو حذف. تأكد من صحة الإملاء والعبارات.
-لا تكتب أي شيء خارج هذا النطاق الزمني. ابدأ التفريغ مباشرة بدون مقدمة.`;
-    } else {
-        prompt = "أنت خبير في التفريغ الصوتي (Transcription). قم بتفريغ هذا المقطع الصوتي بكل دقة إلى نص عربي واضح ومترابط. اكتب النص بالكامل كما قيل بدون تلخيص، وتأكد من صحة الإملاء والوقفات.";
-    }
-
-    const apiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            contents: [{
-                role: 'user',
-                parts: [
-                    { text: prompt },
-                    { fileData: { fileUri: fileUri, mimeType: "audio/mp3" } }
-                ]
-            }],
-            generationConfig: {
-                temperature: 0.1,
-                maxOutputTokens: 65536,
-            }
-        })
-    });
+    );
 
     if (!apiRes.ok) {
         throw new Error(`Gemini Transcription Failed: ${await apiRes.text()}`);
@@ -195,9 +224,9 @@ serve(async (req) => {
         if (job_type === 'transcribe_audio') {
             if (!audioPath) throw new Error('Missing audio_url to process');
 
-            // ╔══════════════════════════════════════════════╗
-            // ║   STAGE 1: UPLOAD — Upload file to Gemini   ║
-            // ╚══════════════════════════════════════════════╝
+            // ╔══════════════════════════════════════════════════════════════╗
+            // ║   STAGE 1: UPLOAD — Try Whisper first, then Gemini inline   ║
+            // ╚══════════════════════════════════════════════════════════════╝
             if (stage === 'upload') {
                 await updateProgress('جاري تحميل المقطع الصوتي من التخزين السحابي...');
 
@@ -210,27 +239,32 @@ serve(async (req) => {
                 const contentLengthStr = headRes.headers.get('content-length');
                 const fileSizeBytes = contentLengthStr ? parseInt(contentLengthStr, 10) : 0;
                 const fileSizeMB = fileSizeBytes / (1024 * 1024);
-                console.log(`[audio-worker] Audio file size: ${fileSizeMB.toFixed(2)} MB`);
+                const rawMimeType = headRes.headers.get('content-type') || 'audio/mp4';
+                const mimeType = fixAudioMimeType(rawMimeType);
+                console.log(`[audio-worker] Audio file: ${fileSizeMB.toFixed(2)} MB, raw type: ${rawMimeType}, fixed: ${mimeType}`);
 
                 let fullTranscript = '';
                 let whisperDone = false;
 
-                // Whisper for files ≤15MB — conservative limit for 256MB Edge Function RAM
-                // (file blob + FormData copy + response ≈ 3x file size in memory)
-                if (openaiKey && fileSizeMB <= 15) {
+                // ── PRIORITY 1: Whisper for files ≤25MB (Whisper's official limit) ──
+                // Raised from 15MB because Gemini File API is unreliable (500 errors).
+                // Whisper works great up to 25MB even for Arabic audio.
+                if (openaiKey && fileSizeMB <= 25) {
                     try {
-                        console.log(`[audio-worker] Short audio (${fileSizeMB.toFixed(1)}MB). Using Whisper...`);
+                        console.log(`[audio-worker] Using Whisper (${fileSizeMB.toFixed(1)}MB)...`);
                         await updateProgress('جاري تفريغ الصوت بدقة عالية (OpenAI Whisper)...');
 
                         const audioRes = await fetch(audioUrl);
                         let audioBlob: Blob | null = await audioRes.blob();
 
+                        // Use correct extension based on mime type
+                        const ext = mimeType.includes('mp4') ? 'mp4' : mimeType.includes('wav') ? 'wav' : mimeType.includes('ogg') ? 'ogg' : 'mp3';
                         const formData = new FormData();
-                        formData.append('file', audioBlob, 'audio.mp3');
+                        formData.append('file', audioBlob, `audio.${ext}`);
                         formData.append('model', 'whisper-1');
                         formData.append('response_format', 'text');
-                        formData.append('language', 'ar'); // Arabic hint for better accuracy
-                        formData.append('prompt', 'محاضرة جامعية باللغة العربية الفصحى'); // Context hint
+                        formData.append('language', 'ar');
+                        formData.append('prompt', 'محاضرة جامعية باللغة العربية الفصحى');
 
                         const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
                             method: 'POST',
@@ -250,23 +284,21 @@ serve(async (req) => {
                     } catch (e: any) {
                         console.warn(`[audio-worker] Whisper exception: ${e.message}`);
                     }
-                } else if (openaiKey && fileSizeMB > 15) {
-                    console.log(`[audio-worker] Audio too large for Whisper in Edge Function (${fileSizeMB.toFixed(1)}MB > 15MB). Skipping to Gemini stream transcription.`);
+                } else if (openaiKey && fileSizeMB > 25) {
+                    console.log(`[audio-worker] Audio too large for Whisper (${fileSizeMB.toFixed(1)}MB > 25MB). Skipping to Gemini.`);
                 }
 
                 // Quality check: detect Whisper hallucination
                 if (whisperDone && fullTranscript) {
-                    // Check 1: Suspiciously short for file size
-                    const expectedMinChars = fileSizeMB * 300; // ~300 chars per MB minimum (Arabic with pauses)
+                    const expectedMinChars = fileSizeMB * 300;
                     if (fullTranscript.length < expectedMinChars) {
-                        console.warn(`[audio-worker] Whisper output too short: ${fullTranscript.length} chars for ${fileSizeMB.toFixed(1)}MB (expected >=${expectedMinChars.toFixed(0)}). Falling back to Gemini.`);
+                        console.warn(`[audio-worker] Whisper output too short: ${fullTranscript.length} chars for ${fileSizeMB.toFixed(1)}MB. Falling back to Gemini.`);
                         whisperDone = false;
                         fullTranscript = '';
                     }
                 }
 
                 if (whisperDone && fullTranscript) {
-                    // Check 2: Detect repeated phrases (hallucination)
                     const words = fullTranscript.split(/\s+/);
                     const phrases: Record<string, number> = {};
                     for (let i = 0; i < words.length - 4; i++) {
@@ -275,7 +307,7 @@ serve(async (req) => {
                     }
                     const maxRepeat = Math.max(...Object.values(phrases), 0);
                     if (maxRepeat > 10) {
-                        console.warn(`[audio-worker] Whisper hallucination detected: phrase repeated ${maxRepeat} times. Falling back to Gemini.`);
+                        console.warn(`[audio-worker] Whisper hallucination detected (${maxRepeat} repeats). Falling back to Gemini.`);
                         whisperDone = false;
                         fullTranscript = '';
                     }
@@ -283,24 +315,43 @@ serve(async (req) => {
 
                 // If Whisper passed quality checks → clean and save
                 if (whisperDone && fullTranscript) {
-                    // Clean transcript: remove consecutive duplicate sentences
                     fullTranscript = cleanTranscriptRepetitions(fullTranscript);
                     console.log(`[audio-worker] Whisper quality OK. Cleaned length: ${fullTranscript.length}`);
                     await saveTranscriptAndComplete(supabase, lesson_id, jobId!, fullTranscript, payload, updateProgress);
                     return new Response(JSON.stringify({ status: 'completed' }), { headers: corsHeaders });
                 }
 
-                // Whisper not used or failed → Upload to Gemini
-                if (!geminiKey) throw new Error('Missing GEMINI_API_KEY for fallback audio transcription');
+                // ── PRIORITY 2: Gemini INLINE transcription (≤20MB) ──
+                // This bypasses the Gemini File API entirely — no upload/poll/timeout!
+                if (geminiKey && fileSizeMB <= 20) {
+                    console.log(`[audio-worker] Using Gemini INLINE transcription (${fileSizeMB.toFixed(1)}MB, type: ${mimeType})...`);
+                    await updateProgress('جاري تفريغ الصوت مباشرة عبر Gemini (وضع مباشر)...');
 
-                console.log(`[audio-worker] Whisper not available or failed quality check. Falling back to Gemini Stream (${fileSizeMB.toFixed(2)}MB).`);
-                console.log(`[audio-worker] Uploading stream to Gemini File API for transcription...`);
-                await updateProgress('جاري رفع المقطع المستمر إلى محرك Gemini Pro للملفات الكبيرة (Streaming)...');
+                    try {
+                        fullTranscript = await transcribeInline(audioUrl, mimeType, geminiKey);
+                        fullTranscript = cleanTranscriptRepetitions(fullTranscript);
+                        console.log(`[audio-worker] Gemini inline transcription successful. Cleaned length: ${fullTranscript.length}`);
+
+                        if (fullTranscript && fullTranscript.length >= 5) {
+                            await saveTranscriptAndComplete(supabase, lesson_id, jobId!, fullTranscript, payload, updateProgress);
+                            return new Response(JSON.stringify({ status: 'completed', transcript_length: fullTranscript.length }), { headers: corsHeaders });
+                        } else {
+                            console.warn(`[audio-worker] Gemini inline returned empty/too-short text. Falling back to File API.`);
+                        }
+                    } catch (e: any) {
+                        console.warn(`[audio-worker] Gemini inline failed: ${e.message}. Falling back to File API.`);
+                    }
+                }
+
+                // ── PRIORITY 3: Gemini File API (for files > 20MB or if inline failed) ──
+                if (!geminiKey) throw new Error('Missing GEMINI_API_KEY for audio transcription');
+
+                console.log(`[audio-worker] Falling back to Gemini File API (streaming upload for ${fileSizeMB.toFixed(2)}MB)...`);
+                await updateProgress('جاري رفع المقطع إلى Gemini File API للملفات الكبيرة...');
 
                 const { fileUri, fileName } = await uploadStreamToGemini(audioUrl, geminiKey);
-                console.log(`[audio-worker] Upload complete. URI: ${fileUri}, Name: ${fileName}. Transitioning to polling stage.`);
+                console.log(`[audio-worker] Upload OK. URI: ${fileUri}, Name: ${fileName}. Transitioning to polling.`);
 
-                // ── Persist state and re-queue for polling ──
                 const nextRetry = new Date(Date.now() + 15 * 1000).toISOString();
                 await supabase.from('processing_queue').update({
                     status: 'pending',
@@ -314,6 +365,7 @@ serve(async (req) => {
                         stage: 'polling_gemini',
                         gemini_file_uri: fileUri,
                         gemini_file_name: fileName,
+                        gemini_mime_type: mimeType,
                         poll_count: 0,
                         file_size_mb: fileSizeMB,
                     }
@@ -323,22 +375,23 @@ serve(async (req) => {
             }
 
             // ╔══════════════════════════════════════════════════════╗
-            // ║   STAGE 2: POLLING — Wait for Gemini to process     ║
+            // ║   STAGE 2: POLLING — Wait for Gemini File API      ║
             // ╚══════════════════════════════════════════════════════╝
             if (stage === 'polling_gemini') {
                 const fileName = payload.gemini_file_name;
                 const fileUri = payload.gemini_file_uri;
                 const pollCount = payload.poll_count || 0;
+                const mimeType = payload.gemini_mime_type || 'audio/mp4';
 
                 if (!fileName || !fileUri) throw new Error('Missing gemini_file_name/uri in payload for polling stage');
 
-                await updateProgress('جاري استخراج النصوص من الريكورد، يرجى الانتظار (Gemini 1.5 Pro)...');
+                await updateProgress('جاري استخراج النصوص من الريكورد (Gemini File API)...');
 
                 console.log(`[audio-worker] Polling Gemini file status: ${fileName} (poll #${pollCount})`);
                 const fileStatus = await checkGeminiFileStatus(fileName, geminiKey);
 
                 if (fileStatus === 'ACTIVE') {
-                    console.log(`[audio-worker] Gemini file ${fileName} is ACTIVE! Transitioning to transcribe stage.`);
+                    console.log(`[audio-worker] File ${fileName} is ACTIVE. Transitioning to transcribe.`);
 
                     const nextRetry = new Date(Date.now() + 2 * 1000).toISOString();
                     await supabase.from('processing_queue').update({
@@ -363,13 +416,13 @@ serve(async (req) => {
                 }
 
                 // Still PROCESSING — re-queue with backoff
-                if (pollCount >= 30) {
-                    // 30 polls × ~15s = ~7.5 minutes max wait
-                    throw new Error(`Gemini file processing timeout after ${pollCount} polls.`);
+                if (pollCount >= 20) {
+                    // 20 polls × ~15-20s = ~5-7 minutes max wait
+                    throw new Error(`Gemini file processing timeout after ${pollCount} polls (~${Math.round(pollCount * 15 / 60)} min).`);
                 }
 
-                console.log(`[audio-worker] Gemini still processing file ${fileName}... re-queuing (poll #${pollCount}).`);
-                const backoffSec = Math.min(10 + pollCount * 2, 30); // 10s → 30s backoff
+                console.log(`[audio-worker] Gemini still processing ${fileName}... re-queuing (poll #${pollCount}).`);
+                const backoffSec = Math.min(10 + pollCount * 2, 30);
                 const nextRetry = new Date(Date.now() + backoffSec * 1000).toISOString();
 
                 await supabase.from('processing_queue').update({
@@ -387,26 +440,115 @@ serve(async (req) => {
                 return new Response(JSON.stringify({ status: 'polling', poll_count: pollCount + 1 }), { headers: corsHeaders });
             }
 
-            // ╔══════════════════════════════════════════════════════════╗
-            // ║   STAGE 3: TRANSCRIBE — File is ACTIVE, extract text    ║
-            // ╚══════════════════════════════════════════════════════════╝
+            // ╔══════════════════════════════════════════════════════════════════╗
+            // ║   STAGE 3: TRANSCRIBE — Chunked for long lectures (up to 2hr)  ║
+            // ╚══════════════════════════════════════════════════════════════════╝
             if (stage === 'transcribe') {
                 const fileUri = payload.gemini_file_uri;
+                const mimeType = payload.gemini_mime_type || 'audio/mp4';
+                const fileSizeMB = payload.file_size_mb || 20;
                 if (!fileUri) throw new Error('Missing gemini_file_uri in payload for transcribe stage');
 
-                console.log(`[audio-worker] Starting Gemini transcription with file URI: ${fileUri}`);
-                await updateProgress('نجح الرفع. جاري الاستماع للمقطع وتفريغ النصوص (Gemini 1.5 Pro)... هذه العملية قد تستغرق بضع دقائق.');
+                // Estimate duration: ~1MB ≈ 1 min for compressed audio
+                const estimatedMinutes = Math.max(1, Math.round(fileSizeMB));
+                const CHUNK_MINUTES = 15;
+                const currentChunk = payload.current_chunk || 0;
+                const totalChunks = Math.ceil(estimatedMinutes / CHUNK_MINUTES);
+                const transcriptParts: string[] = payload.transcript_parts || [];
 
-                let fullTranscript = await transcribeWithGemini(fileUri, geminiKey, payload.file_size_mb);
-                fullTranscript = cleanTranscriptRepetitions(fullTranscript);
-                console.log(`[audio-worker] Gemini Pro transcription successful. Cleaned length: ${fullTranscript.length}`);
+                console.log(`[audio-worker] Transcribe: ~${estimatedMinutes}min audio | chunk ${currentChunk + 1}/${totalChunks} | ${transcriptParts.length} parts saved`);
 
-                if (!fullTranscript || fullTranscript.length < 5) {
-                    console.warn(`[audio-worker] Transcription returned unusually short text.`);
+                // ── Short audio (≤10 min): single call ──
+                if (estimatedMinutes <= 10) {
+                    console.log(`[audio-worker] Short audio (${estimatedMinutes}min). Single transcription call.`);
+                    await updateProgress('جاري تفريغ المحاضرة بالكامل...');
+
+                    let fullTranscript = await transcribeWithFileUri(fileUri, geminiKey, mimeType);
+                    fullTranscript = cleanTranscriptRepetitions(fullTranscript);
+                    console.log(`[audio-worker] Transcription done. Length: ${fullTranscript.length} chars`);
+
+                    await saveTranscriptAndComplete(supabase, lesson_id, jobId!, fullTranscript, payload, updateProgress);
+                    return new Response(JSON.stringify({ status: 'completed', transcript_length: fullTranscript.length }), { headers: corsHeaders });
                 }
 
-                await saveTranscriptAndComplete(supabase, lesson_id, jobId!, fullTranscript, payload, updateProgress);
-                return new Response(JSON.stringify({ status: 'completed', transcript_length: fullTranscript.length }), { headers: corsHeaders });
+                // ── Longer audio (>10 min): chunked transcription ──
+                if (currentChunk >= totalChunks) {
+                    // All chunks done — combine and save
+                    const fullTranscript = cleanTranscriptRepetitions(transcriptParts.join('\n\n'));
+                    console.log(`[audio-worker] All ${totalChunks} chunks done. Total: ${fullTranscript.length} chars`);
+                    await saveTranscriptAndComplete(supabase, lesson_id, jobId!, fullTranscript, payload, updateProgress);
+                    return new Response(JSON.stringify({ status: 'completed', transcript_length: fullTranscript.length }), { headers: corsHeaders });
+                }
+
+                // Transcribe current chunk
+                const startMin = currentChunk * CHUNK_MINUTES;
+                const endMin = Math.min((currentChunk + 1) * CHUNK_MINUTES, estimatedMinutes);
+                await updateProgress(`جاري تفريغ الجزء ${currentChunk + 1} من ${totalChunks} (الدقيقة ${startMin}-${endMin})...`);
+
+                const chunkPrompt = totalChunks === 1
+                    ? "Transcribe this Arabic audio recording word-by-word into Arabic text. Output ONLY the spoken Arabic words, nothing else. Do not add timestamps. Do not translate. Write the complete transcription in Arabic. Make sure you transcribe the ENTIRE recording from beginning to end."
+                    : `Transcribe ONLY the part of this Arabic audio recording from minute ${startMin} to minute ${endMin}. Output ONLY the spoken Arabic words for this time segment. Do not add timestamps. Do not translate. Do not include content outside this time range. Write the transcription in Arabic.`;
+
+                console.log(`[audio-worker] Transcribing chunk ${currentChunk + 1}/${totalChunks}: minutes ${startMin}-${endMin}`);
+                const chunkMimeType = fixAudioMimeType(mimeType);
+
+                const apiRes = await fetch(
+                    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${geminiKey}`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{
+                                role: 'user',
+                                parts: [
+                                    { text: chunkPrompt },
+                                    { fileData: { fileUri, mimeType: chunkMimeType } }
+                                ]
+                            }],
+                            generationConfig: { temperature: 0, maxOutputTokens: 8192 }
+                        })
+                    }
+                );
+
+                if (!apiRes.ok) {
+                    const errText = await apiRes.text();
+                    throw new Error(`Gemini chunk ${currentChunk + 1} failed: ${errText.substring(0, 200)}`);
+                }
+
+                const data = await apiRes.json();
+                const chunkText = (data.candidates?.[0]?.content?.parts || [])
+                    .filter((p: any) => p.text).map((p: any) => p.text).join('').trim();
+
+                console.log(`[audio-worker] Chunk ${currentChunk + 1} done: ${chunkText.length} chars`);
+                transcriptParts.push(chunkText);
+
+                const nextChunk = currentChunk + 1;
+                if (nextChunk >= totalChunks) {
+                    // Last chunk done — combine and save
+                    const fullTranscript = cleanTranscriptRepetitions(transcriptParts.join('\n\n'));
+                    console.log(`[audio-worker] All chunks complete! Total: ${fullTranscript.length} chars`);
+                    await saveTranscriptAndComplete(supabase, lesson_id, jobId!, fullTranscript, payload, updateProgress);
+                    return new Response(JSON.stringify({ status: 'completed', transcript_length: fullTranscript.length, chunks: totalChunks }), { headers: corsHeaders });
+                }
+
+                // More chunks to go — save progress and re-queue
+                console.log(`[audio-worker] Chunk ${currentChunk + 1}/${totalChunks} done. Re-queuing for next chunk.`);
+                const nextRetry = new Date(Date.now() + 2000).toISOString();
+                await supabase.from('processing_queue').update({
+                    status: 'pending',
+                    locked_by: null,
+                    locked_at: null,
+                    next_retry_at: nextRetry,
+                    attempt_count: 0,
+                    error_message: `تم تفريغ ${nextChunk}/${totalChunks} أجزاء...`,
+                    payload: {
+                        ...payload,
+                        current_chunk: nextChunk,
+                        transcript_parts: transcriptParts,
+                    }
+                }).eq('id', jobId);
+
+                return new Response(JSON.stringify({ status: 'chunking', chunk: nextChunk, total: totalChunks }), { headers: corsHeaders });
             }
 
             throw new Error(`Unknown audio-worker stage: ${stage}`);
@@ -435,7 +577,6 @@ serve(async (req) => {
                             locked_at: null
                         }).eq('id', jobId);
                     } else {
-                        // Allow retry — reset to pending so orchestrator can re-dispatch
                         const backoffMs = Math.min(Math.pow(2, attempts) * 3000, 60000);
                         const nextRetry = new Date(Date.now() + backoffMs).toISOString();
                         await supabase.from('processing_queue').update({
@@ -484,7 +625,7 @@ async function saveTranscriptAndComplete(
         console.error(`[audio-worker] Storage upload exception:`, e.message);
     }
 
-    // Fallback: try saving to 'ocr' bucket (which definitely exists)
+    // Fallback: try saving to 'ocr' bucket
     if (!saved) {
         try {
             const fallbackPath = `${lessonId}/audio_transcript.txt`;
@@ -503,14 +644,14 @@ async function saveTranscriptAndComplete(
         }
     }
 
-    // Safety net: ALWAYS save transcript to lessons table (never lost)
+    // Safety net: ALWAYS save transcript to lessons table
     try {
         await supabase.from('lessons').update({
-            audio_transcript: transcript.substring(0, 100000) // Limit to 100K chars for DB
+            audio_transcript: transcript.substring(0, 100000)
         }).eq('id', lessonId);
         console.log(`[audio-worker] ✅ Transcript also saved to lessons.audio_transcript column`);
     } catch (e: any) {
-        console.warn(`[audio-worker] Could not save to lessons table (column may not exist):`, e.message);
+        console.warn(`[audio-worker] Could not save to lessons table:`, e.message);
     }
 
     console.log(`[audio-worker] Successfully transcribed audio for lesson ${lessonId}. Saved: ${saved}`);
@@ -521,7 +662,7 @@ async function saveTranscriptAndComplete(
     await supabase.from('processing_queue').upsert({
         lesson_id: lessonId,
         job_type: 'segment_lesson',
-        payload: { ...payload, stage: undefined, gemini_file_uri: undefined, gemini_file_name: undefined, poll_count: undefined },
+        payload: { ...payload, stage: undefined, gemini_file_uri: undefined, gemini_file_name: undefined, poll_count: undefined, gemini_mime_type: undefined },
         status: 'pending',
         dedupe_key: `lesson:${lessonId}:segment_lesson`
     }, { onConflict: 'dedupe_key', ignoreDuplicates: true });
@@ -529,17 +670,15 @@ async function saveTranscriptAndComplete(
 
 // ─── Helper: Remove repetitions from transcripts ───
 function cleanTranscriptRepetitions(text: string): string {
-    // Split into sentences
     const sentences = text.split(/[.،!؟\n]+/).map(s => s.trim()).filter(s => s.length > 5);
     const cleaned: string[] = [];
     let lastSentence = '';
     let repeatCount = 0;
 
     for (const sentence of sentences) {
-        // Check if this sentence is very similar to the last one
         if (sentence === lastSentence || (lastSentence.length > 10 && sentence.includes(lastSentence.substring(0, Math.min(lastSentence.length, 30))))) {
             repeatCount++;
-            if (repeatCount <= 1) cleaned.push(sentence); // Allow 1 repeat max
+            if (repeatCount <= 1) cleaned.push(sentence);
         } else {
             cleaned.push(sentence);
             repeatCount = 0;
@@ -547,7 +686,6 @@ function cleanTranscriptRepetitions(text: string): string {
         lastSentence = sentence;
     }
 
-    // Also remove word-level repetitions (e.g. "استدعى استدعى استدعى" → "استدعى")
     let result = cleaned.join('. ');
     result = result.replace(/(\b[\u0600-\u06FF]+\b)(\s+\1){2,}/g, '$1');
 
