@@ -140,9 +140,12 @@ serve(async (req) => {
 
             console.log(`[segmentation-worker] OCR complete. ${successPages}/${totalPages} pages have content.`);
 
-            // Also check Audio Track if Audio exists using 'sources'
-            const { data: lessonData } = await supabase.from('lessons').select('sources, audio_url').eq('id', lesson_id).single();
-            const hasAudio = lessonData?.audio_url || (lessonData?.sources || []).some((s: any) => s.type === 'audio');
+            // Check if this lesson has audio (by looking for transcribe_audio jobs in the queue)
+            const { count: audioJobCount } = await supabase.from('processing_queue')
+                .select('*', { count: 'exact', head: true })
+                .eq('lesson_id', lesson_id)
+                .eq('job_type', 'transcribe_audio');
+            const hasAudio = (audioJobCount || 0) > 0;
 
             // If NO pages have any content at all, and NO audio exists, then we truly failed
             if ((!successPages || successPages === 0) && !hasAudio) {

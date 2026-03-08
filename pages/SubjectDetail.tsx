@@ -190,12 +190,10 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
       }
       if (!lessonId) return;
 
-      // Check if this lesson has audio sources
+      // Check if this lesson has audio transcripts (sources column doesn't exist in DB — stored in localStorage)
       try {
-        const { data: lesson } = await supabase.from('lessons')
-          .select('sources').eq('id', lessonId).single();
-        const hasAudio = (lesson?.sources || []).some((s: any) => s.type === 'audio');
-        if (!hasAudio) return; // No audio file uploaded
+        const { data: audioBlob } = await supabase.storage.from('audio_transcripts').download(`${lessonId}/raw_transcript.txt`);
+        if (!audioBlob) return; // No audio transcript found
       } catch (_) { return; }
 
       console.log('[Audio] Auto-loading transcript for lesson', lessonId);
