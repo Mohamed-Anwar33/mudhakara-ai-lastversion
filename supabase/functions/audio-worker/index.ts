@@ -215,10 +215,10 @@ serve(async (req) => {
                 let fullTranscript = '';
                 let whisperDone = false;
 
-                // Try Whisper first — supports up to 25MB (≈2 hours of compressed audio)
-                if (openaiKey && fileSizeMB < 25) {
+                // Whisper ONLY for short files (≤10MB ≈ ≤10min) — hallucination-free zone
+                if (openaiKey && fileSizeMB <= 10) {
                     try {
-                        console.log(`[audio-worker] Attempting transcription with OpenAI Whisper...`);
+                        console.log(`[audio-worker] Short audio (${fileSizeMB.toFixed(1)}MB). Using Whisper...`);
                         await updateProgress('جاري تفريغ الصوت بدقة عالية (OpenAI Whisper)...');
 
                         const audioRes = await fetch(audioUrl);
@@ -228,6 +228,8 @@ serve(async (req) => {
                         formData.append('file', audioBlob, 'audio.mp3');
                         formData.append('model', 'whisper-1');
                         formData.append('response_format', 'text');
+                        formData.append('language', 'ar'); // Arabic hint for better accuracy
+                        formData.append('prompt', 'محاضرة جامعية باللغة العربية الفصحى'); // Context hint
 
                         const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
                             method: 'POST',
@@ -238,15 +240,17 @@ serve(async (req) => {
                         if (whisperRes.ok) {
                             fullTranscript = await whisperRes.text();
                             whisperDone = true;
-                            console.log(`[audio-worker] OpenAI Whisper transcription successful. Length: ${fullTranscript.length}`);
+                            console.log(`[audio-worker] Whisper OK. Length: ${fullTranscript.length}`);
                         } else {
                             const errText = await whisperRes.text();
-                            console.warn(`[audio-worker] Whisper API Failed (${whisperRes.status}): ${errText}. Falling back to Gemini...`);
+                            console.warn(`[audio-worker] Whisper Failed (${whisperRes.status}): ${errText}`);
                         }
                         audioBlob = null;
                     } catch (e: any) {
-                        console.warn(`[audio-worker] Whisper request exception: ${e.message}. Falling back to Gemini...`);
+                        console.warn(`[audio-worker] Whisper exception: ${e.message}`);
                     }
+                } else if (openaiKey && fileSizeMB > 10) {
+                    console.log(`[audio-worker] Audio too long for Whisper (${fileSizeMB.toFixed(1)}MB > 10MB). Skipping to Gemini chunked transcription.`);
                 }
 
                 // Quality check: detect Whisper hallucination
