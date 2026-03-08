@@ -756,22 +756,30 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
         return { success: false, title: al.lessonTitle };
       }
 
-      // If queue-based response, poll storage for results
+      // If queue-based response, poll segment status for completion
       if (result.queued) {
         const storagePath = `${lessonId}/lecture_${matchingSeg.id}.json`;
         let analysisData: any = null;
 
-        // Poll for up to 90 seconds (every 5s)
-        for (let attempt = 0; attempt < 18; attempt++) {
+        // Poll segment status (not storage) — avoids stale data from old analysis
+        for (let attempt = 0; attempt < 36; attempt++) { // 3 minutes max
           await new Promise(r => setTimeout(r, 5000));
           try {
-            const { data: blob } = await supabase.storage.from('analysis').download(storagePath);
-            if (blob) {
-              const text = await blob.text();
-              const parsed = JSON.parse(text);
-              if (parsed.explanation_notes && parsed.explanation_notes.length > 100) {
-                analysisData = parsed;
-                break;
+            const { data: seg } = await supabase.from('segmented_lectures')
+              .select('status, summary_storage_path')
+              .eq('id', matchingSeg.id).single();
+
+            // segment was reset to 'pending' by reanalyze-direct, wait for it to finish
+            if (seg?.status === 'summary_done' || seg?.status === 'quiz_done') {
+              // Fresh analysis done! Download the result
+              const { data: blob } = await supabase.storage.from('analysis').download(storagePath);
+              if (blob) {
+                const text = await blob.text();
+                const parsed = JSON.parse(text);
+                if (parsed.explanation_notes && parsed.explanation_notes.length > 50) {
+                  analysisData = parsed;
+                  break;
+                }
               }
             }
           } catch (_) { /* Not ready yet */ }
@@ -787,7 +795,7 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
           updated[lessonIdx] = {
             ...updated[lessonIdx],
             detailedExplanation: analysisData.explanation_notes,
-            focusPoints: analysisData.focusPoints || updated[lessonIdx].focusPoints,
+            focusPoints: analysisData.focusPoints || analysisData.key_definitions || updated[lessonIdx].focusPoints,
           };
           localStorage.setItem(`mudhakara_analyzedlessons_${id}`, JSON.stringify(updated));
           return updated;
@@ -1173,6 +1181,61 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
                     <BookOpen size={20} className="text-indigo-500" />
                   </h2>
                 </div>
+
+                {/* 🎙️ Audio Focus Card */}
+                {audioTranscriptData && audioTranscriptData.length > 50 && (
+                  <div className="mb-6 bg-gradient-to-br from-blue-50 via-cyan-50 to-blue-50 p-6 rounded-[2rem] border border-blue-200 shadow-md relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-blue-100/50 to-transparent rounded-full -translate-y-8 translate-x-8"></div>
+                    <div className="relative">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-2xl flex items-center justify-center shadow-lg">
+                            <span className="text-xl">🎙️</span>
+                          </div>
+                          <div>
+                            <h3 className="text-sm font-black text-blue-800">التسجيل الصوتي</h3>
+                            <span className="text-[10px] text-blue-500 font-bold">{audioTranscriptData.length.toLocaleString()} حرف مفرّغ</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="bg-blue-500 text-white text-[9px] font-black px-3 py-1 rounded-full">✅ تم التفريغ</span>
+                        </div>
+                      </div>
+
+                      {/* Key Topics */}
+                      <div className="mb-3">
+                        <div className="flex flex-wrap gap-2">
+                          {(() => {
+                            // Extract key topics from transcript
+                            const words = audioTranscriptData.split(/\s+/);
+                            const freq: Record<string, number> = {};
+                            for (const w of words) {
+                              if (w.length > 3 && !/^(هذا|هذه|التي|الذي|التي|كان|يكون|على|من|إلى|في|عن|هل|لا|ما|لم|لن|أن|إن|كل|بعض|ذلك|تلك|هناك|هنا)$/.test(w)) {
+                                freq[w] = (freq[w] || 0) + 1;
+                              }
+                            }
+                            return Object.entries(freq)
+                              .sort((a, b) => b[1] - a[1])
+                              .slice(0, 8)
+                              .map(([word]) => (
+                                <span key={word} className="bg-white text-blue-700 text-[9px] font-bold px-3 py-1.5 rounded-full border border-blue-100 shadow-sm">
+                                  {word}
+                                </span>
+                              ));
+                          })()}
+                        </div>
+                      </div>
+
+                      {/* Transcript Preview */}
+                      <div className="bg-white/70 p-4 rounded-2xl border border-blue-100">
+                        <p className="text-[11px] text-slate-600 leading-relaxed line-clamp-4" dir="rtl">
+                          {audioTranscriptData.substring(0, 500)}...
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-6">
                   {analyzedLessons.map((al, idx) => {
                     const weak = isWeakLesson(al);
