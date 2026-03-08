@@ -89,14 +89,64 @@ serve(async (req) => {
         console.log(`[ocr-worker] Executing ${job_type} for lesson ${lesson_id}`);
 
         // 1. Initial Job: extract_pdf_info
+        // Downloads PDF from Supabase Storage → uploads to Gemini File API → creates OCR batch jobs
         if (job_type === 'extract_pdf_info') {
-            const geminiUri = payload.gemini_file_uri;
-            if (!geminiUri) throw new Error('Missing gemini_file_uri');
+            let geminiUri = payload.gemini_file_uri;
+            let totalPages = payload.total_pages || 50;
 
-            // Assume total pages passed in payload from Vercel/Client or default to 50 for safety bracket
-            const totalPages = payload.total_pages || 50;
+            // If no Gemini URI yet, download from Supabase and upload to Gemini
+            if (!geminiUri) {
+                const filePath = payload.file_path;
+                if (!filePath) throw new Error('Missing file_path in payload');
 
-            // Generate individual OCR tasks (Batching 5 pages per job to avoid timeout)
+                console.log(`[ocr-worker] Downloading PDF from Supabase: ${filePath}`);
+                const { data: fileBlob, error: dlError } = await supabase.storage
+                    .from('homework-uploads')
+                    .download(filePath);
+
+                if (dlError || !fileBlob) {
+                    throw new Error(`Failed to download PDF: ${dlError?.message || 'no data'}`);
+                }
+
+                const arrayBuf = await fileBlob.arrayBuffer();
+                const fileBytes = new Uint8Array(arrayBuf);
+                console.log(`[ocr-worker] PDF downloaded: ${Math.round(fileBytes.length / 1024)}KB`);
+
+                // Estimate page count from file size (avg ~5KB per page for Arabic PDFs)
+                const estimatedPages = Math.ceil(fileBytes.length / 5000);
+                if (estimatedPages > 10 && estimatedPages < 500) {
+                    totalPages = estimatedPages;
+                    console.log(`[ocr-worker] Estimated ${totalPages} pages from file size.`);
+                } else {
+                    totalPages = 200; // Safe default for Arabic textbooks
+                    console.log(`[ocr-worker] Using safe default: ${totalPages} pages.`);
+                }
+
+                // Upload to Gemini File API
+                console.log(`[ocr-worker] Uploading PDF to Gemini File API...`);
+                const uploadRes = await fetch(
+                    `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${geminiKey}`,
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/pdf',
+                            'X-Goog-Upload-Protocol': 'raw',
+                        },
+                        body: fileBytes
+                    }
+                );
+
+                if (!uploadRes.ok) {
+                    throw new Error(`Gemini File API upload failed: ${uploadRes.status} ${await uploadRes.text()}`);
+                }
+
+                const uploadData = await uploadRes.json();
+                geminiUri = uploadData.file?.uri;
+                if (!geminiUri) throw new Error('No file URI returned from Gemini');
+                console.log(`[ocr-worker] Gemini upload success! URI: ${geminiUri}`);
+            }
+
+            // Generate individual OCR tasks (Batching 10 pages per job to avoid timeout)
             const batchSize = 10;
             const jobsToInsert = [];
             const lessonPagesToInsert = [];
@@ -109,7 +159,7 @@ serve(async (req) => {
                 jobsToInsert.push({
                     lesson_id: lesson_id,
                     job_type: 'ocr_page_batch',
-                    payload: { ...payload, page_range: pageRange },
+                    payload: { ...payload, gemini_file_uri: geminiUri, total_pages: totalPages, page_range: pageRange },
                     status: 'pending',
                     dedupe_key: `lesson:${lesson_id}:ocr_batch:${startPage}_${endPage}`
                 });
@@ -128,7 +178,7 @@ serve(async (req) => {
             jobsToInsert.push({
                 lesson_id: lesson_id,
                 job_type: 'segment_lesson',
-                payload: { ...payload },
+                payload: { ...payload, gemini_file_uri: geminiUri },
                 status: 'pending',
                 dedupe_key: `lesson:${lesson_id}:segment_lesson`
             });
@@ -137,7 +187,7 @@ serve(async (req) => {
             await supabase.from('processing_queue').upsert(jobsToInsert, { onConflict: 'dedupe_key', ignoreDuplicates: true });
 
             await supabase.from('processing_queue').update({ status: 'completed' }).eq('id', jobId);
-            return new Response(JSON.stringify({ status: 'completed', stage: 'queued_ocr_batches' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+            return new Response(JSON.stringify({ status: 'completed', stage: 'queued_ocr_batches', totalPages }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
 
 

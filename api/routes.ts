@@ -497,7 +497,7 @@ router.post('/reanalyze-direct', async (req, res) => {
                             rawTextChunks = [extractedText];
 
                             // Save the re-OCR'd text for future use
-                            const ocrStoragePath = `ocr/${lessonId}/reocr_${segment.start_page}_${segment.end_page}.txt`;
+                            const ocrStoragePath = `${lessonId}/reocr_${segment.start_page}_${segment.end_page}.txt`;
                             await supabase.storage.from('ocr')
                                 .upload(ocrStoragePath, extractedText, { upsert: true, contentType: 'text/plain;charset=UTF-8' });
 

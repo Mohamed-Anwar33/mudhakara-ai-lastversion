@@ -325,6 +325,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             };
 
             // V2 Architecture: Direct to specialized extraction workers
+            // NOTE: For PDFs, Gemini upload is deferred to ocr-worker Edge Function
+            // (Vercel free tier = 10s limit, not enough for large PDF uploads)
             const { data: job, error: queueError } = await supabase
                 .from('processing_queue')
                 .insert({
@@ -335,15 +337,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                         file_path: filePath,
                         file_name: file.fileName,
                         content_hash: contentHash,
-                        source_type: file.fileType,
-                        ...(initialJobType === 'extract_pdf_info' ? await (async () => {
-                            const geminiResult = await uploadToGemini(supabase, filePath);
-                            console.log(`[Ingest] Gemini upload complete. URI: ${geminiResult.uri}, Pages: ${geminiResult.pageCount}`);
-                            return {
-                                gemini_file_uri: geminiResult.uri,
-                                total_pages: geminiResult.pageCount
-                            };
-                        })() : {})
+                        source_type: file.fileType
                     },
                     status: 'pending'
                 })
