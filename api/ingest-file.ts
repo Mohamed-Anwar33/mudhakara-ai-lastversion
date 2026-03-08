@@ -7,7 +7,7 @@ import os from 'os';
 import path from 'path';
 
 export const config = {
-    maxDuration: 30
+    maxDuration: 10 // Vercel Free plan limit = 10 seconds
 };
 
 type SupportedFileType = 'pdf' | 'audio' | 'image';
@@ -234,6 +234,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 supabase.from('document_sections').delete().eq('lesson_id', lessonId),
                 supabase.from('lecture_segments').delete().eq('lesson_id', lessonId),
                 supabase.from('book_analysis').delete().eq('lesson_id', lessonId),
+                supabase.from('lesson_pages').delete().eq('lesson_id', lessonId),
+                supabase.from('segmented_lectures').delete().eq('lesson_id', lessonId),
+                supabase.from('document_embeddings').delete().eq('lesson_id', lessonId),
             ]);
         }
 
@@ -386,11 +389,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
             if (!countErr && pendingExtracts === 0) {
                 // No extractions pending, safe to queue segmentation (V2)
-                await supabase.from('processing_queue').insert({
+                await supabase.from('processing_queue').upsert({
                     lesson_id: lessonId,
                     job_type: 'segment_lesson',
-                    status: 'pending'
-                });
+                    status: 'pending',
+                    dedupe_key: `lesson:${lessonId}:segment_lesson`
+                }, { onConflict: 'dedupe_key', ignoreDuplicates: true });
                 await supabase
                     .from('lessons')
                     .update({ analysis_status: 'pending' })

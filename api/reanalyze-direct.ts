@@ -10,7 +10,7 @@ import { createClient } from '@supabase/supabase-js';
  */
 
 export const config = {
-    maxDuration: 300
+    maxDuration: 10
 };
 
 const getSupabaseAdmin = () => {
@@ -189,7 +189,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                             rawTextChunks = [extractedText];
 
                             // Save the re-OCR'd text for future use
-                            const ocrStoragePath = `ocr/${lessonId}/reocr_${segment.start_page}_${segment.end_page}.txt`;
+                            const ocrStoragePath = `${lessonId}/reocr_${segment.start_page}_${segment.end_page}.txt`;
                             await supabase.storage.from('ocr')
                                 .upload(ocrStoragePath, extractedText, { upsert: true, contentType: 'text/plain;charset=UTF-8' });
 
