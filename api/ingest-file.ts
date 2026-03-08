@@ -314,12 +314,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             if (file.fileType === 'audio') initialJobType = 'transcribe_audio';
             if (file.fileType === 'image') initialJobType = 'image_ocr';
 
+            // Map job type to its correct initial stage for UI display
+            const stageMap: Record<string, string> = {
+                'extract_pdf_info': 'extracting_info',
+                'transcribe_audio': 'upload',
+                'image_ocr': 'processing_batch'
+            };
+
             // V2 Architecture: Direct to specialized extraction workers
             const { data: job, error: queueError } = await supabase
                 .from('processing_queue')
                 .insert({
                     lesson_id: lessonId,
                     job_type: initialJobType,
+                    stage: stageMap[initialJobType] || 'pending_upload',
                     payload: {
                         file_path: filePath,
                         file_name: file.fileName,

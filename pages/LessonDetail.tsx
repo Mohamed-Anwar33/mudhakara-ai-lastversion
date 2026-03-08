@@ -425,15 +425,9 @@ const LessonDetail: React.FC = () => {
         }
       };
 
-      // Force re-upload: clear uploadedUrl so files get re-uploaded from scratch
+      // Use cached upload URLs when available — only upload new files
       for (let i = 0; i < lesson.sources.length; i++) {
         const src = { ...lesson.sources[i] };
-        // Clear cached upload URL to force fresh upload from device storage
-        if (src.uploadedUrl) {
-          src.uploadedUrl = undefined as any;
-          updatedSources[i] = src;
-          hasUpdates = true;
-        }
         await processSourceForIngest(src, i);
       }
 
@@ -463,7 +457,7 @@ const LessonDetail: React.FC = () => {
               fileType: f.type,
               contentHash: f.contentHash
             })),
-            forceReextract: true
+            forceReextract: false
           })
         });
 
@@ -493,12 +487,12 @@ const LessonDetail: React.FC = () => {
       }
 
       setProgressMsg('Triggering queue worker...');
-      triggerQueueWorker(5).catch(console.warn);
+      triggerQueueWorker(1).catch(console.warn);
 
       setProgressMsg('Processing queue and waiting for analysis...');
       let result: AIResult | null = null;
-      const pollIntervalMs = 3000;  // Poll every 3s for faster feedback
-      const queueKickEveryAttempts = 4; // Kick queue every ~12s to keep pipeline alive
+      const pollIntervalMs = 5000;  // Poll every 5s — saves Vercel invocations on free tier
+      const queueKickEveryAttempts = 6; // Kick queue every ~30s to keep pipeline alive without waste
       const maxPollAttempts = 10000; // Run essentially indefinitely for large files
       const maxConsecutiveStatusErrors = 10;
       let consecutiveStatusErrors = 0;
@@ -506,7 +500,7 @@ const LessonDetail: React.FC = () => {
 
       for (let attempt = 1; attempt <= maxPollAttempts; attempt++) {
         if (attempt === 1 || attempt % queueKickEveryAttempts === 0) {
-          triggerQueueWorker(5).catch(console.warn);
+          triggerQueueWorker(1).catch(console.warn);
         }
 
         let status: any;

@@ -329,12 +329,25 @@ serve(async (req) => {
                     const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
                     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
                     const supabase = createClient(supabaseUrl, supabaseKey);
-                    await supabase.from('processing_queue').update({
-                        status: 'failed',
-                        error_message: error.message || 'Unknown Audio Worker Error',
-                        locked_by: null,
-                        locked_at: null
-                    }).eq('id', jobId);
+                    const { data: currentJob } = await supabase.from('processing_queue')
+                        .select('attempt_count').eq('id', jobId).single();
+                    const attempts = (currentJob?.attempt_count || 0);
+                    if (attempts >= 5) {
+                        await supabase.from('processing_queue').update({
+                            status: 'failed',
+                            error_message: error.message || 'Unknown Audio Worker Error (max retries exceeded)',
+                            locked_by: null,
+                            locked_at: null
+                        }).eq('id', jobId);
+                    } else {
+                        // Allow retry — reset to pending so orchestrator can re-dispatch
+                        await supabase.from('processing_queue').update({
+                            status: 'pending',
+                            error_message: `Retry ${attempts}/5: ${error.message || 'Unknown Audio Worker Error'}`,
+                            locked_by: null,
+                            locked_at: null
+                        }).eq('id', jobId);
+                    }
                 }
             } catch (_) { }
         }
