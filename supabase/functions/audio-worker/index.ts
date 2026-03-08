@@ -199,8 +199,38 @@ serve(async (req) => {
                     }
                 }
 
-                // If Whisper succeeded → save and complete immediately
+                // Quality check: detect Whisper hallucination
                 if (whisperDone && fullTranscript) {
+                    // Check 1: Suspiciously short for file size
+                    const expectedMinChars = fileSizeMB * 500; // ~500 chars per MB minimum
+                    if (fullTranscript.length < expectedMinChars) {
+                        console.warn(`[audio-worker] Whisper output too short: ${fullTranscript.length} chars for ${fileSizeMB.toFixed(1)}MB (expected >=${expectedMinChars.toFixed(0)}). Falling back to Gemini.`);
+                        whisperDone = false;
+                        fullTranscript = '';
+                    }
+                }
+
+                if (whisperDone && fullTranscript) {
+                    // Check 2: Detect repeated phrases (hallucination)
+                    const words = fullTranscript.split(/\s+/);
+                    const phrases: Record<string, number> = {};
+                    for (let i = 0; i < words.length - 4; i++) {
+                        const phrase = words.slice(i, i + 4).join(' ');
+                        phrases[phrase] = (phrases[phrase] || 0) + 1;
+                    }
+                    const maxRepeat = Math.max(...Object.values(phrases), 0);
+                    if (maxRepeat > 5) {
+                        console.warn(`[audio-worker] Whisper hallucination detected: phrase repeated ${maxRepeat} times. Falling back to Gemini.`);
+                        whisperDone = false;
+                        fullTranscript = '';
+                    }
+                }
+
+                // If Whisper passed quality checks → clean and save
+                if (whisperDone && fullTranscript) {
+                    // Clean transcript: remove consecutive duplicate sentences
+                    fullTranscript = cleanTranscriptRepetitions(fullTranscript);
+                    console.log(`[audio-worker] Whisper quality OK. Cleaned length: ${fullTranscript.length}`);
                     await saveTranscriptAndComplete(supabase, lesson_id, jobId!, fullTranscript, payload, updateProgress);
                     return new Response(JSON.stringify({ status: 'completed' }), { headers: corsHeaders });
                 }
@@ -311,8 +341,9 @@ serve(async (req) => {
                 console.log(`[audio-worker] Starting Gemini transcription with file URI: ${fileUri}`);
                 await updateProgress('نجح الرفع. جاري الاستماع للمقطع وتفريغ النصوص (Gemini 1.5 Pro)... هذه العملية قد تستغرق بضع دقائق.');
 
-                const fullTranscript = await transcribeWithGemini(fileUri, geminiKey);
-                console.log(`[audio-worker] Gemini Pro transcription successful. Length: ${fullTranscript.length}`);
+                let fullTranscript = await transcribeWithGemini(fileUri, geminiKey);
+                fullTranscript = cleanTranscriptRepetitions(fullTranscript);
+                console.log(`[audio-worker] Gemini Pro transcription successful. Cleaned length: ${fullTranscript.length}`);
 
                 if (!fullTranscript || fullTranscript.length < 5) {
                     console.warn(`[audio-worker] Transcription returned unusually short text.`);
@@ -434,3 +465,29 @@ async function saveTranscriptAndComplete(
     }, { onConflict: 'dedupe_key', ignoreDuplicates: true });
 }
 
+// ─── Helper: Remove repetitions from transcripts ───
+function cleanTranscriptRepetitions(text: string): string {
+    // Split into sentences
+    const sentences = text.split(/[.،!؟\n]+/).map(s => s.trim()).filter(s => s.length > 5);
+    const cleaned: string[] = [];
+    let lastSentence = '';
+    let repeatCount = 0;
+
+    for (const sentence of sentences) {
+        // Check if this sentence is very similar to the last one
+        if (sentence === lastSentence || (lastSentence.length > 10 && sentence.includes(lastSentence.substring(0, Math.min(lastSentence.length, 30))))) {
+            repeatCount++;
+            if (repeatCount <= 1) cleaned.push(sentence); // Allow 1 repeat max
+        } else {
+            cleaned.push(sentence);
+            repeatCount = 0;
+        }
+        lastSentence = sentence;
+    }
+
+    // Also remove word-level repetitions (e.g. "استدعى استدعى استدعى" → "استدعى")
+    let result = cleaned.join('. ');
+    result = result.replace(/(\b[\u0600-\u06FF]+\b)(\s+\1){2,}/g, '$1');
+
+    return result;
+}

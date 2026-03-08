@@ -4,57 +4,78 @@ const supabase = createClient(
     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhzYWJvenhmamRlb2RkbGx0aXZ3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTU5Mzc2NiwiZXhwIjoyMDg1MTY5NzY2fQ.QEvf3c_rn9K1PzjVJXwELtT2PPzu6OFV7-wjvp2CYF0'
 );
 
-async function checkStorage() {
-    const lessonId = 'fe5dedf5-10dd-42ba-bf26-244a0183f605';
+async function deepDiagnose() {
+    const lessonId = 'faf5df0f-313f-4412-83cf-a5f37b181e35';
 
-    // List ALL files in audio_transcripts bucket at root
-    console.log('=== Listing audio_transcripts bucket root ===');
-    const { data: rootFiles, error: rootErr } = await supabase.storage.from('audio_transcripts').list('', { limit: 50 });
-    console.log('Root folders/files:', rootFiles?.map(f => f.name) || [], rootErr?.message);
+    // 1. Check audio source info
+    const { data: lesson } = await supabase.from('lessons')
+        .select('lesson_title, sources, audio_url, audio_transcript')
+        .eq('id', lessonId).single();
 
-    // List inside audio_transcripts/ sub dir
-    console.log('\n=== Listing audio_transcripts/ subdir ===');
-    const { data: subFiles } = await supabase.storage.from('audio_transcripts').list('audio_transcripts', { limit: 50 });
-    console.log('audio_transcripts/ contents:', subFiles?.map(f => f.name));
+    console.log('=== LESSON INFO ===');
+    console.log('Title:', lesson?.lesson_title);
+    const audioSources = (lesson?.sources || []).filter(s => s.type === 'audio');
+    console.log('Audio sources:', JSON.stringify(audioSources, null, 2));
+    console.log('audio_url field:', lesson?.audio_url || 'NONE');
+    console.log('audio_transcript length:', (lesson?.audio_transcript || '').length);
 
-    // List inside lesson ID dir  
-    console.log(`\n=== Listing ${lessonId}/ ===`);
-    const { data: lessonFiles } = await supabase.storage.from('audio_transcripts').list(lessonId, { limit: 50 });
-    console.log(`${lessonId}/ contents:`, lessonFiles?.map(f => f.name));
-
-    // List inside audio_transcripts/{lessonId}/
-    console.log(`\n=== Listing audio_transcripts/${lessonId}/ ===`);
-    const { data: deepFiles } = await supabase.storage.from('audio_transcripts').list(`audio_transcripts/${lessonId}`, { limit: 50 });
-    console.log(`audio_transcripts/${lessonId}/ contents:`, deepFiles?.map(f => f.name));
-
-    // Try download from double-nested path
-    const paths = [
-        `audio_transcripts/${lessonId}/raw_transcript.txt`,
-        `${lessonId}/raw_transcript.txt`,
-    ];
-    for (const p of paths) {
-        const { data, error } = await supabase.storage.from('audio_transcripts').download(p);
-        if (data && !error) {
-            const text = await data.text();
-            console.log(`\n✅ FOUND at: ${p} (${text.length} chars)`);
-            console.log(`Preview: ${text.substring(0, 200)}`);
-        } else {
-            console.log(`\n❌ NOT at: ${p} — ${error?.message || 'unknown'}`);
+    // 2. Check audio file size  
+    for (const src of audioSources) {
+        const path = src.content || src.uploadedUrl?.split('/homework-uploads/')[1] || '';
+        if (path) {
+            const cleanPath = decodeURIComponent(path.trim()).replace(/^\/+/, '').split('?')[0];
+            console.log('\nChecking audio file:', cleanPath);
+            const { data: signedUrl } = await supabase.storage.from('homework-uploads').createSignedUrl(cleanPath, 60);
+            if (signedUrl?.signedUrl) {
+                const head = await fetch(signedUrl.signedUrl, { method: 'HEAD' });
+                const size = parseInt(head.headers.get('content-length') || '0');
+                const type = head.headers.get('content-type');
+                console.log(`  Size: ${(size / 1024 / 1024).toFixed(2)} MB`);
+                console.log(`  Type: ${type}`);
+            }
         }
     }
 
-    // Also check other lessons
-    console.log('\n=== ALL lessons with transcribe_audio completed ===');
-    const { data: jobs } = await supabase.from('processing_queue')
-        .select('lesson_id, status, error_message')
-        .eq('job_type', 'transcribe_audio')
-        .eq('status', 'completed')
-        .order('updated_at', { ascending: false })
-        .limit(5);
-    for (const j of (jobs || [])) {
-        const { data: b } = await supabase.storage.from('audio_transcripts').download(`audio_transcripts/${j.lesson_id}/raw_transcript.txt`);
-        console.log(`  ${j.lesson_id}: ${b ? `✅ ${(await b.text()).length} chars` : '❌ NOT FOUND'}`);
+    // 3. Check transcribe_audio job details
+    const { data: audioJobs } = await supabase.from('processing_queue')
+        .select('*')
+        .eq('lesson_id', lessonId)
+        .eq('job_type', 'transcribe_audio');
+
+    console.log('\n=== TRANSCRIBE JOBS ===');
+    for (const j of (audioJobs || [])) {
+        console.log(`Status: ${j.status}`);
+        console.log(`Attempts: ${j.attempt_count}`);
+        console.log(`Error: ${j.error_message}`);
+        console.log(`Payload stage: ${j.payload?.stage}`);
+        console.log(`Payload keys: ${Object.keys(j.payload || {}).join(', ')}`);
+    }
+
+    // 4. Read the actual transcript
+    const { data: blob } = await supabase.storage.from('ocr').download(`${lessonId}/audio_transcript.txt`);
+    if (blob) {
+        const text = await blob.text();
+        console.log(`\n=== TRANSCRIPT (${text.length} chars) ===`);
+        console.log(text);
+    }
+
+    // 5. Check segments
+    const { data: segs } = await supabase.from('segmented_lectures')
+        .select('id, title, start_page, end_page, status')
+        .eq('lesson_id', lessonId)
+        .order('start_page');
+
+    console.log(`\n=== SEGMENTS (${segs?.length || 0}) ===`);
+    const audioSegs = (segs || []).filter(s => s.title?.includes('صوت'));
+    console.log(`Audio segments: ${audioSegs.length}`);
+    for (const s of audioSegs) {
+        console.log(`  "${s.title}" | pages ${s.start_page}-${s.end_page} | ${s.status}`);
+    }
+
+    // Show first 5 segments for context
+    for (const s of (segs || []).slice(0, 5)) {
+        console.log(`  [${s.start_page}-${s.end_page}] "${s.title}" | ${s.status}`);
     }
 }
 
-checkStorage().catch(console.error);
+deepDiagnose().catch(console.error);
