@@ -75,11 +75,60 @@ async function checkGeminiFileStatus(fileName: string, apiKey: string): Promise<
     return 'PROCESSING';
 }
 
-// ─── Stage 3 Helper: Transcribe with Gemini using file URI ───
-async function transcribeWithGemini(fileUri: string, apiKey: string): Promise<string> {
-    const prompt = "أنت خبير في التفريغ الصوتي (Transcription). قم بتفريغ هذا المقطع الصوتي بكل دقة إلى نص عربي واضح ومترابط. اكتب النص بالكامل كما قيل بدون تلخيص، وتأكد من صحة الإملاء والوقفات.";
+// ─── Stage 3 Helper: Transcribe with Gemini using file URI (parallel chunks) ───
+async function transcribeWithGemini(fileUri: string, apiKey: string, fileSizeMB?: number): Promise<string> {
+    // Estimate audio duration: ~1MB ≈ 1 minute for compressed audio
+    const estimatedMinutes = Math.max(1, Math.round(fileSizeMB || 10));
+    const CHUNK_SIZE_MINUTES = 10;
 
-    const apiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`, {
+    // If short audio (<= 12 min), do single transcription
+    if (estimatedMinutes <= 12) {
+        return await geminiTranscribeChunk(fileUri, apiKey, null);
+    }
+
+    // Split into chunks and transcribe in parallel
+    const numChunks = Math.ceil(estimatedMinutes / CHUNK_SIZE_MINUTES);
+    console.log(`[audio-worker] Splitting ${estimatedMinutes}min audio into ${numChunks} chunks for parallel transcription`);
+
+    const chunkPromises = [];
+    for (let i = 0; i < numChunks; i++) {
+        const startMin = i * CHUNK_SIZE_MINUTES;
+        const endMin = Math.min((i + 1) * CHUNK_SIZE_MINUTES, estimatedMinutes);
+        chunkPromises.push(
+            geminiTranscribeChunk(fileUri, apiKey, { start: startMin, end: endMin, part: i + 1, total: numChunks })
+        );
+    }
+
+    const results = await Promise.allSettled(chunkPromises);
+    const transcripts: string[] = [];
+    for (const r of results) {
+        if (r.status === 'fulfilled' && r.value) {
+            transcripts.push(r.value);
+        } else if (r.status === 'rejected') {
+            console.warn(`[audio-worker] Chunk transcription failed:`, r.reason?.message);
+        }
+    }
+
+    console.log(`[audio-worker] Parallel transcription done: ${transcripts.length}/${numChunks} chunks succeeded`);
+    return transcripts.join('\n\n');
+}
+
+// ─── Single chunk transcription call ───
+async function geminiTranscribeChunk(
+    fileUri: string, apiKey: string,
+    timeRange: { start: number; end: number; part: number; total: number } | null
+): Promise<string> {
+    let prompt: string;
+    if (timeRange) {
+        prompt = `أنت خبير في التفريغ الصوتي. هذا الملف الصوتي مقسم إلى ${timeRange.total} أجزاء.
+قم بتفريغ الجزء ${timeRange.part} فقط: من الدقيقة ${timeRange.start} إلى الدقيقة ${timeRange.end}.
+اكتب النص بالكامل كما قيل بدون تلخيص أو حذف. تأكد من صحة الإملاء والعبارات.
+لا تكتب أي شيء خارج هذا النطاق الزمني. ابدأ التفريغ مباشرة بدون مقدمة.`;
+    } else {
+        prompt = "أنت خبير في التفريغ الصوتي (Transcription). قم بتفريغ هذا المقطع الصوتي بكل دقة إلى نص عربي واضح ومترابط. اكتب النص بالكامل كما قيل بدون تلخيص، وتأكد من صحة الإملاء والوقفات.";
+    }
+
+    const apiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -92,6 +141,7 @@ async function transcribeWithGemini(fileUri: string, apiKey: string): Promise<st
             }],
             generationConfig: {
                 temperature: 0.1,
+                maxOutputTokens: 8192,
             }
         })
     });
@@ -259,7 +309,8 @@ serve(async (req) => {
                         stage: 'polling_gemini',
                         gemini_file_uri: fileUri,
                         gemini_file_name: fileName,
-                        poll_count: 0
+                        poll_count: 0,
+                        file_size_mb: fileSizeMB,
                     }
                 }).eq('id', jobId);
 
@@ -341,7 +392,7 @@ serve(async (req) => {
                 console.log(`[audio-worker] Starting Gemini transcription with file URI: ${fileUri}`);
                 await updateProgress('نجح الرفع. جاري الاستماع للمقطع وتفريغ النصوص (Gemini 1.5 Pro)... هذه العملية قد تستغرق بضع دقائق.');
 
-                let fullTranscript = await transcribeWithGemini(fileUri, geminiKey);
+                let fullTranscript = await transcribeWithGemini(fileUri, geminiKey, payload.file_size_mb);
                 fullTranscript = cleanTranscriptRepetitions(fullTranscript);
                 console.log(`[audio-worker] Gemini Pro transcription successful. Cleaned length: ${fullTranscript.length}`);
 
