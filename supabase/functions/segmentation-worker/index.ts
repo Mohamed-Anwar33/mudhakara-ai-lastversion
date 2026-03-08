@@ -62,6 +62,7 @@ serve(async (req) => {
             // 1. SELF-HEALING: Reset any OCR jobs stuck in 'processing' for > 2 min
             //    These are orphans from Edge Functions that crashed after orchestrator disconnected.
             //    Instead of waiting 3+ min for orphan recovery in process-queue, we fix them HERE.
+            //    After 5+ attempts, mark as permanently failed so the barrier can proceed.
             const stuckCutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString();
             const { data: stuckJobs } = await supabase.from('processing_queue')
                 .select('id, attempt_count')
@@ -71,12 +72,44 @@ serve(async (req) => {
                 .lt('updated_at', stuckCutoff);
 
             if (stuckJobs && stuckJobs.length > 0) {
-                console.warn(`[segmentation-worker] SELF-HEALING: Found ${stuckJobs.length} stuck OCR jobs. Resetting to pending for retry.`);
+                console.warn(`[segmentation-worker] SELF-HEALING: Found ${stuckJobs.length} stuck OCR jobs.`);
                 for (const stuck of stuckJobs) {
+                    const attempts = Number(stuck.attempt_count || 0);
+                    if (attempts >= 5) {
+                        // Permanently failed — don't retry, let barrier proceed
+                        await supabase.from('processing_queue').update({
+                            status: 'failed',
+                            error_message: `OCR permanently failed after ${attempts} attempts`,
+                            locked_by: null, locked_at: null
+                        }).eq('id', stuck.id);
+                        console.warn(`[segmentation-worker] OCR job ${stuck.id} marked FAILED (${attempts} attempts).`);
+                    } else {
+                        await supabase.from('processing_queue').update({
+                            status: 'pending',
+                            locked_by: null, locked_at: null
+                        }).eq('id', stuck.id);
+                        console.log(`[segmentation-worker] Reset OCR job ${stuck.id} to pending (attempt ${attempts}).`);
+                    }
+                }
+            }
+
+            // 1b. SAFETY NET: Mark any OCR/extract job with 5+ attempts as failed
+            //     even if it's currently 'pending' — prevents infinite retry loops
+            const { data: exhaustedJobs } = await supabase.from('processing_queue')
+                .select('id, attempt_count, job_type')
+                .eq('lesson_id', lesson_id)
+                .in('job_type', ['extract_pdf_info', 'ocr_page_batch'])
+                .in('status', ['pending', 'processing'])
+                .gte('attempt_count', 5);
+
+            if (exhaustedJobs && exhaustedJobs.length > 0) {
+                console.warn(`[segmentation-worker] ${exhaustedJobs.length} OCR jobs exhausted retries. Marking as failed.`);
+                for (const ex of exhaustedJobs) {
                     await supabase.from('processing_queue').update({
-                        status: 'pending',
+                        status: 'failed',
+                        error_message: `Exceeded max attempts (${ex.attempt_count})`,
                         locked_by: null, locked_at: null
-                    }).eq('id', stuck.id);
+                    }).eq('id', ex.id);
                 }
             }
 
