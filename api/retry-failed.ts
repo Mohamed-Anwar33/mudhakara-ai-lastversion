@@ -49,11 +49,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             });
         }
 
-        console.log(`[retry-failed] Found ${failedJobs.length} failed jobs for lesson ${lessonId}`);
+        // Filter out permanently failed jobs that can never succeed by retrying
+        const retryableJobs = failedJobs.filter((j: any) => {
+            // Skip audio jobs that exhausted Gemini polling (file can't be processed)
+            if (j.job_type === 'transcribe_audio') {
+                const pollCount = j.payload?.poll_count || 0;
+                if (pollCount >= 60) {
+                    console.log(`[retry-failed] Skipping transcribe_audio ${j.id}: Gemini permanently failed (${pollCount} polls)`);
+                    return false;
+                }
+            }
+            return true;
+        });
 
-        // 2. Reset failed jobs to 'pending' with attempt_count reset
+        if (retryableJobs.length === 0) {
+            return res.status(200).json({
+                status: 'no_retryable_jobs',
+                message: 'المهام الفاشلة غير قابلة لإعادة المحاولة',
+                retriedCount: 0
+            });
+        }
+
+        console.log(`[retry-failed] Found ${retryableJobs.length} retryable jobs (of ${failedJobs.length} failed) for lesson ${lessonId}`);
+
+        // 2. Reset retryable failed jobs to 'pending' with attempt_count reset
         const resetResults = [];
-        for (const job of failedJobs) {
+        for (const job of retryableJobs) {
             const { error: updateErr } = await supabase
                 .from('processing_queue')
                 .update({

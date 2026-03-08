@@ -439,6 +439,7 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
       const maxPollIntervalMs = 8000;   // Cap at 8 seconds
       const pollStartTime = Date.now();
       let consecutiveNoJobs = 0;
+      let autoRetryCount = 0;
 
       for (let attempt = 1; attempt <= 10000; attempt++) {
         // Only trigger queue worker aggressively at the start or if we know jobs exist
@@ -498,22 +499,26 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
             // If there are failed jobs, offer retry instead of full failure
             if (failedJobs.length > 0 && !status?.analysisResult) {
               const failInfo = failedJobs.map((j: any) => `${j.job_type}: ${j.error_message || 'فشل'}`).join(' | ');
-              setProgressMsg(`فشلت ${failedJobs.length} مهام. جاري إعادة المحاولة تلقائياً...`);
-              // Auto-retry failed jobs
-              try {
-                const retryRes = await fetch('/api/retry-failed', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ lessonId: tempLessonId })
-                });
-                const retryData = await retryRes.json().catch(() => ({}));
-                if (retryData.retriedCount > 0) {
-                  toast('جاري إعادة تحليل المهام الفاشلة... 🔄', { icon: '🔁', style: { direction: 'rtl' } });
-                  triggerQueueWorker(1).catch(console.warn);
-                  continue; // Continue polling — retried jobs are now pending
-                }
-              } catch (e) { console.warn('Auto-retry failed:', e); }
-              // If retry also failed or no jobs to retry
+              // Cap auto-retries to prevent infinite loops with permanently failed jobs
+              if (!autoRetryCount) autoRetryCount = 0;
+              if (autoRetryCount < 2) {
+                autoRetryCount++;
+                setProgressMsg(`فشلت ${failedJobs.length} مهام. جاري إعادة المحاولة تلقائياً (${autoRetryCount}/2)...`);
+                try {
+                  const retryRes = await fetch('/api/retry-failed', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ lessonId: tempLessonId })
+                  });
+                  const retryData = await retryRes.json().catch(() => ({}));
+                  if (retryData.retriedCount > 0) {
+                    toast('جاري إعادة تحليل المهام الفاشلة... 🔄', { icon: '🔁', style: { direction: 'rtl' } });
+                    triggerQueueWorker(1).catch(console.warn);
+                    continue; // Continue polling — retried jobs are now pending
+                  }
+                } catch (e) { console.warn('Auto-retry failed:', e); }
+              }
+              // If max retries reached or retry returned 0
               if (Date.now() - pollStartTime > 120000) {
                 throw new Error(`فشل التحليل: ${failInfo}`);
               }
