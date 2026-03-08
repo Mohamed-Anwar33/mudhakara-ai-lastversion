@@ -165,8 +165,8 @@ serve(async (req) => {
                 let fullTranscript = '';
                 let whisperDone = false;
 
-                // Try Whisper for small files (< 12MB)
-                if (openaiKey && fileSizeMB < 12) {
+                // Try Whisper first — supports up to 25MB (≈2 hours of compressed audio)
+                if (openaiKey && fileSizeMB < 25) {
                     try {
                         console.log(`[audio-worker] Attempting transcription with OpenAI Whisper...`);
                         await updateProgress('جاري تفريغ الصوت بدقة عالية (OpenAI Whisper)...');
@@ -208,7 +208,7 @@ serve(async (req) => {
                 // Whisper not used or failed → Upload to Gemini
                 if (!geminiKey) throw new Error('Missing GEMINI_API_KEY for fallback audio transcription');
 
-                console.log(`[audio-worker] File too large for Whisper (${fileSizeMB.toFixed(2)}MB). Bypassing to Gemini Stream directly to prevent OOM.`);
+                console.log(`[audio-worker] File too large for Whisper (${fileSizeMB.toFixed(2)}MB > 25MB limit). Falling back to Gemini Stream.`);
                 console.log(`[audio-worker] Uploading stream to Gemini File API for transcription...`);
                 await updateProgress('جاري رفع المقطع المستمر إلى محرك Gemini Pro للملفات الكبيرة (Streaming)...');
 
@@ -277,8 +277,8 @@ serve(async (req) => {
                 }
 
                 // Still PROCESSING — re-queue with backoff
-                if (pollCount >= 60) {
-                    // 60 polls × ~15s = ~15 minutes max wait
+                if (pollCount >= 30) {
+                    // 30 polls × ~15s = ~7.5 minutes max wait
                     throw new Error(`Gemini file processing timeout after ${pollCount} polls.`);
                 }
 

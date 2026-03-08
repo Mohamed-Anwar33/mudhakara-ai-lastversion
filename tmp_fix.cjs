@@ -1,42 +1,43 @@
 const { createClient } = require('@supabase/supabase-js');
-
 const supabase = createClient(
     'https://hsabozxfjdeoddlltivw.supabase.co',
     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhzYWJvenhmamRlb2RkbGx0aXZ3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTU5Mzc2NiwiZXhwIjoyMDg1MTY5NzY2fQ.QEvf3c_rn9K1PzjVJXwELtT2PPzu6OFV7-wjvp2CYF0'
 );
 
-async function fixNewLesson() {
-    const lessonId = 'd1225698-7f2f-4443-9333-e7cabc8f6f59';
+async function resetAudioToWhisper() {
+    const lessonId = '77281931-3ad3-4424-b841-2639df4fa99d';
 
-    console.log('=== FIXING LESSON', lessonId, '===\n');
+    console.log(`=== RESETTING AUDIO JOB TO USE WHISPER ===\n`);
 
-    // 1. Reset segment_lesson to pending with cleared attempts
-    const { data: segJob } = await supabase.from('processing_queue')
-        .update({ status: 'pending', locked_by: null, locked_at: null, attempt_count: 0, error_message: null, next_retry_at: null })
-        .eq('lesson_id', lessonId).eq('job_type', 'segment_lesson')
-        .select('id');
-    console.log(`[1] Reset ${segJob?.length || 0} segment_lesson jobs`);
+    // Find the transcribe_audio job
+    const { data: audioJob } = await supabase.from('processing_queue')
+        .select('id, payload, status')
+        .eq('lesson_id', lessonId).eq('job_type', 'transcribe_audio').single();
 
-    // 2. Delete stale segmented_lectures
-    const { data: dels } = await supabase.from('segmented_lectures').delete().eq('lesson_id', lessonId).select('id');
-    console.log(`[2] Deleted ${dels?.length || 0} stale segmented_lectures`);
+    if (!audioJob) { console.log('No audio job found'); return; }
+    console.log(`Found job ${audioJob.id} | status=${audioJob.status} | stage=${audioJob.payload?.stage}`);
 
-    // 3. Reset lesson status
-    await supabase.from('lessons').update({ analysis_status: 'processing', pipeline_stage: 'segmenting_content' }).eq('id', lessonId);
-    console.log(`[3] Lesson status reset to processing`);
+    // Reset to upload stage with clean payload (forces Whisper-first path)
+    const cleanPayload = {
+        audio_url: audioJob.payload.audio_url || audioJob.payload.file_path,
+        file_path: audioJob.payload.file_path || audioJob.payload.audio_url,
+        stage: 'upload'  // Back to Stage 1 — will now try Whisper first (25MB limit)
+        // Removed: gemini_file_uri, gemini_file_name, poll_count
+    };
 
-    // 4. Check current state
-    const { data: jobs } = await supabase.from('processing_queue')
-        .select('id, job_type, status, attempt_count, error_message, payload')
-        .eq('lesson_id', lessonId).in('status', ['pending', 'processing', 'failed']);
+    const { error } = await supabase.from('processing_queue').update({
+        status: 'pending',
+        locked_by: null,
+        locked_at: null,
+        next_retry_at: null,
+        attempt_count: 0,
+        error_message: null,
+        payload: cleanPayload
+    }).eq('id', audioJob.id);
 
-    console.log(`\n=== ACTIVE/FAILED JOBS ===`);
-    for (const j of (jobs || [])) {
-        const stage = j.payload?.stage || 'N/A';
-        const polls = j.payload?.poll_count || 0;
-        console.log(`  [${j.job_type}] ${j.status} | stage=${stage} | polls=${polls} | attempts=${j.attempt_count}`);
-    }
-    console.log('\n✅ Done! The barrier will now timeout at 5min and proceed with PDF only.');
+    console.log(`Reset job ${audioJob.id} to upload stage → Whisper first`, error || '✅');
+    console.log('New payload:', JSON.stringify(cleanPayload, null, 2));
+    console.log('\nAudio-worker will now try Whisper (≤25MB) instead of Gemini!');
 }
 
-fixNewLesson().catch(console.error);
+resetAudioToWhisper().catch(console.error);
