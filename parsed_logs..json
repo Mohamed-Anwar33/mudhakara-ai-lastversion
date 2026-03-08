@@ -1,0 +1,802 @@
+[
+  {
+    "event_message": "Listening on http://localhost:9999/\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "0ed49d78-9324-4163-9816-4d6484c48e98",
+    "level": "info",
+    "timestamp": 1772932833414000
+  },
+  {
+    "event_message": "booted (time: 30ms)",
+    "event_type": "Boot",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "c867f735-8c79-4f10-add9-06be8a340712",
+    "level": "log",
+    "timestamp": 1772932833411000
+  },
+  {
+    "event_message": "Listening on http://localhost:9999/\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "d57db935-261d-4894-8e61-8734fa542b76",
+    "level": "info",
+    "timestamp": 1772932833379000
+  },
+  {
+    "event_message": "booted (time: 33ms)",
+    "event_type": "Boot",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "e7e2f280-0f2f-484b-b2b9-e5473a86e291",
+    "level": "log",
+    "timestamp": 1772932833376000
+  },
+  {
+    "event_message": "Listening on http://localhost:9999/\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "7f11855d-b0db-44d0-a732-2d70b5a255cf",
+    "level": "info",
+    "timestamp": 1772932833375000
+  },
+  {
+    "event_message": "booted (time: 31ms)",
+    "event_type": "Boot",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "554887dc-c8ad-4418-9b08-6fc6da7900bd",
+    "level": "log",
+    "timestamp": 1772932833372000
+  },
+  {
+    "event_message": "shutdown",
+    "event_type": "Shutdown",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "b685d887-911b-4b65-878d-d74ece1c7520",
+    "level": "log",
+    "timestamp": 1772932832134000
+  },
+  {
+    "event_message": "[analyze-lesson] Executing analyze_lecture | Stage: pending_upload for lesson d10221c0-cc89-4452-8490-d679df38b21b\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "2b1f8687-7f4b-4bac-b348-b8a7729783ec",
+    "level": "info",
+    "timestamp": 1772932830695000
+  },
+  {
+    "event_message": "[analyze-lesson] Executing analyze_lecture | Stage: summarizing_batches for lesson d10221c0-cc89-4452-8490-d679df38b21b\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "b284b517-ccf8-407d-a93b-0bdffec6ae21",
+    "level": "info",
+    "timestamp": 1772932830648000
+  },
+  {
+    "event_message": "[analyze-lesson] Map Phase: Processing batch 1/1...\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "5c1afeb5-bd20-4a66-8730-bb201d75fa16",
+    "level": "info",
+    "timestamp": 1772932830648000
+  },
+  {
+    "event_message": "Listening on http://localhost:9999/\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "044b8999-8a1e-457d-b5c1-98e7bc860d3f",
+    "level": "info",
+    "timestamp": 1772932830364000
+  },
+  {
+    "event_message": "booted (time: 32ms)",
+    "event_type": "Boot",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "136e05fc-a13f-4a55-8b46-7020c2affb8f",
+    "level": "log",
+    "timestamp": 1772932830360000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/d10221c0-cc89-4452-8490-d679df38b21b/batch_21_30.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "4616b077-da9d-48f9-8072-2c49c7d6874b",
+    "level": "info",
+    "timestamp": 1772932830341000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/d10221c0-cc89-4452-8490-d679df38b21b/batch_21_30.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "fa999c04-14a1-4c5d-a630-8f2b0931dfc1",
+    "level": "info",
+    "timestamp": 1772932830341000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/d10221c0-cc89-4452-8490-d679df38b21b/batch_21_30.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "eb5600b1-e367-45c6-a6ae-3dc35cb63aa1",
+    "level": "info",
+    "timestamp": 1772932830322000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/d10221c0-cc89-4452-8490-d679df38b21b/batch_21_30.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "323ef76d-af54-4e72-b78a-a9a3974d79e2",
+    "level": "info",
+    "timestamp": 1772932830322000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/d10221c0-cc89-4452-8490-d679df38b21b/batch_21_30.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "938de182-dfec-41ff-830e-e90d1d8b6bec",
+    "level": "info",
+    "timestamp": 1772932830322000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/d10221c0-cc89-4452-8490-d679df38b21b/batch_21_30.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "3232d6e3-b7ba-40ff-9673-50f14a65a882",
+    "level": "info",
+    "timestamp": 1772932830322000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/d10221c0-cc89-4452-8490-d679df38b21b/batch_21_30.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "37916603-2d95-4190-a736-9ed0047dd8d2",
+    "level": "info",
+    "timestamp": 1772932830322000
+  },
+  {
+    "event_message": "shutdown",
+    "event_type": "Shutdown",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "d1ab8f72-1464-45cd-a668-08c2d4a02bb0",
+    "level": "log",
+    "timestamp": 1772932830020000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/d10221c0-cc89-4452-8490-d679df38b21b/batch_11_20.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "c5d19d97-8eb1-4a16-844b-2ec066240b6a",
+    "level": "info",
+    "timestamp": 1772932829675000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/d10221c0-cc89-4452-8490-d679df38b21b/batch_11_20.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "9fc0971b-e356-43a2-97fc-e69f07dc3d35",
+    "level": "info",
+    "timestamp": 1772932829675000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/d10221c0-cc89-4452-8490-d679df38b21b/batch_11_20.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "da30e7f8-ed2e-4fdb-a73b-334ca0554544",
+    "level": "info",
+    "timestamp": 1772932829675000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/d10221c0-cc89-4452-8490-d679df38b21b/batch_11_20.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "05ae590c-54a2-4b50-82c9-6ab2ff4c93a8",
+    "level": "info",
+    "timestamp": 1772932829675000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/d10221c0-cc89-4452-8490-d679df38b21b/batch_11_20.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "c3c53d77-e7d4-4482-b13c-9c5b9244914f",
+    "level": "info",
+    "timestamp": 1772932829675000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/d10221c0-cc89-4452-8490-d679df38b21b/batch_11_20.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "25ea60c2-75ae-45bc-a28b-11dca5629632",
+    "level": "info",
+    "timestamp": 1772932829675000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/d10221c0-cc89-4452-8490-d679df38b21b/batch_11_20.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "4238390d-281a-4383-8b96-0275909b07f2",
+    "level": "info",
+    "timestamp": 1772932829675000
+  },
+  {
+    "event_message": "shutdown",
+    "event_type": "Shutdown",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "26341dab-9e34-4de2-b3f4-350adda809df",
+    "level": "log",
+    "timestamp": 1772932829206000
+  },
+  {
+    "event_message": "[analyze-lesson] Executing analyze_lecture | Stage: pending_upload for lesson d10221c0-cc89-4452-8490-d679df38b21b\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "5769b7ac-f037-4f2f-8434-dcf146998091",
+    "level": "info",
+    "timestamp": 1772932827966000
+  },
+  {
+    "event_message": "[analyze-lesson] Executing analyze_lecture | Stage: pending_upload for lesson d10221c0-cc89-4452-8490-d679df38b21b\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "9722be94-56f2-4c5a-8d8a-39137050d22d",
+    "level": "info",
+    "timestamp": 1772932827681000
+  },
+  {
+    "event_message": "Listening on http://localhost:9999/\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "bde5e61b-d4cc-4b75-8c91-058172d0b3b3",
+    "level": "info",
+    "timestamp": 1772932827647000
+  },
+  {
+    "event_message": "booted (time: 31ms)",
+    "event_type": "Boot",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "65ed8a50-afb6-4561-af25-414149f417ee",
+    "level": "log",
+    "timestamp": 1772932827643000
+  },
+  {
+    "event_message": "[analyze-lesson] Executing analyze_lecture | Stage: pending_upload for lesson d10221c0-cc89-4452-8490-d679df38b21b\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "39a80d9c-eca8-446d-93ad-4295955f83d0",
+    "level": "info",
+    "timestamp": 1772932827635000
+  },
+  {
+    "event_message": "[analyze-lesson] Executing analyze_lecture | Stage: pending_upload for lesson d10221c0-cc89-4452-8490-d679df38b21b\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "20075f3f-5191-48c4-b520-6e8341867282",
+    "level": "info",
+    "timestamp": 1772932827564000
+  },
+  {
+    "event_message": "Listening on http://localhost:9999/\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "3e8bdd23-7991-431d-a8e3-b8e0dea4dea9",
+    "level": "info",
+    "timestamp": 1772932827354000
+  },
+  {
+    "event_message": "booted (time: 30ms)",
+    "event_type": "Boot",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "c6f2a520-9a71-48f8-90ee-0bc356037d5a",
+    "level": "log",
+    "timestamp": 1772932827351000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_81_90.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "44c978d9-0cb3-41cc-b7be-e7967ccbe8ff",
+    "level": "info",
+    "timestamp": 1772932827290000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_11_20.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "c71f6a5e-b731-4e57-b609-e16c9eab8a8c",
+    "level": "info",
+    "timestamp": 1772932827290000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_11_20.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "aae5af31-8632-4c8f-a3ee-220301f05b15",
+    "level": "info",
+    "timestamp": 1772932827290000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_81_90.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "021879b3-f548-4160-8863-29e2af78bc2e",
+    "level": "info",
+    "timestamp": 1772932827290000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_81_90.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "04639ba1-08d5-4826-8a27-b094b5bfdc9f",
+    "level": "info",
+    "timestamp": 1772932827290000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_81_90.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "e95a7a33-de74-439c-9e13-3fb730ec8c16",
+    "level": "info",
+    "timestamp": 1772932827290000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_81_90.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "83133d0e-a7fc-47bb-831c-8dc8695dae9c",
+    "level": "info",
+    "timestamp": 1772932827290000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_81_90.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "288a4fa6-e2fd-4076-8983-53a924d9bed5",
+    "level": "info",
+    "timestamp": 1772932827290000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_21_30.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "d773c334-9427-48e6-bddc-fcb32d4678fb",
+    "level": "info",
+    "timestamp": 1772932827290000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_21_30.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "0c427af0-9663-4290-be91-b6ba89adc2b5",
+    "level": "info",
+    "timestamp": 1772932827290000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_21_30.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "4accb93f-bbb2-443d-be4b-0e537a411fa7",
+    "level": "info",
+    "timestamp": 1772932827290000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_131_140.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "5f4efa7a-dc0f-4257-af72-9766ce7c4d52",
+    "level": "info",
+    "timestamp": 1772932827290000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_11_20.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "35f27df7-89cf-43cb-a355-85abb54a7368",
+    "level": "info",
+    "timestamp": 1772932827290000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_21_30.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "13b8283f-34b2-4cfe-bbf3-e338854c4e32",
+    "level": "info",
+    "timestamp": 1772932827290000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_131_140.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "51d93b7c-bbbb-43db-9716-bbdd4ece5535",
+    "level": "info",
+    "timestamp": 1772932827290000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_11_20.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "e0c8400d-e3d1-4bd1-a4ed-650ac02d0b61",
+    "level": "info",
+    "timestamp": 1772932827290000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_21_30.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "ee4c696b-c88d-42db-9167-3f89ad732bad",
+    "level": "info",
+    "timestamp": 1772932827290000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_11_20.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "35cc17e3-8194-4f42-8762-d2d64fa60b71",
+    "level": "info",
+    "timestamp": 1772932827290000
+  },
+  {
+    "event_message": "shutdown",
+    "event_type": "Shutdown",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "ad5feca5-d977-48c2-96bf-aea5bbf46738",
+    "level": "log",
+    "timestamp": 1772932827124000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_121_130.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "e4b76740-33df-4459-8be5-d489a37b8fc9",
+    "level": "info",
+    "timestamp": 1772932826699000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_121_130.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "50332b90-471b-4fe9-8615-31995e5a80a4",
+    "level": "info",
+    "timestamp": 1772932826699000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_101_110.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "8d7f315a-886c-4f44-a873-0c175f157035",
+    "level": "info",
+    "timestamp": 1772932826699000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_71_80.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "4305f045-7ca1-4bd0-9449-56e2834e8cb4",
+    "level": "info",
+    "timestamp": 1772932826699000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_41_50.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "82caf9b8-0eef-47e6-93a8-b8dbae57d58e",
+    "level": "info",
+    "timestamp": 1772932826699000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_41_50.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "997c1915-228b-48ad-9964-e4866b9bcbcf",
+    "level": "info",
+    "timestamp": 1772932826699000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_111_120.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "0b010101-0513-4b9d-b812-e6762d37df25",
+    "level": "info",
+    "timestamp": 1772932826699000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_61_70.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "8c562f56-b5b2-4963-8370-7f5059da5cab",
+    "level": "info",
+    "timestamp": 1772932826699000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_101_110.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "0b0350c4-f30c-4886-bda1-4d90ae6705e4",
+    "level": "info",
+    "timestamp": 1772932826699000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_121_130.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "c7605dac-2c43-4055-b4ba-4a1898dac464",
+    "level": "info",
+    "timestamp": 1772932826699000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_111_120.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "65446c19-3772-4995-8c3d-9c263213a7f1",
+    "level": "info",
+    "timestamp": 1772932826699000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_61_70.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "cd43e9ef-b08d-4bc7-814d-d4d54f88cac5",
+    "level": "info",
+    "timestamp": 1772932826699000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_61_70.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "4eac32df-440f-4a92-ab1c-e98c1c736aff",
+    "level": "info",
+    "timestamp": 1772932826699000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_121_130.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "53a3bccc-c74d-4b93-8405-a185cada3004",
+    "level": "info",
+    "timestamp": 1772932826699000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_111_120.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "a28c7aaa-14d7-4e3c-9253-4932ba6b21e6",
+    "level": "info",
+    "timestamp": 1772932826699000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_111_120.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "82fea9d3-75d3-4e82-b5c5-119e0338b0fe",
+    "level": "info",
+    "timestamp": 1772932826699000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_61_70.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "1095980d-c115-489c-ad97-7685b02198c2",
+    "level": "info",
+    "timestamp": 1772932826699000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_71_80.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "6c0a8b13-81c4-48b9-b938-93a449474f3e",
+    "level": "info",
+    "timestamp": 1772932826699000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_41_50.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "66734b2c-e0db-4148-b258-d9dd2683690a",
+    "level": "info",
+    "timestamp": 1772932826699000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_41_50.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "db8a6b53-b45c-4301-971d-f8d8a0d899ce",
+    "level": "info",
+    "timestamp": 1772932826699000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_101_110.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "7354de12-358a-4071-ba7a-1d15fd33d82e",
+    "level": "info",
+    "timestamp": 1772932826699000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_71_80.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "8e3a6216-43a7-4ade-848c-e5dd97b75f20",
+    "level": "info",
+    "timestamp": 1772932826699000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_91_100.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "94a18936-8bac-4fd7-94e5-effc3e1c5de2",
+    "level": "info",
+    "timestamp": 1772932826699000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_121_130.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "dd5cacfb-628d-4680-8aa7-ce12d5558346",
+    "level": "info",
+    "timestamp": 1772932826699000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_101_110.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "c19b8f93-80f4-48b1-91ec-87aea53dff36",
+    "level": "info",
+    "timestamp": 1772932826699000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_61_70.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "225c3db7-03df-4f68-9360-3b88b9e152c1",
+    "level": "info",
+    "timestamp": 1772932826699000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_91_100.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "6b31a576-e9f6-4e54-859a-3e5e9f021d39",
+    "level": "info",
+    "timestamp": 1772932826699000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_91_100.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "bbcf6101-bc36-4f06-b41b-043591ede8ed",
+    "level": "info",
+    "timestamp": 1772932826699000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_101_110.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "2f260dcf-5ed0-4da5-9e71-c83b16dd481e",
+    "level": "info",
+    "timestamp": 1772932826699000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_71_80.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "84db1c24-5b00-4423-b7a4-5f14c3799291",
+    "level": "info",
+    "timestamp": 1772932826699000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_61_70.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "330059ba-9eea-4072-81f8-c1ae47c2a014",
+    "level": "info",
+    "timestamp": 1772932826699000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_91_100.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "7c1d0c4e-7b1f-4b11-8e93-0554a1bb9492",
+    "level": "info",
+    "timestamp": 1772932826699000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_51_60.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "141e7a72-d9d4-4b86-aa5a-8fa395538a55",
+    "level": "info",
+    "timestamp": 1772932826698000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_51_60.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "474892ac-2309-46d3-b5e9-dc71175d1a1c",
+    "level": "info",
+    "timestamp": 1772932826698000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_51_60.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "5a0e9724-d9b4-40f0-a09c-f1e10d36866d",
+    "level": "info",
+    "timestamp": 1772932826698000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_31_40.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "488fb3fe-571d-487e-bb22-94b5e7c58de5",
+    "level": "info",
+    "timestamp": 1772932826698000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_51_60.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "acb8b28d-a4cd-4e0c-8bfa-f2898b388944",
+    "level": "info",
+    "timestamp": 1772932826698000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_51_60.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "770f86be-7899-4515-860f-89c3026f661b",
+    "level": "info",
+    "timestamp": 1772932826698000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_51_60.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "1d70e7de-61ca-4520-81d6-8e0290acd7de",
+    "level": "info",
+    "timestamp": 1772932826698000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_51_60.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "ee634d26-b166-4839-99c4-ff5bc0081080",
+    "level": "info",
+    "timestamp": 1772932826698000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_31_40.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "7f2c215c-3231-4ddb-9d8c-0e6e4e79b8b0",
+    "level": "info",
+    "timestamp": 1772932826698000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_51_60.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "2dfe1669-ab8d-4bfc-9f63-e69040616891",
+    "level": "info",
+    "timestamp": 1772932826698000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_51_60.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "682a53fa-7556-4fb3-9240-42b29f0f91fa",
+    "level": "info",
+    "timestamp": 1772932826698000
+  },
+  {
+    "event_message": "shutdown",
+    "event_type": "Shutdown",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "72d45d01-c337-4f83-ada8-d662595c0c19",
+    "level": "log",
+    "timestamp": 1772932826348000
+  },
+  {
+    "event_message": "[analyze-lesson] Skipping duplicate storage path: ocr/5904f52f-270e-4b7e-90a8-a2b6e794c423/batch_131_140.txt\n",
+    "event_type": "Log",
+    "function_id": "0aaaaa5b-2ecb-4275-967a-5250c744bad9",
+    "id": "bcf0afac-5c0b-42ec-9baf-7fbc1154f6f7",
+    "level": "info",
+    "timestamp": 1772932826099000
+  }
+]

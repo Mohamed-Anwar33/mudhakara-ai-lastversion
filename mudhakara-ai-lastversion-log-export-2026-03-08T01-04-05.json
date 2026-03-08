@@ -1,0 +1,797 @@
+-------------------------------------------
+Copied 50 logs from Vercel Dashboard
+- Project: mudhakara-ai-lastversion (prj_5DLn8IfJqbozRCgpaMsAtbMJb85e)
+- Team: mohamed-anwars-projects-aa54eb09 (team_fV6eZXYqhxqJvEVwhSHfuLbb)
+- Search query: (no search query applied)
+- Search timestamps: 2026-03-08T00: 50: 00.000Z to 2026-03-08T01: 20: 00.000Z
+- Dashboard URL: https: //vercel.com/mohamed-anwars-projects-aa54eb09/mudhakara-ai-lastversion/logs?refreshedAt=1772932799490&page=2
+- Format: JSONL
+- Documentation: https: //vercel.com/docs/logs/runtime
+-------------------------------------------
+
+{
+    "requestId": "qvv8z-1772932783951-ca83b01ecaad",
+    "timestamp": 1772932783951,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932784006-uy7ii7] Orchestrating segment_lesson (427a8d2c-2137-42f1-b9af-db0b72404f7d)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "environment": "production",
+    "branch": "main"
+}
+{
+    "requestId": "6vr6t-1772932783951-fb3d4a1e2030",
+    "timestamp": 1772932783951,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[JobStatus Debug] Lesson d00ae7cc-bf16-40c8-af09-ae454f0c06da | Jobs count: 2",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "GET",
+    "requestPath": "/api/job-status",
+    "environment": "production",
+    "branch": "main"
+}
+{
+    "requestId": "qh4r9-1772932783948-9480ab487617",
+    "timestamp": 1772932783948,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932784010-8klax2] Orchestrating analyze_lecture (048d99b6-f092-4059-bb15-535804dc486c)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "environment": "production",
+    "branch": "main"
+}
+{
+    "requestId": "thntf-1772932781217-4e59e02e18c1",
+    "timestamp": 1772932781217,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932781271-z7s552] Orchestrating analyze_lecture (9f4e8c3a-302d-4e57-95f9-c232511ff612)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "environment": "production",
+    "branch": "main"
+}
+{
+    "requestId": "j4qkk-1772932781217-a77f6164a76e",
+    "timestamp": 1772932781217,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[JobStatus Debug] Lesson d00ae7cc-bf16-40c8-af09-ae454f0c06da | Jobs count: 2",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "GET",
+    "requestPath": "/api/job-status",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "nw2bd-1772932781216-e70b0464384f",
+    "timestamp": 1772932781216,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932781271-4fwf2g] Orchestrating analyze_lecture (8931a4df-6375-4e15-8f5d-a63e66766e01)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "environment": "production",
+    "branch": "main"
+}
+{
+    "requestId": "djv9w-1772932781215-87fafc7c7d87",
+    "timestamp": 1772932781215,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932781284-54h7tw] Orchestrating segment_lesson (427a8d2c-2137-42f1-b9af-db0b72404f7d)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "txxqg-1772932781214-7a6280a981b8",
+    "timestamp": 1772932781214,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932781267-sbkqsh] Orchestrating analyze_lecture (fc9f0382-57e3-4404-8e00-73f812ded2a5)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "environment": "production",
+    "branch": "main"
+}
+{
+    "requestId": "nw2bd-1772932778352-30ab6dc26b66",
+    "timestamp": 1772932778352,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[JobStatus Debug] Lesson d00ae7cc-bf16-40c8-af09-ae454f0c06da | Jobs count: 2",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "GET",
+    "requestPath": "/api/job-status",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "2mlfx-1772932778351-ece3aabfb44f",
+    "timestamp": 1772932778351,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932778905-4p517c] Orchestrating analyze_lecture (fc9f0382-57e3-4404-8e00-73f812ded2a5)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "9jfjc-1772932778350-9921c2de2742",
+    "timestamp": 1772932778350,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932778402-optusm] Orchestrating transcribe_audio (e518d961-562c-4fc7-adba-016dd72471dd)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "tz4nl-1772932778349-9d6c3f5a7f7b",
+    "timestamp": 1772932778349,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[Orchestrator] Edge Function still running (>6.5s). Disconnecting gracefully. Lock retained.",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "environment": "production",
+    "branch": "main"
+}
+{
+    "requestId": "svfrd-1772932778348-98aeae5e679d",
+    "timestamp": 1772932778348,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932778400-hapdg1] Orchestrating segment_lesson (427a8d2c-2137-42f1-b9af-db0b72404f7d)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "txxqg-1772932775593-2dc49aab7f83",
+    "timestamp": 1772932775593,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[JobStatus Debug] Lesson d00ae7cc-bf16-40c8-af09-ae454f0c06da | Jobs count: 2",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "GET",
+    "requestPath": "/api/job-status",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "tz4nl-1772932775591-295d207e1a54",
+    "timestamp": 1772932775591,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932775646-4abg0v] Orchestrating transcribe_audio (e518d961-562c-4fc7-adba-016dd72471dd)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "j4qkk-1772932775581-777f77af56a5",
+    "timestamp": 1772932775581,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932775648-wp6khw] Orchestrating analyze_lecture (a87443be-668a-4968-948d-e817b7ab18df)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "5x4fs-1772932775581-d990d24858d0",
+    "timestamp": 1772932775581,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932775646-gd52qj] Orchestrating segment_lesson (427a8d2c-2137-42f1-b9af-db0b72404f7d)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "g9lmx-1772932775579-f4a3ed32b356",
+    "timestamp": 1772932775579,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932775633-uxtrae] Orchestrating analyze_lecture (b6c2bbef-a627-4bde-a8cd-c211c0503814)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "svfrd-1772932772309-189015401fa4",
+    "timestamp": 1772932772309,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[JobStatus Debug] Lesson d00ae7cc-bf16-40c8-af09-ae454f0c06da | Jobs count: 2",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "GET",
+    "requestPath": "/api/job-status",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "lpr87-1772932772309-6b31ef8570ed",
+    "timestamp": 1772932772309,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932772370-qgy2eq] Orchestrating segment_lesson (427a8d2c-2137-42f1-b9af-db0b72404f7d)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "h85vr-1772932772308-02e1ee3a5755",
+    "timestamp": 1772932772308,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932772868-3w3w1m] Orchestrating analyze_lecture (a87443be-668a-4968-948d-e817b7ab18df)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "xc7rd-1772932772306-75c8059ed2db",
+    "timestamp": 1772932772306,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932772359-35k4b5] Orchestrating analyze_lecture (6511d54b-f45e-4f53-b835-af667e7535e2)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "9jfjc-1772932772306-08d9afe62c07",
+    "timestamp": 1772932772306,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932772360-tabzs0] Orchestrating analyze_lecture (d2e0268d-4cfc-4363-812c-25af4fe12178)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "znmbj-1772932769458-58df7512aa0e",
+    "timestamp": 1772932769458,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932769528-womxm6] Orchestrating segment_lesson (427a8d2c-2137-42f1-b9af-db0b72404f7d)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "nw2bd-1772932769453-0222e0f7698c",
+    "timestamp": 1772932769453,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[JobStatus Debug] Lesson d00ae7cc-bf16-40c8-af09-ae454f0c06da | Jobs count: 2",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "GET",
+    "requestPath": "/api/job-status",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "svfrd-1772932769452-c06846d14b08",
+    "timestamp": 1772932769452,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932769507-h4gpxd] Orchestrating transcribe_audio (e518d961-562c-4fc7-adba-016dd72471dd)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "xc7rd-1772932769451-da88c3a15009",
+    "timestamp": 1772932769451,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932769506-yq71aq] Orchestrating analyze_lecture (d2e0268d-4cfc-4363-812c-25af4fe12178)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "h85vr-1772932769450-36c04a1bb110",
+    "timestamp": 1772932769450,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932769515-8mommm] Orchestrating analyze_lecture (6511d54b-f45e-4f53-b835-af667e7535e2)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "rbt78-1772932766675-721136018b64",
+    "timestamp": 1772932766675,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[JobStatus Debug] Lesson d00ae7cc-bf16-40c8-af09-ae454f0c06da | Jobs count: 2",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "GET",
+    "requestPath": "/api/job-status",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "j4qkk-1772932766675-b2fc0ce45218",
+    "timestamp": 1772932766675,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932766732-hfvgwb] Orchestrating transcribe_audio (e518d961-562c-4fc7-adba-016dd72471dd)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "gnw9n-1772932766675-80d89c009223",
+    "timestamp": 1772932766675,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[Orchestrator] Edge Function still running (>6.5s). Disconnecting gracefully. Lock retained.",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "9jfjc-1772932766675-daa21bcf11f4",
+    "timestamp": 1772932766675,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932766729-fe4t8k] Orchestrating segment_lesson (427a8d2c-2137-42f1-b9af-db0b72404f7d)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "m5gbw-1772932766674-54f59ef8fcde",
+    "timestamp": 1772932766674,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932766757-je27nx] Orchestrating analyze_lecture (3153cbdb-c89c-4c79-9c90-bee99f853d9e)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "5x4fs-1772932763819-9b7c587119a3",
+    "timestamp": 1772932763819,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[JobStatus Debug] Lesson d00ae7cc-bf16-40c8-af09-ae454f0c06da | Jobs count: 2",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "GET",
+    "requestPath": "/api/job-status",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "sfcwc-1772932763818-b29c79c95970",
+    "timestamp": 1772932763818,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932763870-7wdrgs] Orchestrating analyze_lecture (b7c73afb-a1c6-4041-bde2-51d6cac2b841)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "h85vr-1772932763818-6fccc9b3c0b3",
+    "timestamp": 1772932763818,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932763871-l5ze6j] Orchestrating segment_lesson (427a8d2c-2137-42f1-b9af-db0b72404f7d)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "g9lmx-1772932763818-4b7307e2ca64",
+    "timestamp": 1772932763818,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932763908-mwcc2q] Orchestrating transcribe_audio (e518d961-562c-4fc7-adba-016dd72471dd)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "ch4m6-1772932763818-8dc8e2f9ca5f",
+    "timestamp": 1772932763818,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[Orchestrator] Edge Function still running (>6.5s). Disconnecting gracefully. Lock retained.",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "znmbj-1772932761066-1339d55e77ac",
+    "timestamp": 1772932761066,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932761145-wrvfb4] Orchestrating analyze_lecture (f638cbca-eb86-45fa-b5cd-015845249b37)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "tzdqz-1772932761066-1ca2ada80567",
+    "timestamp": 1772932761066,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932761119-01polm] Orchestrating analyze_lecture (b7c73afb-a1c6-4041-bde2-51d6cac2b841)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "qh4r9-1772932761066-1d9b2161403e",
+    "timestamp": 1772932761066,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932761142-i5g70o] Orchestrating analyze_lecture (c6b409c2-9dc8-4c65-adb4-9d71d5d7fa33)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "m5gbw-1772932761066-f0d558f36794",
+    "timestamp": 1772932761066,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932761122-thvmr1] Orchestrating segment_lesson (427a8d2c-2137-42f1-b9af-db0b72404f7d)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "lpr87-1772932761066-75c4106a3831",
+    "timestamp": 1772932761066,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[JobStatus Debug] Lesson d00ae7cc-bf16-40c8-af09-ae454f0c06da | Jobs count: 2",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "GET",
+    "requestPath": "/api/job-status",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "znmbj-1772932758291-a4a4edd746b1",
+    "timestamp": 1772932758291,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932758347-4bk3pa] Orchestrating analyze_lecture (c6b409c2-9dc8-4c65-adb4-9d71d5d7fa33)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "z7b99-1772932758291-b025fdff26d7",
+    "timestamp": 1772932758291,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[JobStatus Debug] Lesson d00ae7cc-bf16-40c8-af09-ae454f0c06da | Jobs count: 2",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "GET",
+    "requestPath": "/api/job-status",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "w9kfg-1772932758291-07317a20608f",
+    "timestamp": 1772932758291,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932758369-28zhtd] Orchestrating analyze_lecture (27ffeb04-b05c-4b8b-80d9-b07dbd020cac)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "h85vr-1772932758289-530f13f453cd",
+    "timestamp": 1772932758289,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932758344-t9y5cy] Orchestrating analyze_lecture (f638cbca-eb86-45fa-b5cd-015845249b37)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "pjnbv-1772932758288-e61f8424fcde",
+    "timestamp": 1772932758288,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932758340-2f0fwj] Orchestrating analyze_lecture (4698c894-7749-4b64-bd5f-eae51e8217fd)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "ch4m6-1772932755424-e712031f4f0b",
+    "timestamp": 1772932755424,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[JobStatus Debug] Lesson d00ae7cc-bf16-40c8-af09-ae454f0c06da | Jobs count: 2",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "GET",
+    "requestPath": "/api/job-status",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}
+{
+    "requestId": "tzdqz-1772932755423-889a99721406",
+    "timestamp": 1772932755423,
+    "deploymentId": "dpl_AySSW3NVrzjqZNFoCjEBqZMce6r6",
+    "projectId": "prj_5DLn8IfJqbozRCgpaMsAtbMJb85e",
+    "level": "info",
+    "message": "[worker-1772932755476-776ex0] Orchestrating analyze_lecture (4698c894-7749-4b64-bd5f-eae51e8217fd)",
+    "source": "serverless",
+    "domain": "mudhakara-ai-lastversion.vercel.app",
+    "requestMethod": "POST",
+    "requestPath": "/api/process-queue",
+    "responseStatusCode": 200,
+    "environment": "production",
+    "branch": "main",
+    "cache": "MISS"
+}

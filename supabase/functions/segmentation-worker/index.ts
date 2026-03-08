@@ -89,9 +89,10 @@ serve(async (req) => {
                 .in('status', ['pending', 'processing']);
 
             if (pendingOcrJobs && pendingOcrJobs > 0) {
-                console.log(`[segmentation-worker] ${pendingOcrJobs} OCR jobs still running. Releasing lock to retry later.`);
-                await supabase.from('processing_queue').update({ status: 'pending', locked_by: null, locked_at: null }).eq('id', jobId);
-                return new Response(JSON.stringify({ status: 'waiting_for_ocr' }), { headers: corsHeaders });
+                console.log(`[segmentation-worker] ${pendingOcrJobs} OCR jobs still running. Re-queuing with 15s backoff.`);
+                const nextRetry = new Date(Date.now() + 15 * 1000).toISOString();
+                await supabase.from('processing_queue').update({ status: 'pending', locked_by: null, locked_at: null, next_retry_at: nextRetry, attempt_count: 0 }).eq('id', jobId);
+                return new Response(JSON.stringify({ status: 'staged', message: 'waiting_for_ocr' }), { headers: corsHeaders });
             }
 
             // 2. Check how many pages actually have content (success with storage_path)
@@ -131,9 +132,10 @@ serve(async (req) => {
                     .in('status', ['pending', 'processing']);
 
                 if (pendingAudio && pendingAudio > 0) {
-                    console.log(`[segmentation-worker] Audio processing not complete yet. Waiting...`);
-                    await supabase.from('processing_queue').update({ status: 'pending', locked_by: null, locked_at: null, attempt_count: 0 }).eq('id', jobId);
-                    return new Response(JSON.stringify({ status: 'waiting_for_audio' }), { headers: corsHeaders });
+                    console.log(`[segmentation-worker] Audio processing not complete yet. Re-queuing with 15s backoff.`);
+                    const nextRetry = new Date(Date.now() + 15 * 1000).toISOString();
+                    await supabase.from('processing_queue').update({ status: 'pending', locked_by: null, locked_at: null, attempt_count: 0, next_retry_at: nextRetry }).eq('id', jobId);
+                    return new Response(JSON.stringify({ status: 'staged', message: 'waiting_for_audio' }), { headers: corsHeaders });
                 }
             }
 
