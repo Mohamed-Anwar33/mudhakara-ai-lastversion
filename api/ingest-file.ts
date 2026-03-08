@@ -329,7 +329,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             // (Vercel free tier = 10s limit, not enough for large PDF uploads)
             const { data: job, error: queueError } = await supabase
                 .from('processing_queue')
-                .insert({
+                .upsert({
                     lesson_id: lessonId,
                     job_type: initialJobType,
                     stage: stageMap[initialJobType] || 'pending_upload',
@@ -339,13 +339,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                         content_hash: contentHash,
                         source_type: file.fileType
                     },
-                    status: 'pending'
-                })
+                    status: 'pending',
+                    dedupe_key: `lesson:${lessonId}:${initialJobType}:${filePath}`
+                }, { onConflict: 'dedupe_key', ignoreDuplicates: true })
                 .select('id, status')
-                .single();
+                .maybeSingle();
 
             if (queueError) {
-                if (queueError.code === '23505') {
+                if (queueError.code === '23505' || queueError.code === 'PGRST116') {
                     results.push({
                         filePath,
                         fileName: file.fileName,
@@ -355,6 +356,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     continue;
                 }
                 throw queueError;
+            }
+
+            // If upsert ignored duplicate, job will be null
+            if (!job) {
+                results.push({
+                    filePath,
+                    fileName: file.fileName,
+                    status: 'already_queued',
+                    message: 'File is already queued (dedupe)'
+                });
+                continue;
             }
 
             hasQueued = true;

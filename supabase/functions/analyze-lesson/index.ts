@@ -571,13 +571,13 @@ ${content}`;
                     .eq('id', lecture_id);
 
                 // Start the Quiz Generator for this completed lecture
-                await supabase.from('processing_queue').insert({
+                await supabase.from('processing_queue').upsert({
                     lesson_id: lesson_id,
                     job_type: 'generate_quiz',
                     payload: { lecture_id, summary_storage_path: storagePath },
                     status: 'pending',
                     dedupe_key: `lesson:${lesson_id}:generate_quiz:${lecture_id}`
-                });
+                }, { onConflict: 'dedupe_key', ignoreDuplicates: true });
 
                 // Completed this analyze_lecture branch!
                 await supabase.from('processing_queue').update({ status: 'completed' }).eq('id', jobId);

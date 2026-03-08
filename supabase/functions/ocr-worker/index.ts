@@ -270,13 +270,8 @@ serve(async (req) => {
 
             if (storageErr) throw new Error(`Storage upload failed after 3 attempts: ${storageErr.message}`);
 
-            // Embed the chunk (Simulated pgvector insert for now)
-            await supabase.from('document_embeddings').insert({
-                lesson_id: lesson_id,
-                page_number: start, // Tag it to the starting page of the batch
-                storage_path: storagePath,
-                // embedding: would be generated visually calling OpenAI Ada 002 here 
-            });
+            // NOTE: Embedding generation (pgvector) is not yet implemented.
+            // When ready, insert into document_embeddings here with the embedding vector.
 
             // Mark pages as success
             await supabase.from('lesson_pages').update({

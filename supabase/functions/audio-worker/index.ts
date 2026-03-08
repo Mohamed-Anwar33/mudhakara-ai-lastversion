@@ -61,7 +61,14 @@ async function uploadStreamToGemini(audioUrl: string, apiKey: string): Promise<{
 // ─── Stage 2 Helper: Check if Gemini file is ready (single check, no loop!) ───
 async function checkGeminiFileStatus(fileName: string, apiKey: string): Promise<'ACTIVE' | 'PROCESSING' | 'FAILED'> {
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${apiKey}`);
-    if (!res.ok) throw new Error(`Gemini file status check failed: ${res.status}`);
+    if (!res.ok) {
+        // Treat 500/502/503 as transient — Gemini is still processing, retry later
+        if (res.status >= 500) {
+            console.warn(`[audio-worker] Gemini status check returned ${res.status} — treating as PROCESSING (transient).`);
+            return 'PROCESSING';
+        }
+        throw new Error(`Gemini file status check failed: ${res.status}`);
+    }
     const status = await res.json();
     if (status.state === 'ACTIVE') return 'ACTIVE';
     if (status.state === 'FAILED') return 'FAILED';

@@ -265,7 +265,7 @@ ${tocContext}`;
             });
 
             const { data: insertedLectures, error: insertErr } = await supabase.from('segmented_lectures')
-                .insert(lecturesToInsert)
+                .upsert(lecturesToInsert, { onConflict: 'lesson_id,title,start_page', ignoreDuplicates: false })
                 .select('id, title, start_page, end_page');
 
             if (insertErr) throw new Error(`Failed to save lecture segments: ${insertErr.message}`);

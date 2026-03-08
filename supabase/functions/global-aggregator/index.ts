@@ -72,16 +72,25 @@ serve(async (req) => {
                 }
             }
 
-            // Fix stuck segmented_lectures
+            // Fix stuck segmented_lectures — ONLY if their corresponding job is truly dead
             const { data: stuckLectures } = await supabase.from('segmented_lectures')
                 .select('id')
                 .eq('lesson_id', lesson_id)
-                .eq('status', 'pending');
+                .in('status', ['pending', 'summary_done']);
 
             if (stuckLectures && stuckLectures.length > 0) {
-                console.warn(`[global-aggregator] SELF-HEALING: ${stuckLectures.length} lectures stuck in pending.`);
                 for (const lec of stuckLectures) {
-                    await supabase.from('segmented_lectures').update({ status: 'quiz_done' }).eq('id', lec.id);
+                    // Check if there's a corresponding active job still running
+                    const { count: activeJobsForLec } = await supabase.from('processing_queue')
+                        .select('*', { count: 'exact', head: true })
+                        .eq('lesson_id', lesson_id)
+                        .in('job_type', ['analyze_lecture', 'generate_quiz'])
+                        .in('status', ['pending', 'processing']);
+
+                    if (!activeJobsForLec || activeJobsForLec === 0) {
+                        console.warn(`[global-aggregator] SELF-HEALING: Lecture ${lec.id} stuck with no active jobs. Marking quiz_done.`);
+                        await supabase.from('segmented_lectures').update({ status: 'quiz_done' }).eq('id', lec.id);
+                    }
                 }
             }
 

@@ -431,7 +431,7 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
       if (!response.ok) throw new Error(payload?.error || `فشل الإرسال (${response.status})`);
 
       setProgressMsg('بدأ التحليل الذكي...');
-      triggerQueueWorker(8).catch(console.warn);
+      triggerQueueWorker(1).catch(console.warn);
 
       // Poll for results — optimized for speed and API limits
       let result: AIResult | null = null;
@@ -443,7 +443,7 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
       for (let attempt = 1; attempt <= 10000; attempt++) {
         // Only trigger queue worker aggressively at the start or if we know jobs exist
         if (attempt === 1 || consecutiveNoJobs < 3) {
-          triggerQueueWorker(4).catch(console.warn); // Reduced concurrency from 8 to 4
+          triggerQueueWorker(1).catch(console.warn);
         }
 
         let status: any;
@@ -509,7 +509,7 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
                 const retryData = await retryRes.json().catch(() => ({}));
                 if (retryData.retriedCount > 0) {
                   toast('جاري إعادة تحليل المهام الفاشلة... 🔄', { icon: '🔁', style: { direction: 'rtl' } });
-                  triggerQueueWorker(8).catch(console.warn);
+                  triggerQueueWorker(1).catch(console.warn);
                   continue; // Continue polling — retried jobs are now pending
                 }
               } catch (e) { console.warn('Auto-retry failed:', e); }
@@ -538,11 +538,11 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ lessonId: tempLessonId })
           });
-          triggerQueueWorker(8).catch(console.warn);
+          triggerQueueWorker(1).catch(console.warn);
           // Short poll for quiz retry completion
           for (let rp = 0; rp < 30; rp++) {
             await delay(3000);
-            triggerQueueWorker(8).catch(console.warn);
+            triggerQueueWorker(1).catch(console.warn);
             const { count: stillPending } = await supabase.from('processing_queue')
               .select('*', { count: 'exact', head: true })
               .eq('lesson_id', tempLessonId).eq('job_type', 'generate_quiz')

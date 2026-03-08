@@ -225,7 +225,7 @@ async function processSingleJob(supabase: any, job: any, workerId: string, supab
                 locked_at: null,
                 updated_at: new Date().toISOString()
             }).eq('id', job.id);
-        } else if (['staged', 'polling', 'waiting_for_ocr', 'waiting_for_audio'].includes(result?.status)) {
+        } else if (['staged', 'polling', 'waiting_for_ocr', 'waiting_for_audio', 'waiting_for_lectures', 'advancing_batch'].includes(result?.status)) {
             // Multi-stage or barrier job: the Edge Function already
             // re-queued itself with next_retry_at. Do NOT touch the job row.
             console.log(`[Orchestrator] Job ${job.id} is multi-stage/barrier (status: ${result.status}). Skipping unlock.`);
