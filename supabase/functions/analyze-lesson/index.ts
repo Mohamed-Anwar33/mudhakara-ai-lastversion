@@ -204,10 +204,51 @@ serve(async (req) => {
                 // --- NEW LOGIC: Intelligent LLM Audio Matcher ---
                 let audioContext = "";
                 try {
-                    const audioPath = `audio_transcripts/${lesson_id}/raw_transcript.txt`;
-                    const { data: audioBlob } = await supabase.storage.from('audio_transcripts').download(audioPath);
-                    if (audioBlob) {
-                        const audioText = await audioBlob.text();
+                    let audioText = '';
+
+                    // Try primary path (fixed — no double nesting)
+                    const path1 = `${lesson_id}/raw_transcript.txt`;
+                    const { data: blob1 } = await supabase.storage.from('audio_transcripts').download(path1);
+                    if (blob1) {
+                        audioText = await blob1.text();
+                        console.log(`[analyze-lesson] ✅ Audio transcript from audio_transcripts/${path1} (${audioText.length} chars)`);
+                    }
+
+                    // Fallback: old double-nested path
+                    if (!audioText) {
+                        const path2 = `audio_transcripts/${lesson_id}/raw_transcript.txt`;
+                        const { data: blob2 } = await supabase.storage.from('audio_transcripts').download(path2);
+                        if (blob2) {
+                            audioText = await blob2.text();
+                            console.log(`[analyze-lesson] ✅ Audio from legacy path (${audioText.length} chars)`);
+                        }
+                    }
+
+                    // Fallback: ocr bucket
+                    if (!audioText) {
+                        const path3 = `${lesson_id}/audio_transcript.txt`;
+                        const { data: blob3 } = await supabase.storage.from('ocr').download(path3);
+                        if (blob3) {
+                            audioText = await blob3.text();
+                            console.log(`[analyze-lesson] ✅ Audio from ocr fallback (${audioText.length} chars)`);
+                        }
+                    }
+
+                    // Fallback: lessons table
+                    if (!audioText) {
+                        const { data: lessonRow } = await supabase.from('lessons')
+                            .select('audio_transcript').eq('id', lesson_id).single();
+                        if (lessonRow?.audio_transcript) {
+                            audioText = lessonRow.audio_transcript;
+                            console.log(`[analyze-lesson] ✅ Audio from lessons table (${audioText.length} chars)`);
+                        }
+                    }
+
+                    if (!audioText) {
+                        console.log(`[analyze-lesson] No audio transcript found for lesson ${lesson_id}`);
+                    }
+
+                    if (audioText && audioText.length > 50) {
                         let textToAnalyze = audioText;
 
                         // Support for Audio Chunking (e.g. "محتوى التسجيل الصوتي (الجزء X)")

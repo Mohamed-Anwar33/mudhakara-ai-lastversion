@@ -372,10 +372,55 @@ async function saveTranscriptAndComplete(
 ) {
     await updateProgress('اكتمل التفريغ! جاري حفظ النصوص المفرغة...');
 
-    const storagePath = `audio_transcripts/${lessonId}/raw_transcript.txt`;
-    await supabase.storage.from('audio_transcripts').upload(storagePath, transcript, { upsert: true, contentType: 'text/plain;charset=UTF-8' });
+    let saved = false;
 
-    console.log(`[audio-worker] Successfully transcribed and saved audio for lesson ${lessonId}.`);
+    // Try primary path: audio_transcripts bucket
+    try {
+        const storagePath = `${lessonId}/raw_transcript.txt`;
+        const { error: uploadErr } = await supabase.storage
+            .from('audio_transcripts')
+            .upload(storagePath, transcript, { upsert: true, contentType: 'text/plain;charset=UTF-8' });
+
+        if (uploadErr) {
+            console.error(`[audio-worker] Upload to audio_transcripts/${storagePath} FAILED:`, uploadErr.message);
+        } else {
+            console.log(`[audio-worker] ✅ Transcript saved to audio_transcripts/${storagePath} (${transcript.length} chars)`);
+            saved = true;
+        }
+    } catch (e: any) {
+        console.error(`[audio-worker] Storage upload exception:`, e.message);
+    }
+
+    // Fallback: try saving to 'ocr' bucket (which definitely exists)
+    if (!saved) {
+        try {
+            const fallbackPath = `${lessonId}/audio_transcript.txt`;
+            const { error: fallbackErr } = await supabase.storage
+                .from('ocr')
+                .upload(fallbackPath, transcript, { upsert: true, contentType: 'text/plain;charset=UTF-8' });
+
+            if (fallbackErr) {
+                console.error(`[audio-worker] Fallback upload to ocr/${fallbackPath} FAILED:`, fallbackErr.message);
+            } else {
+                console.log(`[audio-worker] ✅ Transcript saved to ocr/${fallbackPath} (fallback)`);
+                saved = true;
+            }
+        } catch (e: any) {
+            console.error(`[audio-worker] Fallback storage exception:`, e.message);
+        }
+    }
+
+    // Safety net: ALWAYS save transcript to lessons table (never lost)
+    try {
+        await supabase.from('lessons').update({
+            audio_transcript: transcript.substring(0, 100000) // Limit to 100K chars for DB
+        }).eq('id', lessonId);
+        console.log(`[audio-worker] ✅ Transcript also saved to lessons.audio_transcript column`);
+    } catch (e: any) {
+        console.warn(`[audio-worker] Could not save to lessons table (column may not exist):`, e.message);
+    }
+
+    console.log(`[audio-worker] Successfully transcribed audio for lesson ${lessonId}. Saved: ${saved}`);
 
     await supabase.from('processing_queue').update({ status: 'completed' }).eq('id', jobId);
 
@@ -388,3 +433,4 @@ async function saveTranscriptAndComplete(
         dedupe_key: `lesson:${lessonId}:segment_lesson`
     }, { onConflict: 'dedupe_key', ignoreDuplicates: true });
 }
+
