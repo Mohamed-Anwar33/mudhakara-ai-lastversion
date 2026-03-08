@@ -102,6 +102,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         console.log(`✅ [Reanalyze] Queued ${segments.length} analyze_lecture jobs`);
 
+        // Fire-and-forget: trigger process-queue immediately so jobs don't wait for cron
+        const selfUrl = req.headers?.origin || req.headers?.host || '';
+        const baseUrl = selfUrl.startsWith('http') ? selfUrl : `https://${selfUrl}`;
+        fetch(`${baseUrl}/api/process-queue`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ trigger: 'reanalyze' })
+        }).catch(() => { }); // Fire and forget
+
         return res.json({
             success: true,
             queued: segments.length,

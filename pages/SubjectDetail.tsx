@@ -764,6 +764,10 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
         // Poll segment status (not storage) — avoids stale data from old analysis
         for (let attempt = 0; attempt < 36; attempt++) { // 3 minutes max
           await new Promise(r => setTimeout(r, 5000));
+          // Kick process-queue every 15s to push multi-stage jobs
+          if (attempt % 3 === 0) {
+            fetch('/api/process-queue', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"trigger":"poll"}' }).catch(() => { });
+          }
           try {
             const { data: seg } = await supabase.from('segmented_lectures')
               .select('status, summary_storage_path')
