@@ -286,7 +286,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
         const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
-        const maxJobs = 1;
+        const maxJobs = 3; // Dispatch 3 jobs in parallel per invocation for faster throughput
 
         // Fallback cleanup for locked jobs older than 5 minutes
         // Supabase Edge Functions can run up to 150s, plus network overhead.
@@ -355,12 +355,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         const startedAt = Date.now();
-        const processedJobs: Array<Record<string, any>> = [];
 
+        // Phase 1: Acquire multiple jobs quickly (sequential — each acquire is fast)
+        const acquiredJobs: any[] = [];
         for (let i = 0; i < maxJobs; i++) {
-            const jobId = await acquireJobId(supabase, workerId);
+            const wid = `${workerId}-${i}`;
+            const jobId = await acquireJobId(supabase, wid);
             if (!jobId) {
-                console.log(`[${workerId}] No available jobs to claim.`);
+                if (i === 0) console.log(`[${workerId}] No available jobs to claim.`);
                 break;
             }
 
@@ -376,22 +378,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             }
 
             console.log(`[${workerId}] Orchestrating ${job.job_type} (${job.id})`);
-            processedJobs.push(await processSingleJob(supabase, job, workerId, supabaseUrl, serviceKey));
+            acquiredJobs.push({ job, wid });
         }
 
-        const elapsedMs = Date.now() - startedAt;
-
-        if (processedJobs.length === 0) {
+        if (acquiredJobs.length === 0) {
+            const elapsedMs = Date.now() - startedAt;
             return res.status(200).json({ status: 'idle', elapsedMs, message: 'No pending jobs' });
         }
 
-        const lastJob = processedJobs[0];
+        // Phase 2: Dispatch ALL acquired jobs in parallel (concurrent Edge Function calls)
+        const processedJobs = await Promise.all(
+            acquiredJobs.map(({ job, wid }) =>
+                processSingleJob(supabase, job, wid, supabaseUrl, serviceKey)
+            )
+        );
+
+        const elapsedMs = Date.now() - startedAt;
 
         return res.status(200).json({
             status: 'ok',
-            executed: 1,
+            executed: processedJobs.length,
             elapsedMs,
-            jobResult: lastJob
+            jobResults: processedJobs
         });
 
     } catch (error: any) {
