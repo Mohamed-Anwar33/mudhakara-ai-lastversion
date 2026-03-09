@@ -1628,7 +1628,7 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
                             result = await analyzeHomeworkContent(
                               hw.title,
                               hw.description || "تحليل شامل",
-                              hw.source, // Pass hw.source (Source | undefined) not hw (Homework)
+                              hw.source,
                               undefined
                             );
                           }
@@ -1648,8 +1648,8 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
                           setIsProcessing(false);
                         }
                       }
-                    }} className="w-full py-3 bg-slate-50 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-100 transition-colors flex items-center justify-center gap-2">
-                      {isProcessing ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                    }} disabled={isProcessing && !hw.aiResult} className="w-full py-3 bg-slate-50 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-100 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                      {isProcessing && !hw.aiResult ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
                       <span>{hw.aiResult ? "عرض الحل والشرح" : "حل الواجب بالذكاء الاصطناعي"}</span>
                     </button>
                   </div>
@@ -2247,7 +2247,18 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
                   </div>
                 </div>
 
-                {showHomeworkResult.aiResult.similarQuestions && (
+                {/* ─── Correction Note (ملاحظات تصحيحية) ── */}
+                {showHomeworkResult.aiResult.correctionNote && (
+                  <div className="bg-amber-50 p-5 rounded-3xl border border-amber-200">
+                    <h3 className="font-black text-amber-800 mb-2 text-sm flex items-center gap-2 justify-end">
+                      ملاحظات تصحيحية
+                      <AlertTriangle className="text-amber-500" size={16} />
+                    </h3>
+                    <p className="text-xs text-amber-700 leading-relaxed font-bold">{showHomeworkResult.aiResult.correctionNote}</p>
+                  </div>
+                )}
+
+                {showHomeworkResult.aiResult.similarQuestions && showHomeworkResult.aiResult.similarQuestions.length > 0 && (
                   <div>
                     <h3 className="font-black text-slate-800 mb-4 text-sm flex items-center gap-2 justify-end">
                       مسائل مشابهة للتدريب

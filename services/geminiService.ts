@@ -454,7 +454,7 @@ export const analyzeHomeworkContent = async (
     }
   }
 
-  const result = await callGeminiProxy(payload);
+  const result = await callGeminiWithRetry(payload);
 
   // START CLEANUP LOGIC
   if (remoteFileUrl && remoteFileUrl.includes('homework-uploads') && homeworkSource?.type !== 'audio_url' && homeworkSource?.type !== 'video_url') {
