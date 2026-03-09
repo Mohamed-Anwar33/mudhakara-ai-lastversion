@@ -290,68 +290,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         const maxJobs = 3; // Dispatch 3 jobs in parallel per invocation for faster throughput
 
-        // Fallback cleanup for locked jobs older than 5 minutes
-        // Supabase Edge Functions can run up to 150s, plus network overhead.
-        // 3 minutes was too aggressive and caused premature re-dispatching.
-        const staleLockCutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-        const { data: staleJobs } = await supabase
+        // ═══ STALE JOB RECOVERY ═══
+        // Catch-all: Reset ANY job stuck in 'processing' for more than 3 minutes.
+        // Supabase Edge Functions max out at 150s (2.5 min), so 3 min = guaranteed done.
+        // This handles ALL scenarios:
+        //   1. Locked jobs where Edge Function crashed (locked_by set, locked_at old)
+        //   2. Orphaned jobs with no lock (Edge Function cleared lock but left status=processing)
+        //   3. Vercel 6.5s disconnect with "Lock retained" where Edge Function never completed
+        const staleCutoff = new Date(Date.now() - 3 * 60 * 1000).toISOString();
+        const { data: stuckJobs } = await supabase
             .from('processing_queue')
-            .select('id, attempt_count, job_type')
-            .in('status', ['pending', 'processing'])
-            .not('locked_by', 'is', null)
-            .lt('locked_at', staleLockCutoff);
-
-        if (staleJobs && staleJobs.length > 0) {
-            console.log(`[${workerId}] Found ${staleJobs.length} stale locked jobs. Cleaning up...`);
-            for (const stale of staleJobs) {
-                const currentAttempts = Number(stale.attempt_count || 0);
-                if (currentAttempts >= 5) {
-                    const { data: claimed } = await supabase.from('processing_queue')
-                        .update({ status: 'failed', error_message: 'Background processing timeout exceeded multiple times', locked_by: null, locked_at: null })
-                        .eq('id', stale.id)
-                        .not('locked_by', 'is', null)
-                        .select('id').maybeSingle();
-                    if (claimed) console.log(`[${workerId}] Stale job ${stale.id} (${stale.job_type}) marked as FAILED (${currentAttempts} attempts).`);
-                } else {
-                    const { data: claimed } = await supabase.from('processing_queue')
-                        .update({ status: 'pending', locked_by: null, locked_at: null })
-                        .eq('id', stale.id)
-                        .not('locked_by', 'is', null)
-                        .select('id').maybeSingle();
-                    if (claimed) console.log(`[${workerId}] Reset stale job ${stale.id} (${stale.job_type}) to pending.`);
-                }
-            }
-        }
-
-        // ═══ ORPHANED JOB RECOVERY ═══
-        // Jobs stuck in 'processing' with NO lock and not updated in 4+ minutes
-        // Extended from 90s to 4min to avoid premature re-dispatch of Edge Functions
-        const orphanCutoff = new Date(Date.now() - 4 * 60 * 1000).toISOString();
-        const { data: orphanedJobs } = await supabase
-            .from('processing_queue')
-            .select('id, attempt_count, job_type')
+            .select('id, attempt_count, job_type, locked_by, locked_at')
             .eq('status', 'processing')
-            .is('locked_by', null)
-            .lt('updated_at', orphanCutoff);
+            .lt('updated_at', staleCutoff);
 
-        if (orphanedJobs && orphanedJobs.length > 0) {
-            console.log(`[${workerId}] Found ${orphanedJobs.length} orphaned processing jobs. Resetting to pending...`);
-            for (const orphan of orphanedJobs) {
-                const attempts = Number(orphan.attempt_count || 0);
+        if (stuckJobs && stuckJobs.length > 0) {
+            console.log(`[${workerId}] Found ${stuckJobs.length} stuck processing jobs (>3min). Recovering...`);
+            for (const stuck of stuckJobs) {
+                const attempts = Number(stuck.attempt_count || 0) + 1;
                 if (attempts >= 5) {
                     const { data: claimed } = await supabase.from('processing_queue')
-                        .update({ status: 'failed', error_message: 'Orphaned job exceeded recovery attempts', locked_by: null, locked_at: null })
-                        .eq('id', orphan.id)
+                        .update({ status: 'failed', error_message: `فشل بعد ${attempts} محاولات: تجاوز وقت المعالجة`, locked_by: null, locked_at: null, attempt_count: attempts })
+                        .eq('id', stuck.id)
                         .eq('status', 'processing')
                         .select('id').maybeSingle();
-                    if (claimed) console.log(`[${workerId}] Orphaned job ${orphan.id} (${orphan.job_type}) marked as FAILED (${attempts} attempts).`);
+                    if (claimed) console.log(`[${workerId}] Stuck job ${stuck.id} (${stuck.job_type}) → FAILED (${attempts} attempts)`);
                 } else {
                     const { data: claimed } = await supabase.from('processing_queue')
-                        .update({ status: 'pending', locked_by: null, locked_at: null })
-                        .eq('id', orphan.id)
+                        .update({ status: 'pending', locked_by: null, locked_at: null, attempt_count: attempts, next_retry_at: new Date(Date.now() + 5000).toISOString() })
+                        .eq('id', stuck.id)
                         .eq('status', 'processing')
                         .select('id').maybeSingle();
-                    if (claimed) console.log(`[${workerId}] Reset orphaned job ${orphan.id} (${orphan.job_type}) to pending (attempt_count stays at ${attempts}).`);
+                    if (claimed) console.log(`[${workerId}] Stuck job ${stuck.id} (${stuck.job_type}) → pending (attempt ${attempts}/5)`);
                 }
             }
         }

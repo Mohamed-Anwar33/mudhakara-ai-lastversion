@@ -19,6 +19,49 @@ function fixAudioMimeType(mime: string): string {
     return mime;
 }
 
+// ─── Hallucination Detection ───
+// Detects when Gemini/Whisper outputs repetitive garbage instead of real transcription
+function isHallucinated(text: string): { hallucinated: boolean; reason: string } {
+    if (!text || text.length < 50) return { hallucinated: false, reason: '' };
+
+    const words = text.split(/\s+/);
+    if (words.length < 20) return { hallucinated: false, reason: '' };
+
+    // Check 3-word phrase repetitions
+    const phrases: Record<string, number> = {};
+    for (let i = 0; i < words.length - 2; i++) {
+        const phrase = words.slice(i, i + 3).join(' ');
+        phrases[phrase] = (phrases[phrase] || 0) + 1;
+    }
+    const maxRepeat = Math.max(...Object.values(phrases), 0);
+    const topPhrase = Object.entries(phrases).sort((a, b) => b[1] - a[1])[0];
+
+    if (maxRepeat > 5) {
+        // Count how many words are part of repeated phrases
+        let repeatedWords = 0;
+        for (const [phrase, count] of Object.entries(phrases)) {
+            if (count > 5) repeatedWords += count * 3;
+        }
+        const repeatRatio = repeatedWords / words.length;
+
+        if (repeatRatio > 0.4 || maxRepeat > 20) {
+            return {
+                hallucinated: true,
+                reason: `Phrase "${topPhrase?.[0]?.substring(0, 30)}" repeated ${maxRepeat}x (${(repeatRatio * 100).toFixed(0)}% repetitive)`
+            };
+        }
+    }
+
+    // Check unique word ratio — hallucinated text has very few unique words
+    const uniqueWords = new Set(words);
+    const uniqueRatio = uniqueWords.size / words.length;
+    if (words.length > 100 && uniqueRatio < 0.05) {
+        return { hallucinated: true, reason: `Only ${uniqueWords.size} unique words in ${words.length} total (${(uniqueRatio * 100).toFixed(1)}% unique)` };
+    }
+
+    return { hallucinated: false, reason: '' };
+}
+
 // ─── Inline Base64 Transcription (NO File API — single call!) ───
 // Works for files ≤ 20MB. Downloads audio → base64 → sends directly to Gemini.
 async function transcribeInline(audioUrl: string, rawMimeType: string, apiKey: string): Promise<string> {
@@ -290,24 +333,18 @@ serve(async (req) => {
 
                 // Quality check: detect Whisper hallucination
                 if (whisperDone && fullTranscript) {
-                    const expectedMinChars = fileSizeMB * 300;
+                    const expectedMinChars = fileSizeMB * 200;
                     if (fullTranscript.length < expectedMinChars) {
-                        console.warn(`[audio-worker] Whisper output too short: ${fullTranscript.length} chars for ${fileSizeMB.toFixed(1)}MB. Falling back to Gemini.`);
+                        console.warn(`[audio-worker] Whisper output too short: ${fullTranscript.length} chars for ${fileSizeMB.toFixed(1)}MB (expected ≥${expectedMinChars}). Falling back to Gemini.`);
                         whisperDone = false;
                         fullTranscript = '';
                     }
                 }
 
                 if (whisperDone && fullTranscript) {
-                    const words = fullTranscript.split(/\s+/);
-                    const phrases: Record<string, number> = {};
-                    for (let i = 0; i < words.length - 4; i++) {
-                        const phrase = words.slice(i, i + 4).join(' ');
-                        phrases[phrase] = (phrases[phrase] || 0) + 1;
-                    }
-                    const maxRepeat = Math.max(...Object.values(phrases), 0);
-                    if (maxRepeat > 10) {
-                        console.warn(`[audio-worker] Whisper hallucination detected (${maxRepeat} repeats). Falling back to Gemini.`);
+                    const hallCheck = isHallucinated(fullTranscript);
+                    if (hallCheck.hallucinated) {
+                        console.warn(`[audio-worker] Whisper hallucination: ${hallCheck.reason}. Falling back to Gemini.`);
                         whisperDone = false;
                         fullTranscript = '';
                     }
@@ -332,7 +369,10 @@ serve(async (req) => {
                         fullTranscript = cleanTranscriptRepetitions(fullTranscript);
                         console.log(`[audio-worker] Gemini inline transcription successful. Cleaned length: ${fullTranscript.length}`);
 
-                        if (fullTranscript && fullTranscript.length >= 5) {
+                        const hallCheck = isHallucinated(fullTranscript);
+                        if (hallCheck.hallucinated) {
+                            console.warn(`[audio-worker] Gemini inline hallucination: ${hallCheck.reason}. Falling back to File API.`);
+                        } else if (fullTranscript && fullTranscript.length >= 5) {
                             await saveTranscriptAndComplete(supabase, lesson_id, jobId!, fullTranscript, payload, updateProgress);
                             return new Response(JSON.stringify({ status: 'completed', transcript_length: fullTranscript.length }), { headers: corsHeaders });
                         } else {
@@ -467,6 +507,11 @@ serve(async (req) => {
                     fullTranscript = cleanTranscriptRepetitions(fullTranscript);
                     console.log(`[audio-worker] Transcription done. Length: ${fullTranscript.length} chars`);
 
+                    const hallCheck = isHallucinated(fullTranscript);
+                    if (hallCheck.hallucinated) {
+                        console.warn(`[audio-worker] Gemini single-call hallucination: ${hallCheck.reason}. Saving partial.`);
+                    }
+
                     await saveTranscriptAndComplete(supabase, lesson_id, jobId!, fullTranscript, payload, updateProgress);
                     return new Response(JSON.stringify({ status: 'completed', transcript_length: fullTranscript.length }), { headers: corsHeaders });
                 }
@@ -527,6 +572,12 @@ serve(async (req) => {
                     // Last chunk done — combine and save
                     const fullTranscript = cleanTranscriptRepetitions(transcriptParts.join('\n\n'));
                     console.log(`[audio-worker] All chunks complete! Total: ${fullTranscript.length} chars`);
+
+                    const hallCheck = isHallucinated(fullTranscript);
+                    if (hallCheck.hallucinated) {
+                        console.warn(`[audio-worker] Combined transcript hallucination detected: ${hallCheck.reason}. Saving cleaned version.`);
+                    }
+
                     await saveTranscriptAndComplete(supabase, lesson_id, jobId!, fullTranscript, payload, updateProgress);
                     return new Response(JSON.stringify({ status: 'completed', transcript_length: fullTranscript.length, chunks: totalChunks }), { headers: corsHeaders });
                 }
@@ -670,24 +721,60 @@ async function saveTranscriptAndComplete(
 
 // ─── Helper: Remove repetitions from transcripts ───
 function cleanTranscriptRepetitions(text: string): string {
-    const sentences = text.split(/[.،!؟\n]+/).map(s => s.trim()).filter(s => s.length > 5);
-    const cleaned: string[] = [];
+    // Step 1: Remove word-level repetitions (3+ consecutive same words)
+    let result = text.replace(/(\b[\u0600-\u06FF]+\b)(\s+\1){2,}/g, '$1');
+
+    // Step 2: Remove repeated phrases (3-word sequences appearing >5 times)
+    const words = result.split(/\s+/);
+    const phraseCounts: Record<string, number> = {};
+    for (let i = 0; i < words.length - 2; i++) {
+        const phrase = words.slice(i, i + 3).join(' ');
+        phraseCounts[phrase] = (phraseCounts[phrase] || 0) + 1;
+    }
+
+    // Mark phrases that appear too many times
+    const badPhrases = new Set(
+        Object.entries(phraseCounts)
+            .filter(([_, count]) => count > 5)
+            .map(([phrase]) => phrase)
+    );
+
+    if (badPhrases.size > 0) {
+        const cleanedWords: string[] = [];
+        const seenBadPhrases: Record<string, number> = {};
+
+        for (let i = 0; i < words.length; i++) {
+            if (i < words.length - 2) {
+                const phrase = words.slice(i, i + 3).join(' ');
+                if (badPhrases.has(phrase)) {
+                    seenBadPhrases[phrase] = (seenBadPhrases[phrase] || 0) + 1;
+                    if (seenBadPhrases[phrase] > 3) {
+                        i += 2; // Skip the repeated phrase
+                        continue;
+                    }
+                }
+            }
+            cleanedWords.push(words[i]);
+        }
+        result = cleanedWords.join(' ');
+    }
+
+    // Step 3: Remove sentence-level exact repeats
+    const sentences = result.split(/[.،!؟\n]+/).map(s => s.trim()).filter(s => s.length > 5);
+    const cleanedSentences: string[] = [];
     let lastSentence = '';
     let repeatCount = 0;
 
     for (const sentence of sentences) {
         if (sentence === lastSentence || (lastSentence.length > 10 && sentence.includes(lastSentence.substring(0, Math.min(lastSentence.length, 30))))) {
             repeatCount++;
-            if (repeatCount <= 1) cleaned.push(sentence);
+            if (repeatCount <= 1) cleanedSentences.push(sentence);
         } else {
-            cleaned.push(sentence);
+            cleanedSentences.push(sentence);
             repeatCount = 0;
         }
         lastSentence = sentence;
     }
 
-    let result = cleaned.join('. ');
-    result = result.replace(/(\b[\u0600-\u06FF]+\b)(\s+\1){2,}/g, '$1');
-
-    return result;
+    return cleanedSentences.join('. ');
 }

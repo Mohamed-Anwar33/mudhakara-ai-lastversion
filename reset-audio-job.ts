@@ -54,32 +54,55 @@ async function main() {
         }
     }
 
-    // Also reset any stuck segment_lesson jobs for the same lesson
+    // Also clean up old data for this lesson
     if (jobs[0]) {
         const lessonId = jobs[0].lesson_id;
-        const { data: segJobs } = await supabase
-            .from('processing_queue')
-            .select('id, status')
-            .eq('lesson_id', lessonId)
-            .eq('job_type', 'segment_lesson')
-            .in('status', ['pending', 'processing', 'failed']);
+        console.log(`\n🧹 Cleaning old data for lesson ${lessonId}...`);
 
-        if (segJobs && segJobs.length > 0) {
-            for (const sj of segJobs) {
-                await supabase.from('processing_queue').update({
-                    status: 'pending',
-                    attempt_count: 0,
-                    locked_by: null,
-                    locked_at: null,
-                    next_retry_at: null,
-                    error_message: null
-                }).eq('id', sj.id);
-                console.log(`  ✅ Reset segment_lesson ${sj.id} to pending`);
+        // Delete old (hallucinated) transcript
+        for (const path of [
+            `${lessonId}/raw_transcript.txt`,
+            `audio_transcripts/${lessonId}/raw_transcript.txt`,
+        ]) {
+            await supabase.storage.from('audio_transcripts').remove([path]);
+        }
+        console.log('  ✅ Deleted old transcript');
+
+        // Delete old segments and analysis
+        await supabase.from('segmented_lectures').delete().eq('lesson_id', lessonId);
+        console.log('  ✅ Deleted old segments');
+
+        // Reset ALL downstream jobs (segment, analyze, quiz, finalize)
+        const { data: downstreamJobs } = await supabase
+            .from('processing_queue')
+            .select('id, job_type, status')
+            .eq('lesson_id', lessonId)
+            .in('job_type', ['segment_lesson', 'analyze_lecture', 'generate_quiz', 'finalize_global_summary']);
+
+        if (downstreamJobs) {
+            for (const dj of downstreamJobs) {
+                if (['analyze_lecture', 'generate_quiz', 'finalize_global_summary'].includes(dj.job_type)) {
+                    await supabase.from('processing_queue').delete().eq('id', dj.id);
+                    console.log(`  🗑️ Deleted ${dj.job_type} job ${dj.id}`);
+                } else {
+                    await supabase.from('processing_queue').update({
+                        status: 'pending', attempt_count: 0,
+                        locked_by: null, locked_at: null,
+                        next_retry_at: null, error_message: null
+                    }).eq('id', dj.id);
+                    console.log(`  ✅ Reset ${dj.job_type} ${dj.id} to pending`);
+                }
             }
         }
+
+        // Reset lesson analysis status
+        await supabase.from('lessons').update({
+            analysis_status: 'processing', analysis_result: null
+        }).eq('id', lessonId);
+        console.log('  ✅ Reset lesson analysis status');
     }
 
-    console.log('\nDone! After deploying audio-worker, the job will be picked up and use Whisper.');
+    console.log('\n✅ Done! Pipeline will re-process with hallucination detection.');
 }
 
 main().catch(e => console.error('FATAL:', e));
