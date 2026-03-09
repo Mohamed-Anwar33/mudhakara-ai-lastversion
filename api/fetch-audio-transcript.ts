@@ -30,17 +30,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         const supabase = getSupabaseAdmin();
 
-        // 1. Try to load from storage
-        const storagePath = `${lessonId}/raw_transcript.txt`;
-        try {
-            const { data: blob } = await supabase.storage.from('audio_transcripts').download(storagePath);
-            if (blob) {
-                const text = await blob.text();
-                if (text.trim().length > 50) {
-                    return res.json({ success: true, transcript: text.trim(), source: 'storage' });
+        // 1. Try to load from audio_transcripts storage
+        const paths = [
+            { bucket: 'audio_transcripts', path: `${lessonId}/raw_transcript.txt` },
+            { bucket: 'ocr', path: `${lessonId}/audio_transcript.txt` },
+        ];
+        for (const { bucket, path } of paths) {
+            try {
+                const { data: blob } = await supabase.storage.from(bucket).download(path);
+                if (blob) {
+                    const text = await blob.text();
+                    if (text.trim().length > 50) {
+                        return res.json({ success: true, transcript: text.trim(), source: bucket });
+                    }
                 }
-            }
-        } catch (_) { }
+            } catch (_) { }
+        }
 
         // 2. Try document_sections fallback
         const { data: audioSections } = await supabase.from('document_sections')

@@ -1302,15 +1302,7 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
                         </span>
                       </button>
                     )}
-                    {/* Audio verify button */}
-                    <button
-                      onClick={handleCheckAudio}
-                      disabled={checkingAudio}
-                      className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-2xl text-[10px] font-black border-0 cursor-pointer hover:from-blue-600 hover:to-cyan-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
-                    >
-                      {checkingAudio ? <Loader2 size={14} className="animate-spin" /> : <span>🎙️</span>}
-                      <span>{checkingAudio ? 'جاري الفحص...' : 'فحص الصوت'}</span>
-                    </button>
+
                   </div>
                   <h2 className="text-lg font-black text-slate-800 flex items-center gap-2">
                     الدروس المستخرجة ({analyzedLessons.length})
