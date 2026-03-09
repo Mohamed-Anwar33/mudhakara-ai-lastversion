@@ -1433,12 +1433,7 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
                               {weak && <span className="bg-amber-100 text-amber-700 text-[8px] font-black px-2.5 py-1 rounded-full animate-pulse flex items-center gap-1"><AlertTriangle size={10} /> ناقص</span>}
                               {!weak && al.quizzes.length > 0 && (
                                 <span className={`${c.badge} text-[8px] font-black px-2.5 py-1 rounded-full flex items-center gap-1`}>
-                                  <Target size={10} /> {al.quizzes.length}
-                                </span>
-                              )}
-                              {!weak && al.focusPoints.length > 0 && (
-                                <span className="bg-emerald-50 text-emerald-600 text-[8px] font-black px-2.5 py-1 rounded-full flex items-center gap-1">
-                                  <Sparkles size={10} /> {al.focusPoints.length}
+                                  <Target size={10} /> {al.quizzes.length} سؤال
                                 </span>
                               )}
                             </div>

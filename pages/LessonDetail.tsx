@@ -1016,21 +1016,6 @@ const LessonDetail: React.FC = () => {
                 </section>
               )}
 
-              {(transientAIResult?.focusPoints || lesson?.aiResult?.focusPoints) && (
-                <section className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-2 h-full bg-emerald-500"></div>
-                  <h2 className="text-2xl font-black text-slate-800 mb-6 flex items-center justify-end gap-3">نقاط التركيز <Target className="text-emerald-500" /></h2>
-                  <div className="space-y-6">
-                    {(transientAIResult?.focusPoints || lesson?.aiResult?.focusPoints || []).map((fp, idx) => (
-                      <div key={idx} className="p-6 bg-slate-50 rounded-2xl border border-slate-200 text-right">
-                        <h3 className="font-bold text-lg text-slate-900 mb-2">{fp.title}</h3>
-                        <p className="text-slate-600 text-sm leading-relaxed">{fp.details}</p>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              )}
-
               <section className="space-y-6">
                 <h2 className="text-2xl font-black text-slate-800 flex items-center justify-end gap-3">الملخص التفصيلي <Lightbulb className="text-amber-400" /></h2>
 

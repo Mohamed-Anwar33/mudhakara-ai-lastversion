@@ -106,27 +106,6 @@ const AnalyzedLessonDetail: React.FC<AnalyzedLessonDetailProps> = ({ subjects })
                     </section>
                 )}
 
-                {/* ─── Focus Points ──────────────────── */}
-                {lesson.focusPoints.length > 0 && (
-                    <section className="bg-white p-8 md:p-10 rounded-[2.5rem] border border-slate-100 shadow-sm relative overflow-hidden">
-                        <div className="absolute top-0 right-0 w-2 h-full bg-emerald-500"></div>
-                        <h2 className="text-xl font-black text-slate-800 mb-6 flex items-center justify-end gap-3">
-                            نقاط التركيز ({lesson.focusPoints.length})
-                            <Target className="text-emerald-500" size={24} />
-                        </h2>
-                        <div className="space-y-4">
-                            {lesson.focusPoints.map((fp, i) => (
-                                <div key={i} className="p-5 bg-emerald-50/50 rounded-2xl border border-emerald-100">
-                                    <h3 className="font-bold text-base text-slate-900 mb-2 flex items-center gap-2 justify-end">
-                                        {fp.title}
-                                        <span className="w-6 h-6 bg-emerald-500 text-white rounded-full flex items-center justify-center text-[10px] font-black">{i + 1}</span>
-                                    </h3>
-                                    <p className="text-slate-600 text-sm leading-relaxed">{fp.details}</p>
-                                </div>
-                            ))}
-                        </div>
-                    </section>
-                )}
 
                 {/* ─── Quizzes Section ──────────────────── */}
                 {(mcqQuizzes.length > 0 || tfQuizzes.length > 0 || essayQuestions.length > 0) && (
@@ -179,9 +158,9 @@ const AnalyzedLessonDetail: React.FC<AnalyzedLessonDetailProps> = ({ subjects })
                                                             setQuizRevealed(prev => ({ ...prev, [qi]: true }));
                                                         }}
                                                         className={`p-3 rounded-xl text-right text-xs font-bold transition-all border ${isRevealed && isCorrect ? 'bg-emerald-50 border-emerald-300 text-emerald-700' :
-                                                                isRevealed && isSelected && !isCorrect ? 'bg-red-50 border-red-300 text-red-700' :
-                                                                    isSelected ? 'bg-indigo-50 border-indigo-300 text-indigo-700' :
-                                                                        'bg-white border-slate-100 text-slate-700 hover:bg-slate-50'
+                                                            isRevealed && isSelected && !isCorrect ? 'bg-red-50 border-red-300 text-red-700' :
+                                                                isSelected ? 'bg-indigo-50 border-indigo-300 text-indigo-700' :
+                                                                    'bg-white border-slate-100 text-slate-700 hover:bg-slate-50'
                                                             }`}
                                                     >
                                                         {opt}
@@ -219,8 +198,8 @@ const AnalyzedLessonDetail: React.FC<AnalyzedLessonDetailProps> = ({ subjects })
                                                             setQuizAnswers(prev => ({ ...prev, [tfIdx]: oi }));
                                                             setQuizRevealed(prev => ({ ...prev, [tfIdx]: true }));
                                                         }} className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all border ${isRevealed && isCorrect ? 'bg-emerald-50 border-emerald-300 text-emerald-700' :
-                                                                isRevealed && isSelected && !isCorrect ? 'bg-red-50 border-red-300 text-red-700' :
-                                                                    'bg-white border-slate-100 text-slate-700 hover:bg-slate-50'
+                                                            isRevealed && isSelected && !isCorrect ? 'bg-red-50 border-red-300 text-red-700' :
+                                                                'bg-white border-slate-100 text-slate-700 hover:bg-slate-50'
                                                             }`}>
                                                             {opt}
                                                         </button>
