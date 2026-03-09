@@ -73,6 +73,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 .like('dedupe_key', `%${seg.id}%`);
         }
 
+        // Look up original PDF file_path from extract_pdf_info job
+        // This is needed by analyze-lesson to re-upload the PDF if gemini_file_uri is expired
+        let filePath: string | null = null;
+        try {
+            const { data: pdfJobs } = await supabase.from('processing_queue')
+                .select('payload').eq('lesson_id', lessonId)
+                .eq('job_type', 'extract_pdf_info').limit(1);
+            filePath = pdfJobs?.[0]?.payload?.file_path || null;
+        } catch (_) { }
+
         // Create fresh analyze_lecture jobs with ALL fields properly reset
         const jobsToInsert = segments.map(seg => ({
             lesson_id: lessonId,
@@ -82,7 +92,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 title: seg.title,
                 start_page: seg.start_page,
                 end_page: seg.end_page,
-                reanalyze: true
+                reanalyze: true,
+                ...(filePath ? { file_path: filePath } : {})
             },
             status: 'pending',
             attempt_count: 0,

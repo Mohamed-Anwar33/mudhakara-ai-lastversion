@@ -93,6 +93,7 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
   const [reanalyzeElapsed, setReanalyzeElapsed] = useState(0);
   const [reanalyzeTotalCount, setReanalyzeTotalCount] = useState(0);
   const [checkingAudio, setCheckingAudio] = useState(false);
+  const [audioExpanded, setAudioExpanded] = useState(false);
 
   // Timer for re-analysis progress
   useEffect(() => {
@@ -832,49 +833,59 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
 
     if (weakIndices.length === 0) return;
 
-    // 1. Resolve lessonId
-    let lessonId = lastTempLessonId;
-    if (!lessonId) {
-      try {
-        const { data: tempLessons } = await supabase.from('lessons')
-          .select('id').eq('course_id', id)
-          .like('lesson_title', '__analysis__%')
-          .order('created_at', { ascending: false }).limit(1);
-        if (tempLessons?.[0]) {
-          lessonId = tempLessons[0].id;
-          setLastTempLessonId(lessonId);
-          try { localStorage.setItem(`mudhakara_lastlesson_${id}`, lessonId); } catch (_) { }
-        }
-      } catch (_) { }
-    }
+    // 1. ALWAYS re-fetch lessonId from DB (never trust stale localStorage)
+    let lessonId: string | null = null;
+    try {
+      const { data: tempLessons } = await supabase.from('lessons')
+        .select('id').eq('course_id', id)
+        .like('lesson_title', '__analysis__%')
+        .order('created_at', { ascending: false }).limit(1);
+      if (tempLessons?.[0]) {
+        lessonId = tempLessons[0].id;
+        setLastTempLessonId(lessonId);
+        try { localStorage.setItem(`mudhakara_lastlesson_${id}`, lessonId); } catch (_) { }
+      }
+    } catch (_) { }
+
+    // Fallback to stored value only if DB query returned nothing
+    if (!lessonId) lessonId = lastTempLessonId;
     if (!lessonId) {
       toast.error('لا يمكن إعادة التحليل — يرجى تحليل الدروس أولاً');
       return;
     }
 
-    // 2. Find matching segment IDs for ALL weak lessons
+    // 2. Get ALL segments for this lesson, sorted by start_page (same order as analyzedLessons)
     const { data: segments } = await supabase.from('segmented_lectures')
       .select('id, title').eq('lesson_id', lessonId).order('start_page', { ascending: true });
 
     if (!segments || segments.length === 0) {
-      toast.error('لم يتم العثور على الدروس في قاعدة البيانات');
+      toast.error('لم يتم العثور على الدروس في قاعدة البيانات. أعد التحليل من البداية.');
       return;
     }
 
+    // 3. INDEX-BASED matching: analyzedLessons[idx] → segments[idx]
+    //    This is reliable because both arrays are ordered by start_page.
+    //    Falls back to title matching if index is out of range.
     const matchedPairs: { idx: number; segId: string; al: any }[] = [];
     for (const { al, idx } of weakIndices) {
-      const matchingSeg = segments.find((s: any) =>
-        s.title === al.lessonTitle ||
-        s.title?.includes(al.lessonTitle?.split(':').pop()?.trim() || '___') ||
-        al.lessonTitle?.includes(s.title)
-      );
-      if (matchingSeg) {
-        matchedPairs.push({ idx, segId: matchingSeg.id, al });
+      if (idx < segments.length) {
+        // Direct index match — most reliable
+        matchedPairs.push({ idx, segId: segments[idx].id, al });
+      } else {
+        // Fallback: title matching for out-of-range indices
+        const matchingSeg = segments.find((s: any) =>
+          s.title === al.lessonTitle ||
+          s.title?.includes(al.lessonTitle?.split(':').pop()?.trim() || '___') ||
+          al.lessonTitle?.includes(s.title)
+        );
+        if (matchingSeg) {
+          matchedPairs.push({ idx, segId: matchingSeg.id, al });
+        }
       }
     }
 
     if (matchedPairs.length === 0) {
-      toast.error('لم يتم العثور على أي درس مطابق في قاعدة البيانات');
+      toast.error('لم يتم العثور على أي درس مطابق — أعد التحليل من البداية');
       return;
     }
 
@@ -1310,57 +1321,76 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
                   </h2>
                 </div>
 
-                {/* 🎙️ Audio Focus Card */}
+                {/* 🎙️ Audio Transcript Card — Clickable & Expandable */}
                 {audioTranscriptData && audioTranscriptData.length > 50 && (
-                  <div className="mb-6 bg-gradient-to-br from-blue-50 via-cyan-50 to-blue-50 p-6 rounded-[2rem] border border-blue-200 shadow-md relative overflow-hidden">
+                  <div className="mb-6 bg-gradient-to-br from-blue-50 via-cyan-50 to-blue-50 rounded-[2rem] border border-blue-200 shadow-md relative overflow-hidden transition-all duration-500">
                     <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-blue-100/50 to-transparent rounded-full -translate-y-8 translate-x-8"></div>
-                    <div className="relative">
-                      <div className="flex items-center justify-between mb-4">
+                    {/* Header — Always visible, clickable */}
+                    <div
+                      className="relative p-6 cursor-pointer hover:bg-blue-50/50 transition-colors"
+                      onClick={() => setAudioExpanded(!audioExpanded)}
+                    >
+                      <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-2xl flex items-center justify-center shadow-lg">
-                            <span className="text-xl">🎙️</span>
+                          <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-2xl flex items-center justify-center shadow-lg">
+                            <Headphones size={24} className="text-white" />
                           </div>
                           <div>
-                            <h3 className="text-sm font-black text-blue-800">التسجيل الصوتي</h3>
-                            <span className="text-[10px] text-blue-500 font-bold">{audioTranscriptData.length.toLocaleString()} حرف مفرّغ</span>
+                            <h3 className="text-sm font-black text-blue-800 flex items-center gap-2">تفريغ التسجيل الصوتي</h3>
+                            <span className="text-[10px] text-blue-500 font-bold">{Math.round(audioTranscriptData.length / 1000)}k حرف — اضغط {audioExpanded ? 'للطي' : 'للقراءة'}</span>
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="bg-blue-500 text-white text-[9px] font-black px-3 py-1 rounded-full">✅ تم التفريغ</span>
+                          <div className={`w-8 h-8 bg-white rounded-full flex items-center justify-center border border-blue-200 shadow-sm transition-transform ${audioExpanded ? 'rotate-180' : ''}`}>
+                            <ChevronRight size={16} className="text-blue-500 rotate-[-90deg]" />
+                          </div>
                         </div>
                       </div>
-
-                      {/* Key Topics */}
-                      <div className="mb-3">
-                        <div className="flex flex-wrap gap-2">
+                      {/* Preview when collapsed */}
+                      {!audioExpanded && (
+                        <div className="mt-3 bg-white/70 p-3 rounded-2xl border border-blue-100">
+                          <p className="text-[11px] text-slate-500 leading-relaxed line-clamp-2 text-right" dir="rtl">
+                            {audioTranscriptData.substring(0, 200).trim()}...
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                    {/* Expanded Content — Structured Paragraphs */}
+                    {audioExpanded && (
+                      <div className="px-6 pb-6 animate-in fade-in slide-in-from-top-2 duration-300">
+                        <div className="space-y-3 max-h-[70vh] overflow-y-auto custom-scrollbar" dir="rtl">
                           {(() => {
-                            // Extract key topics from transcript
-                            const words = audioTranscriptData.split(/\s+/);
-                            const freq: Record<string, number> = {};
-                            for (const w of words) {
-                              if (w.length > 3 && !/^(هذا|هذه|التي|الذي|التي|كان|يكون|على|من|إلى|في|عن|هل|لا|ما|لم|لن|أن|إن|كل|بعض|ذلك|تلك|هناك|هنا)$/.test(w)) {
-                                freq[w] = (freq[w] || 0) + 1;
+                            // Split transcript into meaningful paragraphs
+                            const sentences = audioTranscriptData.split(/(?<=[.!؟。])\.?\s+/);
+                            const paragraphs: string[] = [];
+                            let current = '';
+                            for (const s of sentences) {
+                              if ((current + ' ' + s).length > 300 && current.length > 100) {
+                                paragraphs.push(current.trim());
+                                current = s;
+                              } else {
+                                current += (current ? ' ' : '') + s;
                               }
                             }
-                            return Object.entries(freq)
-                              .sort((a, b) => b[1] - a[1])
-                              .slice(0, 8)
-                              .map(([word]) => (
-                                <span key={word} className="bg-white text-blue-700 text-[9px] font-bold px-3 py-1.5 rounded-full border border-blue-100 shadow-sm">
-                                  {word}
-                                </span>
-                              ));
+                            if (current.trim()) paragraphs.push(current.trim());
+
+                            return paragraphs.map((para, i) => (
+                              <div key={i} className="bg-white rounded-2xl p-4 border border-blue-100 hover:border-blue-300 hover:shadow-sm transition-all">
+                                <div className="flex items-start gap-3">
+                                  <div className="flex-shrink-0 w-7 h-7 bg-gradient-to-br from-blue-100 to-cyan-100 rounded-lg flex items-center justify-center mt-0.5">
+                                    <span className="text-[10px] font-black text-blue-600">{i + 1}</span>
+                                  </div>
+                                  <p className="text-[12px] text-slate-700 leading-[1.9] font-medium">
+                                    {para}
+                                  </p>
+                                </div>
+                              </div>
+                            ));
                           })()}
                         </div>
                       </div>
-
-                      {/* Transcript Preview */}
-                      <div className="bg-white/70 p-4 rounded-2xl border border-blue-100">
-                        <p className="text-[11px] text-slate-600 leading-relaxed line-clamp-4" dir="rtl">
-                          {audioTranscriptData.substring(0, 500)}...
-                        </p>
-                      </div>
-                    </div>
+                    )}
                   </div>
                 )}
 
@@ -1458,59 +1488,7 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
                     );
                   })()}
 
-                  {/* ── Audio Recording Card ── */}
-                  {audioTranscriptData && audioTranscriptData.length > 50 && (
-                    <div className="relative group col-span-2 sm:col-span-3">
-                      <div className="block bg-gradient-to-br from-blue-50 via-cyan-50 to-indigo-50 p-6 rounded-[2.5rem] border border-blue-200 shadow-sm hover:shadow-xl transition-all cursor-pointer"
-                        onClick={() => {
-                          const audioLesson: AnalyzedLesson = {
-                            id: `audio_${id}`,
-                            lessonTitle: '🎧 تفريغ التسجيل الصوتي',
-                            summary: '',
-                            focusPoints: [],
-                            quizzes: [],
-                            essayQuestions: [],
-                            detailedExplanation: audioTranscriptData
-                          };
-                          const allLessons = [...analyzedLessons];
-                          const existingIdx = allLessons.findIndex(l => l.id === `audio_${id}`);
-                          if (existingIdx >= 0) {
-                            allLessons[existingIdx] = audioLesson;
-                          } else {
-                            allLessons.push(audioLesson);
-                          }
-                          setAnalyzedLessons(allLessons);
-                          localStorage.setItem(`mudhakara_analyzedlessons_${id}`, JSON.stringify(allLessons));
-                          navigate(`/subject/${id}/analyzed/${existingIdx >= 0 ? existingIdx : allLessons.length - 1}`);
-                        }}>
-                        <div className="flex items-start gap-4 justify-end">
-                          <div className="flex-1 text-right">
-                            <h3 className="font-black text-base text-blue-800 mb-1 flex items-center gap-2 justify-end">
-                              تفريغ التسجيل الصوتي
-                              <Headphones size={22} className="text-blue-500" />
-                            </h3>
-                            <p className="text-[11px] text-blue-600/70 font-bold mb-2">
-                              🎙️ ما قاله المعلم في التسجيل — {Math.round(audioTranscriptData.length / 1000)}k حرف
-                            </p>
-                            {/* Content preview */}
-                            <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-3 border border-blue-100 mb-2">
-                              <p className="text-[10px] text-slate-600 leading-relaxed line-clamp-3 text-right" dir="rtl">
-                                {audioTranscriptData.substring(0, 300).trim()}...
-                              </p>
-                            </div>
-                            <div className="flex gap-1 mt-2 justify-end flex-wrap">
-                              <span className="bg-blue-100 text-blue-700 text-[9px] font-black px-2 py-0.5 rounded-full">📝 نص كامل</span>
-                              <span className="bg-cyan-100 text-cyan-700 text-[9px] font-black px-2 py-0.5 rounded-full">🎧 مفرّغ بالذكاء الاصطناعي</span>
-                              <span className="bg-purple-100 text-purple-700 text-[9px] font-black px-2 py-0.5 rounded-full">🕐 من البداية للنهاية</span>
-                            </div>
-                          </div>
-                          <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-cyan-500 text-white rounded-[1.5rem] flex items-center justify-center group-hover:scale-110 transition-transform shadow-lg flex-shrink-0">
-                            <Headphones size={32} />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+
                 </div>
               </div>
             )}

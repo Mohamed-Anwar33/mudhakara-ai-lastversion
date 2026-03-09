@@ -326,22 +326,87 @@ serve(async (req) => {
                 // If OCR produced no text or very little, read pages directly from PDF
                 const totalOcrChars = rawTextChunks.join('').length;
                 if (totalOcrChars < 200) {
-                    console.log(`[analyze-lesson] ⚠️ OCR text insufficient (${totalOcrChars} chars) for pages ${start_page}-${end_page}. Attempting PDF re-read...`);
+                    console.log(`[analyze-lesson] ⚠️ OCR text insufficient (${totalOcrChars} chars) for pages ${start_page}-${end_page}. Attempting fallbacks...`);
 
+                    // FALLBACK 1: Try reading from adjacent pages' OCR that DO have content
                     try {
-                        // Find gemini_file_uri from processing_queue
-                        let pdfUri = '';
-                        const { data: pdfJobs } = await supabase.from('processing_queue')
-                            .select('payload').eq('lesson_id', lesson_id)
-                            .eq('job_type', 'extract_pdf_info').limit(1);
+                        const { data: adjacentPages } = await supabase.from('lesson_pages')
+                            .select('page_number, storage_path, char_count')
+                            .eq('lesson_id', lesson_id)
+                            .gte('page_number', Math.max(1, start_page - 2))
+                            .lte('page_number', end_page + 2)
+                            .gt('char_count', 100)
+                            .order('page_number');
 
-                        if (pdfJobs?.[0]?.payload?.gemini_file_uri) {
-                            pdfUri = pdfJobs[0].payload.gemini_file_uri;
-                            console.log(`[analyze-lesson] 📎 Found gemini_file_uri from processing_queue`);
+                        if (adjacentPages && adjacentPages.length > 0) {
+                            const adjacentReadPaths = new Set<string>();
+                            for (const ap of adjacentPages) {
+                                if (!ap.storage_path || adjacentReadPaths.has(ap.storage_path)) continue;
+                                adjacentReadPaths.add(ap.storage_path);
+                                const { data: adjText } = await supabase.storage.from('ocr').download(ap.storage_path);
+                                if (adjText) {
+                                    const text = await adjText.text();
+                                    const clean = sanitizeOcrText(text);
+                                    if (clean && clean.length > 100) {
+                                        rawTextChunks.push(clean);
+                                        console.log(`[analyze-lesson] ✅ Got ${clean.length} chars from adjacent page OCR (${ap.storage_path})`);
+                                    }
+                                }
+                            }
                         }
+                    } catch (adjErr: any) {
+                        console.warn(`[analyze-lesson] Adjacent page fallback error:`, adjErr.message);
+                    }
 
-                        if (pdfUri && geminiKey) {
-                            const ocrPrompt = `أنت خبير في استخراج النصوص العربية من ملفات PDF. اقرأ الصفحات من ${start_page} إلى ${end_page} واستخرج النص كاملاً.
+                    // FALLBACK 2: PDF re-read via Gemini (only if still insufficient)
+                    if (rawTextChunks.join('').length < 200) {
+                        try {
+                            let pdfUri = '';
+                            const { data: pdfJobs } = await supabase.from('processing_queue')
+                                .select('payload').eq('lesson_id', lesson_id)
+                                .eq('job_type', 'extract_pdf_info').limit(1);
+
+                            if (pdfJobs?.[0]?.payload?.gemini_file_uri) {
+                                pdfUri = pdfJobs[0].payload.gemini_file_uri;
+                                console.log(`[analyze-lesson] 📎 Found gemini_file_uri from processing_queue`);
+                            }
+
+                            // If no URI or it might be expired, try to get file_path and re-upload
+                            // Check current job's payload first (passed by reanalyze-direct), then extract_pdf_info job
+                            const filePath = payload.file_path || pdfJobs?.[0]?.payload?.file_path;
+                            if (!pdfUri && filePath) {
+                                console.log(`[analyze-lesson] 📎 No gemini_file_uri, trying to re-upload from: ${filePath}`);
+                                try {
+                                    const { data: pdfBlob } = await supabase.storage.from('homework-uploads').download(filePath);
+                                    if (pdfBlob) {
+                                        const uploadRes = await fetch(
+                                            `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${geminiKey}`,
+                                            {
+                                                method: 'POST',
+                                                headers: {
+                                                    'Content-Type': 'application/pdf',
+                                                    'X-Goog-Upload-Display-Name': `reocr_${lesson_id}.pdf`,
+                                                },
+                                                body: pdfBlob,
+                                            }
+                                        );
+                                        if (uploadRes.ok) {
+                                            const uploadData = await uploadRes.json();
+                                            pdfUri = uploadData.file?.uri || '';
+                                            if (pdfUri) {
+                                                console.log(`[analyze-lesson] ✅ Re-uploaded PDF, got fresh URI`);
+                                                // Wait for processing
+                                                await new Promise(r => setTimeout(r, 3000));
+                                            }
+                                        }
+                                    }
+                                } catch (reupErr: any) {
+                                    console.warn(`[analyze-lesson] PDF re-upload failed:`, reupErr.message);
+                                }
+                            }
+
+                            if (pdfUri && geminiKey) {
+                                const ocrPrompt = `أنت خبير في استخراج النصوص العربية من ملفات PDF. اقرأ الصفحات من ${start_page} إلى ${end_page} واستخرج النص كاملاً.
 القواعد:
 - استخرج كل النص بدقة مع الحفاظ على ترتيب الفقرات
 - اكتب النص بالكامل كما هو
@@ -349,56 +414,61 @@ serve(async (req) => {
 
 مطلوب استخراج النص من الصفحات ${start_page} إلى ${end_page} فقط.`;
 
-                            const ocrRes = await fetch(
-                                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
-                                {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({
-                                        contents: [{
-                                            parts: [
-                                                { text: ocrPrompt },
-                                                { fileData: { fileUri: pdfUri, mimeType: 'application/pdf' } }
-                                            ]
-                                        }],
-                                        generationConfig: { temperature: 0.1, maxOutputTokens: 65536 }
-                                    })
-                                }
-                            );
+                                const ocrRes = await fetch(
+                                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
+                                    {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({
+                                            contents: [{
+                                                parts: [
+                                                    { text: ocrPrompt },
+                                                    { fileData: { fileUri: pdfUri, mimeType: 'application/pdf' } }
+                                                ]
+                                            }],
+                                            generationConfig: { temperature: 0.1, maxOutputTokens: 65536 }
+                                        })
+                                    }
+                                );
 
-                            if (ocrRes.ok) {
-                                const ocrData = await ocrRes.json();
-                                const extractedText = ocrData.candidates?.[0]?.content?.parts
-                                    ?.filter((p: any) => p.text).map((p: any) => p.text).join('').trim() || '';
+                                if (ocrRes.ok) {
+                                    const ocrData = await ocrRes.json();
+                                    const extractedText = ocrData.candidates?.[0]?.content?.parts
+                                        ?.filter((p: any) => p.text).map((p: any) => p.text).join('').trim() || '';
 
-                                if (extractedText.length > 100) {
-                                    console.log(`[analyze-lesson] ✅ PDF re-read got ${extractedText.length} chars for pages ${start_page}-${end_page}`);
-                                    rawTextChunks = [extractedText];
+                                    if (extractedText.length > 100) {
+                                        console.log(`[analyze-lesson] ✅ PDF re-read got ${extractedText.length} chars for pages ${start_page}-${end_page}`);
+                                        rawTextChunks = [extractedText];
 
-                                    // Save to OCR storage for future use
-                                    const reOcrPath = `${lesson_id}/reocr_${start_page}_${end_page}.txt`;
-                                    await supabase.storage.from('ocr')
-                                        .upload(reOcrPath, extractedText, { upsert: true, contentType: 'text/plain;charset=UTF-8' });
+                                        // Save to OCR storage for future use
+                                        const reOcrPath = `${lesson_id}/reocr_${start_page}_${end_page}.txt`;
+                                        await supabase.storage.from('ocr')
+                                            .upload(reOcrPath, extractedText, { upsert: true, contentType: 'text/plain;charset=UTF-8' });
 
-                                    // Update lesson_pages
-                                    for (let pn = start_page; pn <= end_page; pn++) {
-                                        await supabase.from('lesson_pages').upsert({
-                                            lesson_id,
-                                            page_number: pn,
-                                            storage_path: reOcrPath,
-                                            char_count: extractedText.length,
-                                            status: 'success'
-                                        }, { onConflict: 'lesson_id,page_number' });
+                                        // Update lesson_pages AND segment char_count
+                                        for (let pn = start_page; pn <= end_page; pn++) {
+                                            await supabase.from('lesson_pages').upsert({
+                                                lesson_id,
+                                                page_number: pn,
+                                                storage_path: reOcrPath,
+                                                char_count: extractedText.length,
+                                                status: 'success'
+                                            }, { onConflict: 'lesson_id,page_number' });
+                                        }
+                                        // Update segment char_count so it's not considered "empty" anymore
+                                        await supabase.from('segmented_lectures')
+                                            .update({ char_count: extractedText.length })
+                                            .eq('id', payload.lecture_id);
+                                    } else {
+                                        console.warn(`[analyze-lesson] ⚠️ PDF re-read also insufficient (${extractedText.length} chars)`);
                                     }
                                 } else {
-                                    console.warn(`[analyze-lesson] ⚠️ PDF re-read also insufficient (${extractedText.length} chars)`);
+                                    console.warn(`[analyze-lesson] ⚠️ PDF re-read API failed: ${ocrRes.status}`);
                                 }
-                            } else {
-                                console.warn(`[analyze-lesson] ⚠️ PDF re-read API failed: ${ocrRes.status}`);
                             }
+                        } catch (fallbackErr: any) {
+                            console.warn(`[analyze-lesson] ⚠️ PDF fallback error:`, fallbackErr.message);
                         }
-                    } catch (fallbackErr: any) {
-                        console.warn(`[analyze-lesson] ⚠️ PDF fallback error:`, fallbackErr.message);
                     }
                 }
 
@@ -408,17 +478,28 @@ serve(async (req) => {
                         // Push a dummy chunk so the pipeline proceeds to Map phase where audioContext is analyzed
                         rawTextChunks.push("تنبيه للنظام: المحتوى الرئيسي لهذا القسم هو التسجيل الصوتي المرفق (التفريغ). يرجى الاعتماد عليه كلياً في استخراج الشرح ونقاط التركيز.");
                     } else {
-                        // Empty section even after fallback, skip
-                        console.warn(`[analyze-lesson] ❌ No text AND no audio available for pages ${start_page}-${end_page}. Skipping.`);
-                        await supabase.from('segmented_lectures').update({ status: 'quiz_done' }).eq('id', payload.lecture_id);
+                        // Empty section even after all fallbacks — mark with a minimal explanation
+                        console.warn(`[analyze-lesson] ❌ No text AND no audio for pages ${start_page}-${end_page}. Generating minimal result.`);
+
+                        // Instead of skipping completely, save a minimal analysis file so reanalyze can detect it
+                        const minimalResult = {
+                            explanation_notes: `⚠️ لم يتم استخراج محتوى من الصفحات ${start_page} إلى ${end_page}. قد يكون السبب:\n- صفحات تحتوي على صور فقط\n- صفحات فارغة أو غلاف\n- مشكلة في استخراج النص\n\nيُرجى إعادة التحليل مرة أخرى.`,
+                            key_definitions: [],
+                            focusPoints: [],
+                            quizzes: []
+                        };
+                        const analysisPath = `${lesson_id}/lecture_${payload.lecture_id}.json`;
+                        await supabase.storage.from('analysis')
+                            .upload(analysisPath, JSON.stringify(minimalResult), { upsert: true, contentType: 'application/json' });
+
+                        await supabase.from('segmented_lectures').update({ status: 'quiz_done', summary_storage_path: analysisPath }).eq('id', payload.lecture_id);
                         await supabase.from('processing_queue').update({ status: 'completed' }).eq('id', jobId);
 
-                        // We also need to check if this was the last lecture holding up the global aggregator!
                         const { count: totalSegments } = await supabase.from('segmented_lectures').select('*', { count: 'exact', head: true }).eq('lesson_id', lesson_id);
                         const { count: finishedSegments } = await supabase.from('segmented_lectures').select('*', { count: 'exact', head: true }).eq('lesson_id', lesson_id).eq('status', 'quiz_done');
 
                         if (totalSegments && finishedSegments && totalSegments === finishedSegments) {
-                            console.log(`[analyze-lesson] All quizzes done for lesson ${lesson_id} (Skipped Empty)!`);
+                            console.log(`[analyze-lesson] All quizzes done for lesson ${lesson_id} (with empty section notice)`);
                         }
 
                         return new Response(JSON.stringify({ status: 'skipped_empty' }), { headers: corsHeaders });
