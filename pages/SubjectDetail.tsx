@@ -1975,6 +1975,47 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
                       ))}
                     </div>
                   </div>
+
+                  {/* ─── Mock Exam (الاختبار التجريبي) ───────────────── */}
+                  {(examReviewResult as any).mockExam?.questions?.length > 0 && (
+                    <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm border-l-4 border-l-purple-500">
+                      <div className="flex items-center justify-between mb-6">
+                        <button onClick={() => handleRegenerate('mockExam')} disabled={!!regenerating} className="text-[10px] font-black text-indigo-500 hover:text-indigo-700 flex items-center gap-1 disabled:opacity-50">
+                          {regenerating === 'mockExam' ? <Loader2 size={12} className="animate-spin" /> : <ArrowRight size={12} />} إعادة توليد
+                        </button>
+                        <h3 className="font-black text-xl text-slate-800 flex items-center gap-2">
+                          <Cpu className="text-purple-500" />
+                          الاختبار التجريبي
+                        </h3>
+                      </div>
+                      {(examReviewResult as any).mockExam?.instructions && (
+                        <div className="bg-purple-50 p-4 rounded-2xl mb-6 border border-purple-100">
+                          <p className="text-xs font-bold text-purple-700 text-right" dir="rtl">📋 {(examReviewResult as any).mockExam.instructions}</p>
+                        </div>
+                      )}
+                      <div className="space-y-6">
+                        {((examReviewResult as any).mockExam?.questions || []).map((q: any, i: number) => (
+                          <div key={i} className="bg-slate-50 p-6 rounded-[2rem] border border-slate-100">
+                            <p className="font-black text-slate-800 mb-4 text-sm flex items-start gap-3">
+                              <span className="bg-purple-100 text-purple-600 w-6 h-6 rounded-full flex items-center justify-center text-[10px] shrink-0 mt-0.5">{i + 1}</span>
+                              {q.question}
+                            </p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-4 pr-9">
+                              {(q.options || []).map((opt: string, optIdx: number) => (
+                                <div key={optIdx} className={`p-3 rounded-xl text-xs font-bold border text-right transition-all ${optIdx === q.correctAnswer ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-white border-slate-100 text-slate-500'}`}>
+                                  {opt}
+                                  {optIdx === q.correctAnswer && <CheckCircle2 size={14} className="inline-block mr-2 text-emerald-500" />}
+                                </div>
+                              ))}
+                            </div>
+                            <div className="pr-9">
+                              <p className="text-[10px] text-slate-400 font-bold bg-white/50 p-3 rounded-xl inline-block border border-slate-50">💡 {q.explanation}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })()}

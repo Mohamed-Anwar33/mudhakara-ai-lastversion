@@ -9,7 +9,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
  */
 
 export const config = {
-    maxDuration: 10 // Vercel Hobby max
+    maxDuration: 60 // Vercel Hobby allows up to 60s — needed for Gemini structured output
 };
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {

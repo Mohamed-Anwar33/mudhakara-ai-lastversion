@@ -64,6 +64,31 @@ const callGeminiProxy = async (payload: {
 };
 
 /**
+ * Retry wrapper — retries API call once with exponential backoff
+ * Handles 429 (rate limit), 504 (timeout), and network errors
+ */
+const callGeminiWithRetry = async (payload: Parameters<typeof callGeminiProxy>[0], retries = 1): Promise<any> => {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await callGeminiProxy(payload);
+    } catch (err: any) {
+      const isRetryable = err.message?.includes('Rate Limit') ||
+        err.message?.includes('Timeout') ||
+        err.message?.includes('429') ||
+        err.message?.includes('504') ||
+        err.message?.includes('تعذر الاتصال');
+      if (attempt < retries && isRetryable) {
+        const delay = (attempt + 1) * 3000; // 3s, 6s
+        console.warn(`⚡ Retry ${attempt + 1}/${retries} after ${delay}ms...`);
+        await new Promise(r => setTimeout(r, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+};
+
+/**
  * جلب المحتوى الفعلي للمصدر من IndexedDB
  */
 const fetchContent = async (s: Source) => {
@@ -459,10 +484,11 @@ export const analyzeHomeworkContent = async (
 };
 
 /**
- * توليد مراجعة نهائية لعدة دروس — Enhanced v2
+ * توليد مراجعة نهائية لعدة دروس — Enhanced v3
+ * - Retry with backoff on each API call
+ * - Error recovery: partial results instead of full crash
+ * - Reduced context to stay within Vercel limits
  * - Progress callback for step-by-step UI updates
- * - Rich context from AI pipeline (summary + focusPoints + quizzes + essayQuestions)
- * - Partial regeneration support
  */
 export const generateExamReview = async (
   subjectName: string,
@@ -471,8 +497,8 @@ export const generateExamReview = async (
 ): Promise<ExamReviewResult> => {
   console.log("🔍 generateExamReview:", { subjectName, lessonsCount: selectedLessons.length });
 
-  const MAX_SOURCE_CHARS = 50000;
-  const MAX_TOTAL_CHARS = 200000;
+  const MAX_SOURCE_CHARS = 30000;
+  const MAX_TOTAL_CHARS = 80000; // Reduced from 200K to stay within Vercel 4MB body limit
 
   const smartTruncate = (text: string, limit: number): string => {
     if (!text || text.length <= limit) return text;
@@ -535,72 +561,14 @@ export const generateExamReview = async (
   const commonContext = `صمم مراجعة نهائية شاملة لـ ${subjectName} من هذه الدروس:\n${smartTruncate(contextString, MAX_TOTAL_CHARS)}`;
   const systemInstruction = `أنت مساعد مراجعة ذكي. قم بتوليد المحتوى المطلوب بناءً على الدروس المقدمة. استخدم المحتوى المقدم فقط ولا تخترع.`;
 
+  console.log(`📏 Review context size: ${commonContext.length} chars`);
+
   const TOTAL_STEPS = 4;
+  const errors: string[] = [];
 
-  // ─── Step 1: Summary & Key Points ─────────────────────
-  onProgress?.(1, TOTAL_STEPS, "جاري توليد الملخص الشامل والنقاط الرئيسية...");
-  const summaryResult = await callGeminiProxy({
-    contents: [{ parts: [{ text: `قدم ملخصاً شاملاً ومفصلاً بالعربية مع نقاط رئيسية.\n${commonContext}` }] }],
-    systemInstruction,
-    responseSchema: {
-      type: "OBJECT",
-      properties: {
-        comprehensiveSummary: { type: "STRING" },
-        keyPoints: { type: "ARRAY", items: { type: "STRING" } }
-      },
-      required: ["comprehensiveSummary", "keyPoints"]
-    }
-  });
-
-  // ─── Step 2: MCQs & True/False ────────────────────────
-  const questionCount = Math.max(20, selectedLessons.length * 5);
-  const tfCount = Math.max(10, selectedLessons.length * 3);
-
-  onProgress?.(2, TOTAL_STEPS, `جاري إنشاء ${questionCount} سؤال اختياري و ${tfCount} صح/خطأ...`);
-  const mcqResult = await callGeminiProxy({
-    contents: [{ parts: [{ text: `ولّد ${questionCount} سؤال اختياري و ${tfCount} سؤال صح/خطأ بالعربية. غطِ كل الدروس.\n${commonContext}` }] }],
-    systemInstruction,
-    responseSchema: {
-      type: "OBJECT",
-      properties: {
-        mcqs: { type: "ARRAY", items: { type: "OBJECT", properties: { question: { type: "STRING" }, options: { type: "ARRAY", items: { type: "STRING" } }, correctAnswer: { type: "INTEGER" }, explanation: { type: "STRING" } }, required: ["question", "options", "correctAnswer", "explanation"] } },
-        trueFalseQuestions: { type: "ARRAY", items: { type: "OBJECT", properties: { question: { type: "STRING" }, options: { type: "ARRAY", items: { type: "STRING" } }, correctAnswer: { type: "INTEGER" }, explanation: { type: "STRING" } }, required: ["question", "options", "correctAnswer", "explanation"] } }
-      },
-      required: ["mcqs", "trueFalseQuestions"]
-    }
-  });
-
-  // ─── Step 3: Essay Questions ──────────────────────────
-  const essayCount = Math.max(7, selectedLessons.length * 2);
-  onProgress?.(3, TOTAL_STEPS, `جاري توليد ${essayCount} سؤال مقالي مع إجابات نموذجية...`);
-  const essayResult = await callGeminiProxy({
-    contents: [{ parts: [{ text: `ولّد ${essayCount} سؤال مقالي بالعربية مع إجابة نموذجية مفصلة لكل سؤال.\n${commonContext}` }] }],
-    systemInstruction: "أنت معلم خبير. ضع إجابة نموذجية مفصلة لكل سؤال مقالي. لا تترك حقل الإجابة فارغاً.",
-    responseSchema: {
-      type: "OBJECT",
-      properties: {
-        essayQuestions: { type: "ARRAY", items: { type: "OBJECT", properties: { question: { type: "STRING" }, idealAnswer: { type: "STRING", description: "إجابة تفصيلية 3 جمل على الأقل" } }, required: ["question", "idealAnswer"] } }
-      },
-      required: ["essayQuestions"]
-    }
-  });
-
-  // ─── Step 4: Mock Exam ────────────────────────────────
-  onProgress?.(4, TOTAL_STEPS, "جاري إنشاء الاختبار التجريبي...");
-  const mockResult = await callGeminiProxy({
-    contents: [{ parts: [{ text: `ولّد اختبار تجريبي بالعربية (15+ سؤال) يغطي كل الدروس.\n${commonContext}` }] }],
-    systemInstruction,
-    responseSchema: {
-      type: "OBJECT",
-      properties: {
-        mockExam: { type: "OBJECT", properties: { instructions: { type: "STRING" }, questions: { type: "ARRAY", items: { type: "OBJECT", properties: { question: { type: "STRING" }, options: { type: "ARRAY", items: { type: "STRING" } }, correctAnswer: { type: "INTEGER" }, explanation: { type: "STRING" } }, required: ["question", "options", "correctAnswer", "explanation"] } } }, required: ["instructions", "questions"] }
-      },
-      required: ["mockExam"]
-    }
-  });
-
-  // ─── Parse results ────────────────────────────────────
+  // ─── Parse helper ────────────────────────────────────
   const parseResult = (result: any, name: string) => {
+    if (!result) return null;
     if (result.data) return result.data;
     const textToParse = result.rawText || result.text || "{}";
     let clean = textToParse.trim();
@@ -609,13 +577,107 @@ export const generateExamReview = async (
     try { return JSON.parse(clean); } catch { console.error(`❌ Parse ${name} failed`); return null; }
   };
 
-  const summaryData = parseResult(summaryResult, "Summary");
-  const mcqData = parseResult(mcqResult, "MCQ");
-  const essayData = parseResult(essayResult, "Essay");
-  const mockData = parseResult(mockResult, "MockExam");
+  // ─── Step 1: Summary & Key Points ─────────────────────
+  let summaryData: any = null;
+  try {
+    onProgress?.(1, TOTAL_STEPS, "جاري توليد الملخص الشامل والنقاط الرئيسية...");
+    const summaryResult = await callGeminiWithRetry({
+      contents: [{ parts: [{ text: `قدم ملخصاً شاملاً ومفصلاً بالعربية مع نقاط رئيسية.\n${commonContext}` }] }],
+      systemInstruction,
+      responseSchema: {
+        type: "OBJECT",
+        properties: {
+          comprehensiveSummary: { type: "STRING" },
+          keyPoints: { type: "ARRAY", items: { type: "STRING" } }
+        },
+        required: ["comprehensiveSummary", "keyPoints"]
+      }
+    });
+    summaryData = parseResult(summaryResult, "Summary");
+  } catch (e: any) {
+    console.error("❌ Step 1 (Summary) failed:", e.message);
+    errors.push(`الملخص: ${e.message}`);
+  }
+
+  // ─── Step 2: MCQs & True/False ────────────────────────
+  let mcqData: any = null;
+  try {
+    const questionCount = Math.max(15, selectedLessons.length * 4);
+    const tfCount = Math.max(8, selectedLessons.length * 2);
+    onProgress?.(2, TOTAL_STEPS, `جاري إنشاء ${questionCount} سؤال اختياري و ${tfCount} صح/خطأ...`);
+    const mcqResult = await callGeminiWithRetry({
+      contents: [{ parts: [{ text: `ولّد ${questionCount} سؤال اختياري و ${tfCount} سؤال صح/خطأ بالعربية. غطِ كل الدروس.\n${commonContext}` }] }],
+      systemInstruction,
+      responseSchema: {
+        type: "OBJECT",
+        properties: {
+          mcqs: { type: "ARRAY", items: { type: "OBJECT", properties: { question: { type: "STRING" }, options: { type: "ARRAY", items: { type: "STRING" } }, correctAnswer: { type: "INTEGER" }, explanation: { type: "STRING" } }, required: ["question", "options", "correctAnswer", "explanation"] } },
+          trueFalseQuestions: { type: "ARRAY", items: { type: "OBJECT", properties: { question: { type: "STRING" }, options: { type: "ARRAY", items: { type: "STRING" } }, correctAnswer: { type: "INTEGER" }, explanation: { type: "STRING" } }, required: ["question", "options", "correctAnswer", "explanation"] } }
+        },
+        required: ["mcqs", "trueFalseQuestions"]
+      }
+    });
+    mcqData = parseResult(mcqResult, "MCQ");
+  } catch (e: any) {
+    console.error("❌ Step 2 (MCQ) failed:", e.message);
+    errors.push(`الأسئلة: ${e.message}`);
+  }
+
+  // ─── Step 3: Essay Questions ──────────────────────────
+  let essayData: any = null;
+  try {
+    const essayCount = Math.max(5, selectedLessons.length * 2);
+    onProgress?.(3, TOTAL_STEPS, `جاري توليد ${essayCount} سؤال مقالي مع إجابات نموذجية...`);
+    const essayResult = await callGeminiWithRetry({
+      contents: [{ parts: [{ text: `ولّد ${essayCount} سؤال مقالي بالعربية مع إجابة نموذجية مفصلة لكل سؤال.\n${commonContext}` }] }],
+      systemInstruction: "أنت معلم خبير. ضع إجابة نموذجية مفصلة لكل سؤال مقالي. لا تترك حقل الإجابة فارغاً.",
+      responseSchema: {
+        type: "OBJECT",
+        properties: {
+          essayQuestions: { type: "ARRAY", items: { type: "OBJECT", properties: { question: { type: "STRING" }, idealAnswer: { type: "STRING", description: "إجابة تفصيلية 3 جمل على الأقل" } }, required: ["question", "idealAnswer"] } }
+        },
+        required: ["essayQuestions"]
+      }
+    });
+    essayData = parseResult(essayResult, "Essay");
+  } catch (e: any) {
+    console.error("❌ Step 3 (Essay) failed:", e.message);
+    errors.push(`المقالية: ${e.message}`);
+  }
+
+  // ─── Step 4: Mock Exam ────────────────────────────────
+  let mockData: any = null;
+  try {
+    onProgress?.(4, TOTAL_STEPS, "جاري إنشاء الاختبار التجريبي...");
+    const mockResult = await callGeminiWithRetry({
+      contents: [{ parts: [{ text: `ولّد اختبار تجريبي بالعربية (15+ سؤال) يغطي كل الدروس.\n${commonContext}` }] }],
+      systemInstruction,
+      responseSchema: {
+        type: "OBJECT",
+        properties: {
+          mockExam: { type: "OBJECT", properties: { instructions: { type: "STRING" }, questions: { type: "ARRAY", items: { type: "OBJECT", properties: { question: { type: "STRING" }, options: { type: "ARRAY", items: { type: "STRING" } }, correctAnswer: { type: "INTEGER" }, explanation: { type: "STRING" } }, required: ["question", "options", "correctAnswer", "explanation"] } } }, required: ["instructions", "questions"] }
+        },
+        required: ["mockExam"]
+      }
+    });
+    mockData = parseResult(mockResult, "MockExam");
+  } catch (e: any) {
+    console.error("❌ Step 4 (MockExam) failed:", e.message);
+    errors.push(`الاختبار التجريبي: ${e.message}`);
+  }
+
+  // If ALL steps failed, throw with details
+  if (!summaryData && !mcqData && !essayData && !mockData) {
+    throw new Error(`فشلت جميع خطوات المراجعة:\n${errors.join('\n')}`);
+  }
+
+  // Log partial failures
+  if (errors.length > 0) {
+    console.warn(`⚠️ Review completed with ${errors.length} partial failure(s):`, errors);
+  }
 
   return {
-    comprehensiveSummary: summaryData?.comprehensiveSummary || "عذراً، تعذر توليد الملخص.",
+    comprehensiveSummary: summaryData?.comprehensiveSummary || (errors.length > 0 ? `⚠️ تعذر توليد الملخص. أخطاء: ${errors.join(' | ')}` : "عذراً، تعذر توليد الملخص."),
     keyPoints: summaryData?.keyPoints || [],
     mcqs: mcqData?.mcqs || [],
     trueFalseQuestions: mcqData?.trueFalseQuestions || [],
@@ -625,19 +687,27 @@ export const generateExamReview = async (
 };
 
 /**
- * إعادة توليد جزء واحد فقط من المراجعة
+ * إعادة توليد جزء واحد فقط من المراجعة — Enhanced with rich context + retry
  */
 export const regenerateSection = async (
   sectionType: 'summary' | 'mcq' | 'essay' | 'mockExam',
   subjectName: string,
   selectedLessons: Lesson[]
 ): Promise<any> => {
+  // Build RICH context (same as generateExamReview)
   const context = selectedLessons.map(l => {
-    if (l.aiResult?.summary) return `[${l.title}]: ${typeof l.aiResult.summary === 'string' ? l.aiResult.summary : JSON.stringify(l.aiResult.summary)}`;
-    return `[${l.title}]: ${l.studentText || ''}`;
-  }).join('\n');
+    const parts: string[] = [`[${l.title}]`];
+    if (l.aiResult?.summary) {
+      parts.push(typeof l.aiResult.summary === 'string' ? l.aiResult.summary : JSON.stringify(l.aiResult.summary));
+      if (l.aiResult.focusPoints?.length) {
+        parts.push(`نقاط تركيز: ${l.aiResult.focusPoints.map(fp => fp.title).join('، ')}`);
+      }
+    }
+    if (l.studentText) parts.push(`ملاحظات: ${l.studentText}`);
+    return parts.join('\n');
+  }).join('\n---\n');
 
-  const commonContext = `مراجعة لمادة ${subjectName}:\n${context.substring(0, 100000)}`;
+  const commonContext = `مراجعة لمادة ${subjectName}:\n${context.substring(0, 80000)}`;
   const systemInstruction = "أنت مساعد مراجعة ذكي. استخدم المحتوى المقدم فقط.";
 
   const payloads: Record<string, any> = {
@@ -647,12 +717,12 @@ export const regenerateSection = async (
       responseSchema: { type: "OBJECT", properties: { comprehensiveSummary: { type: "STRING" }, keyPoints: { type: "ARRAY", items: { type: "STRING" } } } }
     },
     mcq: {
-      contents: [{ parts: [{ text: `ولّد 20+ سؤال اختياري و 10+ صح/خطأ جديدة ومختلفة.\n${commonContext}` }] }],
+      contents: [{ parts: [{ text: `ولّد 15+ سؤال اختياري و 8+ صح/خطأ جديدة ومختلفة.\n${commonContext}` }] }],
       systemInstruction,
       responseSchema: { type: "OBJECT", properties: { mcqs: { type: "ARRAY", items: { type: "OBJECT", properties: { question: { type: "STRING" }, options: { type: "ARRAY", items: { type: "STRING" } }, correctAnswer: { type: "INTEGER" }, explanation: { type: "STRING" } } } }, trueFalseQuestions: { type: "ARRAY", items: { type: "OBJECT", properties: { question: { type: "STRING" }, options: { type: "ARRAY", items: { type: "STRING" } }, correctAnswer: { type: "INTEGER" }, explanation: { type: "STRING" } } } } } }
     },
     essay: {
-      contents: [{ parts: [{ text: `ولّد 7+ أسئلة مقالية جديدة مع إجابات نموذجية.\n${commonContext}` }] }],
+      contents: [{ parts: [{ text: `ولّد 5+ أسئلة مقالية جديدة مع إجابات نموذجية.\n${commonContext}` }] }],
       systemInstruction: "أنت معلم خبير. ضع إجابة نموذجية مفصلة لكل سؤال.",
       responseSchema: { type: "OBJECT", properties: { essayQuestions: { type: "ARRAY", items: { type: "OBJECT", properties: { question: { type: "STRING" }, idealAnswer: { type: "STRING" } } } } } }
     },
@@ -663,7 +733,7 @@ export const regenerateSection = async (
     }
   };
 
-  const result = await callGeminiProxy(payloads[sectionType]);
+  const result = await callGeminiWithRetry(payloads[sectionType]);
   if (result.data) return result.data;
   const text = result.rawText || result.text || "{}";
   let clean = text.trim();
