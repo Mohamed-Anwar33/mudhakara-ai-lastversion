@@ -689,6 +689,7 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
 
   // ── Detect weak lessons (insufficient content) ──
   const isWeakLesson = (al: AnalyzedLesson) => {
+    if (al.id?.startsWith('audio_')) return false; // Skip stale audio entries
     if (!al.detailedExplanation) return true;
     if (al.detailedExplanation.includes('قصير جداً ولم يتم استخراج')) return true;
     if (al.detailedExplanation.length < 500 && al.quizzes.length === 0) return true;
@@ -1394,22 +1395,53 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-6">
-                  {analyzedLessons.map((al, idx) => {
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-5">
+                  {analyzedLessons.filter(al => !al.id?.startsWith('audio_')).map((al, idx) => {
                     const weak = isWeakLesson(al);
                     const reanalyzing = reanalyzingIds.has(al.id);
+                    const lessonNum = idx + 1;
+                    // Cycle through gradient colors for variety
+                    const colorSets = [
+                      { bg: 'from-indigo-500 to-purple-600', light: 'from-indigo-50 to-purple-50', border: 'border-indigo-100', text: 'text-indigo-600', badge: 'bg-indigo-50 text-indigo-600' },
+                      { bg: 'from-cyan-500 to-blue-600', light: 'from-cyan-50 to-blue-50', border: 'border-cyan-100', text: 'text-cyan-600', badge: 'bg-cyan-50 text-cyan-600' },
+                      { bg: 'from-emerald-500 to-teal-600', light: 'from-emerald-50 to-teal-50', border: 'border-emerald-100', text: 'text-emerald-600', badge: 'bg-emerald-50 text-emerald-600' },
+                      { bg: 'from-violet-500 to-fuchsia-600', light: 'from-violet-50 to-fuchsia-50', border: 'border-violet-100', text: 'text-violet-600', badge: 'bg-violet-50 text-violet-600' },
+                      { bg: 'from-rose-500 to-pink-600', light: 'from-rose-50 to-pink-50', border: 'border-rose-100', text: 'text-rose-600', badge: 'bg-rose-50 text-rose-600' },
+                    ];
+                    const c = weak
+                      ? { bg: 'from-amber-400 to-orange-500', light: 'from-amber-50 to-orange-50', border: 'border-amber-200', text: 'text-amber-600', badge: 'bg-amber-50 text-amber-600' }
+                      : colorSets[idx % colorSets.length];
+
                     return (
                       <div key={al.id} className="relative group">
                         <Link to={`/subject/${id}/analyzed/${idx}`}
-                          className={`block bg-white p-6 rounded-[2.5rem] border text-center hover:shadow-xl transition-all shadow-sm ${weak ? 'border-amber-200 bg-amber-50/30' : 'border-slate-100 hover:border-indigo-200'}`}>
-                          <div className={`w-14 h-14 rounded-[1.5rem] flex items-center justify-center mb-3 mx-auto group-hover:scale-110 transition-transform ${weak ? 'bg-gradient-to-br from-amber-50 to-orange-50 text-amber-500' : 'bg-gradient-to-br from-indigo-50 to-purple-50 text-indigo-500'}`}>
-                            {weak ? <AlertTriangle size={28} /> : <BookOpen size={28} />}
-                          </div>
-                          <p className="text-xs font-black line-clamp-2 px-2 text-slate-700 mb-2">{al.lessonTitle}</p>
-                          <div className="flex gap-1 justify-center flex-wrap">
-                            {weak && <span className="bg-amber-100 text-amber-700 text-[9px] font-black px-2 py-0.5 rounded-full animate-pulse">⚠️ محتوى ناقص</span>}
-                            {!weak && al.quizzes.length > 0 && <span className="bg-amber-50 text-amber-600 text-[9px] font-black px-2 py-0.5 rounded-full">{al.quizzes.length} سؤال</span>}
-                            {!weak && al.focusPoints.length > 0 && <span className="bg-emerald-50 text-emerald-600 text-[9px] font-black px-2 py-0.5 rounded-full">{al.focusPoints.length} نقطة</span>}
+                          className={`block bg-white rounded-[2rem] border ${c.border} overflow-hidden hover:shadow-xl transition-all duration-300 shadow-sm hover:-translate-y-1`}>
+                          {/* Gradient top bar */}
+                          <div className={`h-1.5 bg-gradient-to-l ${c.bg}`}></div>
+                          <div className="p-5 text-center">
+                            {/* Lesson number badge */}
+                            <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${c.bg} flex items-center justify-center mb-3 mx-auto shadow-lg group-hover:scale-110 group-hover:shadow-xl transition-all duration-300`}>
+                              {weak
+                                ? <AlertTriangle size={22} className="text-white" />
+                                : <span className="text-white text-lg font-black">{lessonNum}</span>
+                              }
+                            </div>
+                            {/* Title */}
+                            <p className="text-[11px] font-black line-clamp-2 px-1 text-slate-800 mb-3 leading-relaxed">{al.lessonTitle}</p>
+                            {/* Info badges */}
+                            <div className="flex gap-1.5 justify-center flex-wrap">
+                              {weak && <span className="bg-amber-100 text-amber-700 text-[8px] font-black px-2.5 py-1 rounded-full animate-pulse flex items-center gap-1"><AlertTriangle size={10} /> ناقص</span>}
+                              {!weak && al.quizzes.length > 0 && (
+                                <span className={`${c.badge} text-[8px] font-black px-2.5 py-1 rounded-full flex items-center gap-1`}>
+                                  <Target size={10} /> {al.quizzes.length}
+                                </span>
+                              )}
+                              {!weak && al.focusPoints.length > 0 && (
+                                <span className="bg-emerald-50 text-emerald-600 text-[8px] font-black px-2.5 py-1 rounded-full flex items-center gap-1">
+                                  <Sparkles size={10} /> {al.focusPoints.length}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </Link>
                         {/* Re-analyze button for weak lessons */}
@@ -1426,7 +1458,7 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
                               }
                             }}
                             disabled={reanalyzing}
-                            className="absolute bottom-3 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-amber-500 text-white rounded-full text-[9px] font-black shadow-lg hover:bg-amber-600 transition-all z-20 flex items-center gap-1"
+                            className="absolute bottom-3 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-full text-[9px] font-black shadow-lg hover:shadow-xl transition-all z-20 flex items-center gap-1"
                           >
                             {reanalyzing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
                             <span>{reanalyzing ? 'جاري...' : 'إعادة تحليل'}</span>
@@ -1436,9 +1468,9 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
                         <button
                           onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDeleteAnalyzedLesson(al.id); }}
                           disabled={deletingLessonId === al.id}
-                          className="absolute top-3 left-3 p-2 bg-red-50 rounded-full text-red-400 hover:text-white hover:bg-red-500 z-20 shadow-sm border border-red-100 transition-all"
+                          className="absolute top-5 left-3 p-1.5 bg-white/80 backdrop-blur-sm rounded-xl text-red-300 hover:text-white hover:bg-red-500 z-20 shadow-sm border border-red-100/50 transition-all sm:opacity-0 sm:group-hover:opacity-100"
                         >
-                          {deletingLessonId === al.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                          {deletingLessonId === al.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
                         </button>
                       </div>
                     );
@@ -1648,7 +1680,7 @@ const SubjectDetail: React.FC<SubjectDetailProps> = ({ subjects = [], setSubject
                 <div className="bg-white/10 backdrop-blur-md rounded-[2rem] p-6 border border-white/10">
                   <h3 className="font-bold text-sm mb-4">حدد دروس المراجعة:</h3>
                   <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar pr-2 pl-2">
-                    {(analyzedLessons.length > 0 ? analyzedLessons : lessons).map((item: any) => (
+                    {(analyzedLessons.length > 0 ? analyzedLessons.filter(al => !al.id?.startsWith('audio_')) : lessons).map((item: any) => (
                       <label key={item.id} className="flex items-center gap-3 p-3 bg-white/5 rounded-xl hover:bg-white/10 cursor-pointer transition-colors">
                         <input
                           type="checkbox"

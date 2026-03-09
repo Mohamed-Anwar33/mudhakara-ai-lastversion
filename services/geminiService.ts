@@ -390,9 +390,13 @@ export const analyzeHomeworkContent = async (
 
   const payload: any = {
     contents: [{ parts }],
-    systemInstruction: `... (same system instruction) ...`, // We keep the existing one or just reference it if I don't want to rewrite it all.
-    // Actually, I should just modify the payload construction lines.
-    // Let me rewrite the payload construction block to be safe.
+    systemInstruction: `أنت مساعد ذكي متخصص في حل الواجبات المدرسية والجامعية. قم بتحليل السؤال أو المسألة المطروحة وقدم حلاً واضحاً ومفصلاً.
+القواعد:
+1. قدم خطوات الحل بالتتابع مع شرح كل خطوة.
+2. اربط الحل بمرجع المادة إن وُجد.
+3. قدم الإجابة النهائية بوضوح.
+4. أضف ملاحظات تصحيحية إن لزم الأمر.
+5. اقترح أسئلة مشابهة للتدريب.`,
     responseSchema: {
       type: "OBJECT",
       properties: {
